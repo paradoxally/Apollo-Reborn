@@ -36,21 +36,26 @@ struct SinglePostWidgetView: View {
             mediaBackground(entry, fallback: BlueGradient())
         } content: { renders in
             let post = renders[0].post
-            VStack(alignment: .leading, spacing: 4) {
-                WidgetHeader(icon: "doc.text.image", label: "r/\(post.subreddit)")
+            VStack(alignment: .leading, spacing: 3) {
                 Spacer(minLength: 0)
                 Text(post.title)
-                    .font(.system(size: family == .systemSmall ? 13 : 16, weight: .semibold))
+                    .font(.system(size: family == .systemSmall ? 14 : 17, weight: .semibold))
                     .foregroundStyle(.white)
                     .minimumScaleFactor(0.7)
                     .lineLimit(family == .systemSmall ? 3 : 4)
-                if family != .systemSmall { PostStats(post: post) }
+                    .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+                // Small has no room for the subreddit; larger sizes show it.
+                StatsLine(post: post,
+                          showSubreddit: family != .systemSmall,
+                          showComments: family != .systemSmall)
+                    .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
             .padding(.top, 30)
             .background(alignment: .bottom) {
-                LinearGradient(colors: [.clear, .black.opacity(0.75)], startPoint: .center, endPoint: .bottom)
-                    .padding(-20)
+                LinearGradient(colors: [.clear, .black.opacity(0.55), .black.opacity(0.85)],
+                               startPoint: .center, endPoint: .bottom)
+                    .padding(-24)
                     .allowsHitTesting(false)
             }
             .overlay(alignment: .topTrailing) { NextOverlayButton(rotationKey: entry.rotationKey) }
@@ -69,21 +74,23 @@ struct PhotoWidgetView: View {
             mediaBackground(entry, fallback: BlueGradient())
         } content: { renders in
             let post = renders[0].post
-            VStack {
-                Spacer()
+            VStack(alignment: .leading) {
+                Spacer(minLength: 0)
                 if family != .systemSmall {
-                    HStack {
-                        Text(post.title).lineLimit(2).minimumScaleFactor(0.7)
-                        Spacer(minLength: 0)
-                    }
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white)
-                    .padding(8)
-                    .background(LinearGradient(colors: [.clear, .black.opacity(0.7)],
-                                               startPoint: .top, endPoint: .bottom).padding(-8))
+                    Text(post.title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2).minimumScaleFactor(0.7)
+                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+            .background(alignment: .bottom) {
+                LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
+                    .padding(-24)
+                    .allowsHitTesting(false)
+            }
             .overlay(alignment: .topTrailing) { NextOverlayButton(rotationKey: entry.rotationKey) }
             .opensInApollo(post)
         }
@@ -106,16 +113,18 @@ struct FeedWidgetView: View {
 
     var body: some View {
         WidgetShell(entry: entry) {
-            Color(red: 0.10, green: 0.11, blue: 0.13)
+            Color(red: 0.11, green: 0.12, blue: 0.14)
         } content: { renders in
             let sub = renders.first?.post.subreddit ?? ""
-            VStack(alignment: .leading, spacing: 6) {
-                WidgetHeader(icon: "list.bullet.below.rectangle", label: "r/\(sub)",
+            VStack(alignment: .leading, spacing: 7) {
+                WidgetHeader(label: "r/\(sub)",
+                             tint: Color(red: 0.40, green: 0.62, blue: 1.0),
                              trailing: AnyView(ReloadButton(kind: "FeedWidget")))
-                ForEach(Array(renders.prefix(rowCount)), id: \.post.id) { render in
+                let rows = Array(renders.prefix(rowCount))
+                ForEach(Array(rows.enumerated()), id: \.element.post.id) { idx, render in
                     rowLink(render)
-                    if render.post.id != renders.prefix(rowCount).last?.post.id {
-                        Divider().overlay(.white.opacity(0.12))
+                    if idx != rows.count - 1 {
+                        Divider().overlay(.white.opacity(0.10))
                     }
                 }
                 Spacer(minLength: 0)
@@ -132,19 +141,21 @@ struct FeedWidgetView: View {
     }
 
     private func row(_ render: RenderPost) -> some View {
-        HStack(spacing: 8) {
-            if let img = imageFromData(render.imageData) {
-                img.resizable().aspectRatio(contentMode: .fill)
-                    .frame(width: 36, height: 36).clipShape(RoundedRectangle(cornerRadius: 6))
-            }
+        HStack(spacing: 10) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(render.post.title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(.white)
-                    .lineLimit(2).minimumScaleFactor(0.8)
-                if family != .systemSmall { PostStats(post: render.post) }
+                    .lineLimit(2).minimumScaleFactor(0.85)
+                StatsLine(post: render.post)
             }
             Spacer(minLength: 0)
+            // Apollo puts the thumbnail on the trailing edge.
+            if let img = imageFromData(render.imageData) {
+                img.resizable().aspectRatio(contentMode: .fill)
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            }
         }
     }
 }

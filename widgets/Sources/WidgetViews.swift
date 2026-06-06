@@ -69,20 +69,21 @@ struct MessageView: View {
 
 // MARK: - Reusable bits
 
-/// Small header: an SF Symbol + subreddit/label, with an optional trailing
-/// interactive button (↻ next, or refresh).
+/// Small header: a bold tinted title (Apollo uses an emoji, e.g. "Showerthoughts
+/// 🚿"), with an optional leading SF Symbol and trailing interactive button.
 struct WidgetHeader: View {
-    let icon: String
+    var icon: String? = nil
     let label: String
+    var tint: Color = .white
     var trailing: AnyView? = nil
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.caption2)
-            Text(label).font(.caption2).fontWeight(.bold)
+            if let icon { Image(systemName: icon).font(.caption2) }
+            Text(label).font(.system(size: 13, weight: .heavy))
             Spacer(minLength: 4)
             if let trailing { trailing }
         }
-        .foregroundStyle(.white.opacity(0.95))
+        .foregroundStyle(tint)
     }
 }
 
@@ -128,17 +129,26 @@ struct ReloadButton: View {
     }
 }
 
-/// score · comments footer.
-struct PostStats: View {
+/// Apollo-style stat line, e.g. "r/Politics ↑57K 💬2K".
+struct StatsLine: View {
     let post: RedditPost
+    var showSubreddit: Bool = true
+    var showComments: Bool = true
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
+            if showSubreddit, !post.subreddit.isEmpty {
+                Text("r/\(post.subreddit)").fontWeight(.semibold)
+            }
             Label("\(post.score.abbreviated)", systemImage: "arrow.up")
-            Label("\(post.numComments.abbreviated)", systemImage: "bubble.right")
+            if showComments {
+                Label("\(post.numComments.abbreviated)", systemImage: "bubble.right")
+            }
         }
         .font(.caption2)
-        .foregroundStyle(.white.opacity(0.85))
+        .foregroundStyle(.white.opacity(0.9))
         .labelStyle(.titleAndIcon)
+        .lineLimit(1)
+        .minimumScaleFactor(0.85)
     }
 }
 
@@ -151,12 +161,33 @@ extension Int {
     }
 }
 
-/// The blue gradient used for text widgets.
+/// The blue gradient used for Showerthoughts (Apollo's signature look).
 struct BlueGradient: View {
     var body: some View {
-        LinearGradient(colors: [Color(red: 0.0, green: 0.48, blue: 0.93),
-                                Color(red: 0.20, green: 0.62, blue: 0.98)],
+        LinearGradient(colors: [Color(red: 0.16, green: 0.45, blue: 0.96),
+                                Color(red: 0.36, green: 0.36, blue: 0.98)],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
+/// Indigo/purple gradient used for Jokes.
+struct PurpleGradient: View {
+    var body: some View {
+        LinearGradient(colors: [Color(red: 0.36, green: 0.36, blue: 0.98),
+                                Color(red: 0.50, green: 0.30, blue: 0.95)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
+extension Color {
+    /// Init from a Reddit hex color like "#0079D3"; nil if blank/invalid.
+    init?(hex: String?) {
+        guard var h = hex?.trimmingCharacters(in: .whitespacesAndNewlines), h.hasPrefix("#") else { return nil }
+        h.removeFirst()
+        guard h.count == 6, let v = Int(h, radix: 16) else { return nil }
+        self = Color(red: Double((v >> 16) & 0xFF) / 255,
+                     green: Double((v >> 8) & 0xFF) / 255,
+                     blue: Double(v & 0xFF) / 255)
     }
 }
 

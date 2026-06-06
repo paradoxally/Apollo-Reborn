@@ -5,6 +5,7 @@ import Foundation
 struct ShortcutItem: Hashable {
     let subreddit: String
     let iconData: Data?
+    var colorHex: String? = nil
 }
 
 struct ShortcutsEntry: TimelineEntry {
@@ -59,19 +60,22 @@ struct ShortcutsProvider: IntentTimelineProvider {
         }
     }
 
-    /// Concurrently fetch + downsample each subreddit's icon, preserving order.
+    /// Concurrently fetch each subreddit's icon + brand color, preserving order.
     private static func withIcons(_ subs: [String], client: RedditAppOnlyClient) async -> [ShortcutItem] {
-        await withTaskGroup(of: (Int, Data?).self) { group in
+        await withTaskGroup(of: (Int, Data?, String?).self) { group in
             for (i, sub) in subs.enumerated() {
                 group.addTask {
-                    let url = try? await client.subredditIcon(sub)
-                    let data = await ImageLoader.fetchDownsampled(url ?? nil, maxPixel: 120)
-                    return (i, data)
+                    let about = try? await client.subredditAbout(sub)
+                    let data = await ImageLoader.fetchDownsampled(about?.icon ?? nil, maxPixel: 120)
+                    return (i, data, about?.colorHex)
                 }
             }
-            var byIndex: [Int: Data?] = [:]
-            for await (i, data) in group { byIndex[i] = data }
-            return subs.enumerated().map { ShortcutItem(subreddit: $1, iconData: byIndex[$0] ?? nil) }
+            var icons: [Int: Data?] = [:]
+            var colors: [Int: String?] = [:]
+            for await (i, data, color) in group { icons[i] = data; colors[i] = color }
+            return subs.enumerated().map {
+                ShortcutItem(subreddit: $1, iconData: icons[$0] ?? nil, colorHex: colors[$0] ?? nil)
+            }
         }
     }
 

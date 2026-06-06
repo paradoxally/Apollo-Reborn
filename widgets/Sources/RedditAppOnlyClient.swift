@@ -117,8 +117,8 @@ struct RedditAppOnlyClient {
         return Self.parseListing(data)
     }
 
-    /// A subreddit's icon URL (community_icon preferred, else icon_img), or nil.
-    func subredditIcon(_ subreddit: String) async throws -> String? {
+    /// A subreddit's icon URL + brand color hex from /about (best-effort).
+    func subredditAbout(_ subreddit: String) async throws -> (icon: String?, colorHex: String?) {
         let bearer = try await token()
         let sub = RedditPost.normalizeSubreddit(subreddit)
         var req = URLRequest(url: URL(string: "https://oauth.reddit.com/r/\(sub)/about?raw_json=1")!)
@@ -128,11 +128,17 @@ struct RedditAppOnlyClient {
         let (data, resp) = try await rwSession.data(for: req)
         guard let http = resp as? HTTPURLResponse, http.statusCode == 200,
               let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let d = root["data"] as? [String: Any] else { return nil }
+              let d = root["data"] as? [String: Any] else { return (nil, nil) }
+
+        var icon: String?
         for key in ["community_icon", "icon_img"] {
-            if let u = d[key] as? String, u.hasPrefix("http") { return u }
+            if let u = d[key] as? String, u.hasPrefix("http") { icon = u; break }
         }
-        return nil
+        var colorHex: String?
+        for key in ["primary_color", "key_color"] {
+            if let c = d[key] as? String, c.hasPrefix("#"), c.count == 7 { colorHex = c; break }
+        }
+        return (icon, colorHex)
     }
 
     /// Parse a Reddit listing into posts, skipping stickied/meta entries.

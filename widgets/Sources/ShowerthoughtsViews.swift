@@ -21,7 +21,7 @@ struct ShowerthoughtsWidgetView: View {
         } content: { renders in
             let post = renders[0].post
             VStack(alignment: .leading, spacing: 6) {
-                WidgetHeader(icon: "drop.fill", label: "Showerthoughts",
+                WidgetHeader(label: "Showerthoughts 🚿",
                              trailing: AnyView(NextButton(rotationKey: entry.rotationKey)))
                 Spacer(minLength: 2)
                 Text(post.title)
@@ -54,13 +54,12 @@ struct JokesWidgetView: View {
 
     var body: some View {
         WidgetShell(entry: entry) {
-            LinearGradient(colors: [Color(red: 0.85, green: 0.35, blue: 0.10),
-                                    Color(red: 0.97, green: 0.55, blue: 0.15)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            PurpleGradient()
         } content: { renders in
             let post = renders[0].post
             VStack(alignment: .leading, spacing: 6) {
-                WidgetHeader(icon: "face.smiling.fill", label: "r/Jokes",
+                WidgetHeader(label: "Jokes 😄",
+                             tint: Color(red: 1.0, green: 0.82, blue: 0.35),
                              trailing: AnyView(NextButton(rotationKey: entry.rotationKey)))
                 Spacer(minLength: 2)
                 Text(post.title)

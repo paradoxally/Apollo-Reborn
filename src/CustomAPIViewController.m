@@ -658,7 +658,7 @@ typedef NS_ENUM(NSInteger, Tag) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     switch (section) {
         case SectionBackupRestore: return 2;
-        case SectionAPIKeys: return 9; // 7 text fields + Can't sign in? + API key setup guide
+        case SectionAPIKeys: return 10; // 7 text fields + Can't sign in? + API key setup guide + Copy Widget Setup Code
         case SectionGeneral: return sShowDeletedComments ? 11 : 10;
         case SectionMedia: return (sShowUserAvatars ? 14 : 13) + (sEnableInlineImages ? 0 : -kApolloMediaInlineDependentRows);
         case SectionSubreddits: return sSubredditListEnhancements ? 9 : 8;
@@ -963,6 +963,16 @@ typedef NS_ENUM(NSInteger, Tag) {
                 cell.textLabel.numberOfLines = 0;
             }
             cell.textLabel.text = @"Giphy & ImgChest API Key Setup";
+            return cell;
+        }
+        case 9: {
+            UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:@"Cell_WidgetSetupCode"];
+            if (!cell) {
+                cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:@"Cell_WidgetSetupCode"];
+                cell.accessoryType = UITableViewCellAccessoryNone;
+            }
+            cell.textLabel.text = @"Copy Widget Setup Code";
+            cell.textLabel.textColor = [self apollo_themeAccentColor];
             return cell;
         }
         default:
@@ -1566,6 +1576,8 @@ typedef NS_ENUM(NSInteger, Tag) {
             [self pushTroubleshootingViewController];
         } else if (indexPath.row == 8) {
             [self pushInstructionsViewController];
+        } else if (indexPath.row == 9) {
+            [self copyWidgetSetupCode];
         }
     } else if (indexPath.section == SectionAbout) {
         if (indexPath.row == 0) {
@@ -1615,6 +1627,32 @@ typedef NS_ENUM(NSInteger, Tag) {
     }
 }
 
+- (void)copyWidgetSetupCode {
+    NSString *clientID = sRedditClientId ?: @"";
+    if (clientID.length == 0) {
+        [self showAlertWithTitle:@"No API Key"
+                         message:@"Enter your Reddit API Key above first, then copy the widget setup code."];
+        return;
+    }
+
+    // base64( JSON { v, clientID, userAgent } ) — decoded by the widget's
+    // SetupCode parser. userAgent is included so the widget's Reddit requests
+    // carry the same identity as the configured (spoofed) app.
+    NSMutableDictionary *payload = [@{ @"v": @1, @"clientID": clientID } mutableCopy];
+    if (sUserAgent.length > 0) payload[@"userAgent"] = sUserAgent;
+
+    NSData *json = [NSJSONSerialization dataWithJSONObject:payload options:0 error:NULL];
+    if (!json) {
+        [self showAlertWithTitle:@"Error" message:@"Couldn't build the setup code."];
+        return;
+    }
+    NSString *code = [json base64EncodedStringWithOptions:0];
+    [UIPasteboard generalPasteboard].string = code;
+
+    [self showAlertWithTitle:@"Copied"
+                     message:@"Setup code copied. On your Home Screen, add the Apollo “Showerthoughts” widget, long-press it → Edit Widget, and paste this code into Setup Code."];
+}
+
 - (void)testNotificationBackendConnection {
     if (!ApolloIsNotificationBackendConfigured()) {
         [self showAlertWithTitle:@"Backend URL Required" message:@"Enter a self-hosted apollo-backend URL above before testing."];
@@ -1644,7 +1682,7 @@ typedef NS_ENUM(NSInteger, Tag) {
 
 - (BOOL)tableView:(UITableView *)tableView shouldHighlightRowAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.section == SectionBackupRestore) return YES;
-    if (indexPath.section == SectionAPIKeys && (indexPath.row == 7 || indexPath.row == 8)) return YES;
+    if (indexPath.section == SectionAPIKeys && (indexPath.row == 7 || indexPath.row == 8 || indexPath.row == 9)) return YES;
     if (indexPath.section == SectionSubreddits) {
         NSInteger logicalRow = (indexPath.row >= 1 && !sSubredditListEnhancements) ? indexPath.row + 1 : indexPath.row;
         return logicalRow == 8;

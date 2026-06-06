@@ -18,6 +18,9 @@ struct WidgetEntry: TimelineEntry {
     }
     let date: Date
     let state: State
+    /// Cache key of the widget that produced this entry, so interactive buttons
+    /// know which widget's rotation to advance. Nil for non-content states.
+    var rotationKey: String? = nil
 
     static let loading = WidgetEntry(date: Date(), state: .loading)
 }
@@ -44,22 +47,22 @@ private let rotateInterval: TimeInterval = 15 * 60   // visible post changes thi
 private let postsPerTimeline = 8                     // → ~2h timeline, then refetch fresh data
 
 /// One entry per post, each shown for `rotateInterval`, then refresh.
-func rotatingTimeline(_ renders: [RenderPost], refreshIn: TimeInterval? = nil) -> Timeline<WidgetEntry> {
+func rotatingTimeline(_ renders: [RenderPost], key: String? = nil, refreshIn: TimeInterval? = nil) -> Timeline<WidgetEntry> {
     let now = Date()
     let chosen = Array(renders.prefix(postsPerTimeline))
     guard !chosen.isEmpty else { return singleEntry(.error("Nothing to show."), refreshIn: 1800) }
     var entries: [WidgetEntry] = []
     for (i, r) in chosen.enumerated() {
         entries.append(WidgetEntry(date: now.addingTimeInterval(Double(i) * rotateInterval),
-                                   state: .posts([r])))
+                                   state: .posts([r]), rotationKey: key))
     }
     let refresh = now.addingTimeInterval(refreshIn ?? Double(chosen.count) * rotateInterval)
     return Timeline(entries: entries, policy: .after(refresh))
 }
 
 /// A single entry holding many posts (Feed), refreshed periodically.
-func listTimeline(_ renders: [RenderPost], refreshIn: TimeInterval = 30 * 60) -> Timeline<WidgetEntry> {
-    let entry = WidgetEntry(date: Date(), state: .posts(renders))
+func listTimeline(_ renders: [RenderPost], key: String? = nil, refreshIn: TimeInterval = 30 * 60) -> Timeline<WidgetEntry> {
+    let entry = WidgetEntry(date: Date(), state: .posts(renders), rotationKey: key)
     return Timeline(entries: [entry], policy: .after(Date().addingTimeInterval(refreshIn)))
 }
 
@@ -118,17 +121,19 @@ func runPostTimeline(
 
 // MARK: - assemble helpers (image downloads)
 
-/// Text-only rotating posts (Showerthoughts, Jokes).
-func assembleText(_ posts: [RedditPost]) -> Timeline<WidgetEntry> {
-    rotatingTimeline(posts.map { RenderPost(post: $0, imageData: nil) })
+/// Text-only rotating posts (Showerthoughts, Jokes). `key` drives the button
+/// rotation and is stamped on each entry.
+func assembleText(_ posts: [RedditPost], key: String) -> Timeline<WidgetEntry> {
+    let ordered = Rotation.rotated(key, posts)
+    return rotatingTimeline(ordered.map { RenderPost(post: $0, imageData: nil) }, key: key)
 }
 
 /// Rotating posts each with a downloaded preview image (Single Post, Photo).
 /// Capped + concurrent so we stay within WidgetKit's timeline budget.
-func assembleWithImages(_ posts: [RedditPost], maxPixel: Int, limit: Int = 6) async -> Timeline<WidgetEntry> {
-    let chosen = Array(posts.prefix(limit))
+func assembleWithImages(_ posts: [RedditPost], key: String, maxPixel: Int, limit: Int = 6) async -> Timeline<WidgetEntry> {
+    let chosen = Array(Rotation.rotated(key, posts).prefix(limit))
     let renders = await downloadImages(chosen, keyPath: { $0.imageURL ?? $0.thumbnailURL }, maxPixel: maxPixel)
-    return rotatingTimeline(renders)
+    return rotatingTimeline(renders, key: key)
 }
 
 /// Download images for `posts` concurrently, preserving order.

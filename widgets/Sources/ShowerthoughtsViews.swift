@@ -8,22 +8,21 @@ struct ShowerthoughtsWidgetView: View {
     let entry: WidgetEntry
 
     var body: some View {
+        if isAccessoryFamily(family) {
+            AccessoryPostView(entry: entry, label: "Showerthoughts", icon: "drop.fill")
+        } else {
+            homeBody
+        }
+    }
+
+    private var homeBody: some View {
         WidgetShell(entry: entry) {
             BlueGradient()
         } content: { renders in
             let post = renders[0].post
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 5) {
-                    Image(systemName: "drop.fill").font(.caption2)
-                    Text("Showerthoughts").font(.caption2).fontWeight(.bold)
-                    Spacer()
-                    // Tap for another thought (interactive AppIntent button).
-                    Button(intent: NextShowerthoughtIntent()) {
-                        Image(systemName: "arrow.clockwise").font(.caption2.weight(.bold))
-                    }
-                    .buttonStyle(.plain)
-                }
-                .foregroundStyle(.white.opacity(0.95))
+                WidgetHeader(icon: "drop.fill", label: "Showerthoughts",
+                             trailing: AnyView(NextButton(rotationKey: entry.rotationKey)))
                 Spacer(minLength: 2)
                 Text(post.title)
                     .font(titleFont).fontWeight(.semibold)
@@ -61,7 +60,8 @@ struct JokesWidgetView: View {
         } content: { renders in
             let post = renders[0].post
             VStack(alignment: .leading, spacing: 6) {
-                WidgetHeader(icon: "face.smiling.fill", label: "r/Jokes")
+                WidgetHeader(icon: "face.smiling.fill", label: "r/Jokes",
+                             trailing: AnyView(NextButton(rotationKey: entry.rotationKey)))
                 Spacer(minLength: 2)
                 Text(post.title)
                     .font(setupFont).fontWeight(.semibold)

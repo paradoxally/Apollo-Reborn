@@ -1,6 +1,7 @@
 import SwiftUI
 import WidgetKit
 import UIKit
+import AppIntents
 
 /// Shared shell: routes the entry state to content vs. message, and paints the
 /// container background. Non-content states are color-coded (orange=loading,
@@ -68,17 +69,62 @@ struct MessageView: View {
 
 // MARK: - Reusable bits
 
-/// Small header: an SF Symbol + subreddit/label.
+/// Small header: an SF Symbol + subreddit/label, with an optional trailing
+/// interactive button (↻ next, or refresh).
 struct WidgetHeader: View {
     let icon: String
     let label: String
+    var trailing: AnyView? = nil
     var body: some View {
         HStack(spacing: 5) {
             Image(systemName: icon).font(.caption2)
             Text(label).font(.caption2).fontWeight(.bold)
-            Spacer()
+            Spacer(minLength: 4)
+            if let trailing { trailing }
         }
         .foregroundStyle(.white.opacity(0.95))
+    }
+}
+
+/// "Show another" button bound to a widget's rotation key. Renders nothing if
+/// the key is absent.
+struct NextButton: View {
+    let rotationKey: String?
+    var body: some View {
+        if let key = rotationKey {
+            Button(intent: NextItemIntent(key: key)) {
+                Image(systemName: "arrow.clockwise").font(.caption2.weight(.bold))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+/// Circular ↻ button overlaid on image widgets (Single Post, Photo).
+struct NextOverlayButton: View {
+    let rotationKey: String?
+    var body: some View {
+        if let key = rotationKey {
+            Button(intent: NextItemIntent(key: key)) {
+                Image(systemName: "arrow.clockwise")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(.white)
+                    .padding(6)
+                    .background(.black.opacity(0.4), in: Circle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+/// Refresh (re-fetch) button for the Feed widget kind.
+struct ReloadButton: View {
+    let kind: String
+    var body: some View {
+        Button(intent: ReloadKindIntent(kind: kind)) {
+            Image(systemName: "arrow.clockwise").font(.caption2.weight(.bold))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -124,4 +170,73 @@ extension View {
 func imageFromData(_ data: Data?) -> Image? {
     guard let data, let ui = UIImage(data: data) else { return nil }
     return Image(uiImage: ui)
+}
+
+func firstPost(_ entry: WidgetEntry) -> RedditPost? {
+    if case .posts(let r) = entry.state { return r.first?.post }
+    return nil
+}
+
+func isAccessoryFamily(_ family: WidgetFamily) -> Bool {
+    switch family {
+    case .accessoryRectangular, .accessoryInline, .accessoryCircular: return true
+    default: return false
+    }
+}
+
+/// Lock-screen (accessory) rendering for a text post. Accessory widgets are
+/// monochrome/tinted by the system, so no colors/images — just text + a symbol.
+/// Tapping opens the post in Apollo.
+struct AccessoryPostView: View {
+    @Environment(\.widgetFamily) private var family
+    let entry: WidgetEntry
+    let label: String
+    let icon: String
+
+    var body: some View {
+        content
+            .widgetURL(firstPost(entry)?.apolloURL)
+            .containerBackground(.clear, for: .widget)
+    }
+
+    @ViewBuilder private var content: some View {
+        if let post = firstPost(entry) {
+            switch family {
+            case .accessoryInline:
+                Label(post.title, systemImage: icon).lineLimit(1)
+            case .accessoryCircular:
+                Image(systemName: icon).font(.title2).widgetAccentable()
+            default: // accessoryRectangular
+                VStack(alignment: .leading, spacing: 1) {
+                    Label(label.uppercased(), systemImage: icon)
+                        .font(.system(size: 11, weight: .bold))
+                        .widgetAccentable()
+                    Text(post.title)
+                        .font(.system(size: 13))
+                        .lineLimit(3)
+                        .minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        } else {
+            // No content yet (setup/loading/error) — keep it terse for the lock screen.
+            switch family {
+            case .accessoryInline: Label(accessoryNote, systemImage: icon).lineLimit(1)
+            case .accessoryCircular: Image(systemName: icon).font(.title2)
+            default:
+                VStack(alignment: .leading) {
+                    Label(label.uppercased(), systemImage: icon).font(.system(size: 11, weight: .bold)).widgetAccentable()
+                    Text(accessoryNote).font(.system(size: 13)).lineLimit(2)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+        }
+    }
+
+    private var accessoryNote: String {
+        switch entry.state {
+        case .needsSetup: return "Set up in Apollo"
+        case .error: return "Tap to open Apollo"
+        default: return "Loading…"
+        }
+    }
 }

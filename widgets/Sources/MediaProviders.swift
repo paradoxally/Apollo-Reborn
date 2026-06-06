@@ -28,7 +28,7 @@ struct JokesProvider: IntentTimelineProvider {
         runPostTimeline(
             code: configuration.setupCode, cacheKey: "jokes",
             fetch: { try await $0.topPosts(subreddit: "Jokes", sort: .top, limit: 25) },
-            assemble: { assembleText($0.filter { !$0.selftext.isEmpty }) },
+            assemble: { assembleText($0.filter { !$0.selftext.isEmpty }, key: "jokes") },
             completion: completion)
     }
 }
@@ -55,7 +55,7 @@ struct SinglePostProvider: IntentTimelineProvider {
         runPostTimeline(
             code: configuration.setupCode, cacheKey: "single.\(sub)",
             fetch: { try await $0.topPosts(subreddit: sub, sort: .hot, limit: 25) },
-            assemble: { await assembleWithImages($0, maxPixel: 600) },
+            assemble: { await assembleWithImages($0, key: "single.\(sub)", maxPixel: 600) },
             completion: completion)
     }
 }
@@ -115,7 +115,7 @@ struct PhotoProvider: IntentTimelineProvider {
         runPostTimeline(
             code: configuration.setupCode, cacheKey: "photo.\(sub)",
             fetch: { try await $0.topPosts(subreddit: sub, sort: .top, limit: 25).filter { $0.isImagePost } },
-            assemble: { await assembleWithImages($0, maxPixel: 800) },
+            assemble: { await assembleWithImages($0, key: "photo.\(sub)", maxPixel: 800) },
             completion: completion)
     }
 }

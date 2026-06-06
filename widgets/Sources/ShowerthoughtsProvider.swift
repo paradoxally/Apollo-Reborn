@@ -26,7 +26,7 @@ struct ShowerthoughtsProvider: IntentTimelineProvider {
             cacheKey: "showerthoughts",
             fetch: { try await $0.topPosts(subreddit: "showerthoughts", sort: .topWeek) },
             // Rotate by the button-driven offset so each "next" tap shows a new one.
-            assemble: { assembleText(ThoughtRotation.rotated($0)) },
+            assemble: { assembleText($0, key: "showerthoughts") },
             completion: completion)
     }
 }

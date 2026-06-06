@@ -22,7 +22,8 @@ struct ShowerthoughtsWidget: Widget {
         }
         .configurationDisplayName("Showerthoughts")
         .description("Top posts from r/showerthoughts.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge,
+                            .accessoryRectangular, .accessoryInline, .accessoryCircular])
     }
 }
 
@@ -50,7 +51,8 @@ struct SinglePostWidget: Widget {
         }
         .configurationDisplayName("Post")
         .description("The top post from a subreddit you choose.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge,
+                            .accessoryRectangular, .accessoryInline])
     }
 }
 

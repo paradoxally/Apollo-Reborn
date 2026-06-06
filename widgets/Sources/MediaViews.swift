@@ -24,6 +24,14 @@ struct SinglePostWidgetView: View {
     let entry: WidgetEntry
 
     var body: some View {
+        if isAccessoryFamily(family) {
+            AccessoryPostView(entry: entry, label: "Post", icon: "doc.text.image")
+        } else {
+            homeBody
+        }
+    }
+
+    private var homeBody: some View {
         WidgetShell(entry: entry) {
             mediaBackground(entry, fallback: BlueGradient())
         } content: { renders in
@@ -45,6 +53,7 @@ struct SinglePostWidgetView: View {
                     .padding(-20)
                     .allowsHitTesting(false)
             }
+            .overlay(alignment: .topTrailing) { NextOverlayButton(rotationKey: entry.rotationKey) }
             .opensInApollo(post)
         }
     }
@@ -75,6 +84,7 @@ struct PhotoWidgetView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topTrailing) { NextOverlayButton(rotationKey: entry.rotationKey) }
             .opensInApollo(post)
         }
     }
@@ -100,7 +110,8 @@ struct FeedWidgetView: View {
         } content: { renders in
             let sub = renders.first?.post.subreddit ?? ""
             VStack(alignment: .leading, spacing: 6) {
-                WidgetHeader(icon: "list.bullet.below.rectangle", label: "r/\(sub)")
+                WidgetHeader(icon: "list.bullet.below.rectangle", label: "r/\(sub)",
+                             trailing: AnyView(ReloadButton(kind: "FeedWidget")))
                 ForEach(Array(renders.prefix(rowCount)), id: \.post.id) { render in
                     rowLink(render)
                     if render.post.id != renders.prefix(rowCount).last?.post.id {

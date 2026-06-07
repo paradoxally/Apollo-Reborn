@@ -28,6 +28,12 @@ struct WidgetEntry: TimelineEntry {
     /// for sources like r/popular, so the header must show the configured
     /// source, not the first post's subreddit.
     var sourceLabel: String? = nil
+    /// Calendar widget rendering config (ignored by the other widgets). The
+    /// displayed date is `date`; each Calendar entry is one locked day.
+    var calendarStyle: CalendarStyle = .card
+    var calendarShowTitle: Bool = false
+    /// Photo widget caption config (ignored by the other widgets).
+    var photo: PhotoOptions = PhotoOptions()
 
     static let loading = WidgetEntry(date: Date(), state: .loading)
 
@@ -100,6 +106,15 @@ func feedSourceLabel(_ sub: String) -> String {
 func stamped(_ timeline: Timeline<WidgetEntry>, sourceLabel: String) -> Timeline<WidgetEntry> {
     let entries = timeline.entries.map { e -> WidgetEntry in
         var e = e; e.sourceLabel = sourceLabel; return e
+    }
+    return Timeline(entries: entries, policy: timeline.policy)
+}
+
+/// Stamp the Photo widget's caption options onto every entry of a built
+/// timeline, keeping the shared timeline builders config-agnostic.
+func stamped(_ timeline: Timeline<WidgetEntry>, photo: PhotoOptions) -> Timeline<WidgetEntry> {
+    let entries = timeline.entries.map { e -> WidgetEntry in
+        var e = e; e.photo = photo; return e
     }
     return Timeline(entries: entries, policy: timeline.policy)
 }

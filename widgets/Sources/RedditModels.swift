@@ -62,6 +62,26 @@ enum DisplayMode: Int, Codable, Hashable {
     case clean, standard, detailed
 }
 
+/// Caption toggles for the Photo widget. Defaults match its original minimal
+/// look (title only), so existing behaviour is preserved when unset.
+struct PhotoOptions: Hashable {
+    var showTitle: Bool = true
+    var showSubreddit: Bool = false
+    var showStats: Bool = false
+}
+
+/// Date-overlay style for the Calendar widget. Raw values are stable so they
+/// can ride along in a `WidgetEntry`; the SiriKit `RebornDateStyle` enum maps
+/// onto these in `CalendarProvider`.
+///   minimal – big day number, small weekday/month
+///   card    – translucent calendar-tile block (weekday / day / month)
+///   poster  – large stacked typography across the image
+///   pill    – compact top-left date capsule
+///   stamp   – magazine-style ruled date in the corner
+enum CalendarStyle: Int, Codable, Hashable {
+    case minimal, card, poster, pill, stamp
+}
+
 /// Listing sort, mapped to the Reddit API path + time window.
 enum WidgetSort {
     case hot, new, top, topWeek, rising

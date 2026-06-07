@@ -5,11 +5,18 @@ let rwLog = Logger(subsystem: "com.christianselig.Apollo.RebornWidgets", categor
 
 /// URLSession with tight timeouts so the widget never hangs past WidgetKit's
 /// timeline budget.
+///
+/// Caching is fully disabled: a widget must always show FRESH listings. With the
+/// default in-memory `URLCache`, repeated fetches of the same listing URL (same
+/// subreddit + sort) could be served from cache, which looked like the widget
+/// being "stuck" on the same posts and ignoring refresh.
 let rwSession: URLSession = {
     let cfg = URLSessionConfiguration.ephemeral
     cfg.timeoutIntervalForRequest = 8
     cfg.timeoutIntervalForResource = 12
     cfg.waitsForConnectivity = false
+    cfg.urlCache = nil
+    cfg.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
     return URLSession(configuration: cfg)
 }()
 
@@ -113,13 +120,22 @@ struct RedditAppOnlyClient {
         comps.queryItems = items
 
         var req = URLRequest(url: comps.url!)
+        req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         req.setValue("bearer \(bearer)", forHTTPHeaderField: "Authorization")
 
+        rwLog.log("fetch \(comps.url?.absoluteString ?? "?", privacy: .public)")
         let (data, resp) = try await rwSession.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw ClientError.badResponse }
-        guard http.statusCode == 200 else { throw ClientError.http(http.statusCode) }
-        return Self.parseListing(data, allowNSFW: allowNSFW)
+        guard http.statusCode == 200 else {
+            rwLog.error("fetch r/\(sub, privacy: .public)/\(sort.path, privacy: .public) → HTTP \(http.statusCode)")
+            throw ClientError.http(http.statusCode)
+        }
+        let posts = Self.parseListing(data, allowNSFW: allowNSFW)
+        let firstIDs = posts.prefix(3).map { $0.id }.joined(separator: ",")
+        let window = sort.timeWindow ?? "-"
+        rwLog.log("fetched r/\(sub, privacy: .public) sort=\(sort.path, privacy: .public) t=\(window, privacy: .public) → \(posts.count) posts [\(firstIDs, privacy: .public)]")
+        return posts
     }
 
     /// A subreddit's icon URL + brand color hex from /about (best-effort).

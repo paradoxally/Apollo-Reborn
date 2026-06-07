@@ -10,6 +10,34 @@ struct ApolloRebornWidgetBundle: WidgetBundle {
         FeedWidget()
         PhotoWidget()
         ShortcutsWidget()
+        ApolloQuickActionsWidget()
+        CalendarWidget()
+    }
+}
+
+struct CalendarWidget: Widget {
+    let kind = "CalendarWidget"
+    var body: some WidgetConfiguration {
+        IntentConfiguration(kind: kind,
+                            intent: CalendarConfigurationIntent.self,
+                            provider: CalendarProvider()) { entry in
+            CalendarWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Calendar")
+        .description("One photo a day from a subreddit, with the date overlaid. Locked daily — it won't change until tomorrow.")
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+    }
+}
+
+struct ApolloQuickActionsWidget: Widget {
+    let kind = "ApolloQuickActionsWidget"
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: kind, provider: ApolloQuickActionsProvider()) { entry in
+            ApolloQuickActionsWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Apollo Actions")
+        .description("Quick actions for search, home, popular, all posts, and inbox.")
+        .supportedFamilies([.systemMedium])
     }
 }
 
@@ -89,12 +117,12 @@ struct PhotoWidget: Widget {
     let kind = "PhotoWidget"
     var body: some WidgetConfiguration {
         IntentConfiguration(kind: kind,
-                            intent: SubredditConfigurationIntent.self,
+                            intent: PhotoConfigurationIntent.self,
                             provider: PhotoProvider()) { entry in
             PhotoWidgetView(entry: entry)
         }
         .configurationDisplayName("Photo")
-        .description("The top image from a subreddit you choose.")
+        .description("The top image from a subreddit you choose. Toggle the title, subreddit and stats.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }

@@ -3,12 +3,12 @@ import Foundation
 
 // MARK: Subreddit config helpers
 
-private func resolvedSubreddit(_ raw: String?, default def: String) -> String {
+func resolvedSubreddit(_ raw: String?, default def: String) -> String {
     let s = RedditPost.normalizeSubreddit(raw ?? "")
     return s.isEmpty ? def : s
 }
 
-private func widgetSort(_ sort: RebornSort, default def: WidgetSort) -> WidgetSort {
+func widgetSort(_ sort: RebornSort, default def: WidgetSort) -> WidgetSort {
     switch sort {
     case .hot: return .hot
     case .new: return .new
@@ -17,6 +17,11 @@ private func widgetSort(_ sort: RebornSort, default def: WidgetSort) -> WidgetSo
     @unknown default: return def
     }
 }
+
+/// Cache-key suffix that distinguishes one sort from another, so a fetch failure
+/// (e.g. a 429) for "top" never falls back to the cached "hot" posts. Without
+/// this every sort shared one bucket and looked like the sort was ignored.
+func sortSuffix(_ s: WidgetSort) -> String { ".\(s.path)\(s.timeWindow ?? "")" }
 
 /// Map the SiriKit Display enum to our render mode. `.unknown` (unset) → Standard.
 private func displayMode(_ d: RebornDisplay) -> DisplayMode {
@@ -74,7 +79,8 @@ struct SinglePostProvider: IntentTimelineProvider {
         }
         let sub = resolvedSubreddit(configuration.subreddit, default: "popular")
         let nsfw = configuration.allowNSFW?.boolValue ?? false
-        if let first = PostCache.load("single.\(sub)\(nsfw ? ".x" : "")").first {
+        let sort = widgetSort(configuration.sort, default: .hot)
+        if let first = PostCache.load("single.\(sub)\(sortSuffix(sort))\(nsfw ? ".x" : "")").first {
             completion(WidgetEntry(date: Date(), state: .posts([RenderPost(post: first, imageData: nil)]),
                                    display: display, showPreview: showPreview))
         } else {
@@ -91,15 +97,23 @@ struct SinglePostProvider: IntentTimelineProvider {
         let nsfw = configuration.allowNSFW?.boolValue ?? false
         let display = displayMode(configuration.display)
         let showPreview = configuration.showPreview?.boolValue ?? false
-        // Keep NSFW + SFW pools in separate cache buckets so toggling the
-        // setting never leaves stale opposite-rated posts on screen.
-        let key = "single.\(sub)\(nsfw ? ".x" : "")"
+        // Keep NSFW + SFW pools AND each sort in separate cache buckets so
+        // toggling never leaves stale opposite-rated or wrong-sort posts.
+        let key = "single.\(sub)\(sortSuffix(sort))\(nsfw ? ".x" : "")"
+        // Lock-screen (accessory) widgets are text-only — skip image downloads
+        // so the timeline builds fast and never risks the tight accessory
+        // reload budget (a slow build shows the redacted placeholder skeleton).
+        let accessory = isAccessoryFamily(context.family)
+        rwLog.log("getTimeline Post r/\(sub, privacy: .public) family=\(familyName(context.family), privacy: .public) sortRaw=\(configuration.sort.rawValue) → \(sort.path, privacy: .public)")
         runPostTimeline(
             code: configuration.setupCode, cacheKey: key,
             fetch: { try await $0.topPosts(subreddit: sub, sort: sort, limit: 50, allowNSFW: nsfw) },
             assemble: { posts in
-                stamped(await assembleWithImages(posts, key: key, maxPixel: 600),
-                        display: display, showPreview: showPreview)
+                if accessory {
+                    return stamped(assembleText(posts, key: key), display: display, showPreview: showPreview)
+                }
+                return stamped(await assembleWithImages(posts, key: key, maxPixel: 600),
+                               display: display, showPreview: showPreview)
             },
             completion: completion)
     }
@@ -118,7 +132,8 @@ struct FeedProvider: IntentTimelineProvider {
         let sub = resolvedSubreddit(configuration.subreddit, default: "popular")
         let label = feedSourceLabel(sub)
         if context.isPreview { completion(.sample(WidgetSample.feed, sourceLabel: label)); return }
-        let cached = PostCache.load("feed.\(sub)")
+        let sort = widgetSort(configuration.sort, default: .hot)
+        let cached = PostCache.load("feed.\(sub)\(sortSuffix(sort))")
         if !cached.isEmpty {
             completion(WidgetEntry(date: Date(),
                                    state: .posts(cached.map { RenderPost(post: $0, imageData: nil) }),
@@ -129,18 +144,19 @@ struct FeedProvider: IntentTimelineProvider {
     func getTimeline(for configuration: Intent, in context: Context,
                      completion: @escaping (Timeline<WidgetEntry>) -> Void) {
         let sub = resolvedSubreddit(configuration.subreddit, default: "popular")
-        let sort: WidgetSort = RefreshRequest.wantsLatest(kind: "FeedWidget")
-            ? .new
-            : widgetSort(configuration.sort, default: .hot)
+        let forcedLatest = RefreshRequest.wantsLatest(kind: "FeedWidget")
+        let sort: WidgetSort = forcedLatest ? .new : widgetSort(configuration.sort, default: .hot)
         let label = feedSourceLabel(sub)
+        let key = "feed.\(sub)\(sortSuffix(sort))"
+        rwLog.log("Feed r/\(sub, privacy: .public) sortRaw=\(configuration.sort.rawValue) forcedLatest=\(forcedLatest) → \(sort.path, privacy: .public)")
         runPostTimeline(
-            code: configuration.setupCode, cacheKey: "feed.\(sub)",
+            code: configuration.setupCode, cacheKey: key,
             fetch: { try await $0.topPosts(subreddit: sub, sort: sort, limit: 12) },
             assemble: { posts in
                 // Download small thumbnails (concurrently) for the rows shown.
                 let renders = await downloadImages(Array(posts.prefix(8)),
                                                    keyPath: { $0.thumbnailURL }, maxPixel: 160)
-                return stamped(listTimeline(renders, key: "feed.\(sub)"), sourceLabel: label)
+                return stamped(listTimeline(renders, key: key), sourceLabel: label)
             },
             completion: completion)
     }
@@ -150,17 +166,36 @@ struct FeedProvider: IntentTimelineProvider {
 
 struct PhotoProvider: IntentTimelineProvider {
     typealias Entry = WidgetEntry
-    typealias Intent = SubredditConfigurationIntent
+    typealias Intent = PhotoConfigurationIntent
+
+    /// Read the caption toggles. `showTitle` defaults to true (Photo's original
+    /// behaviour); the rest default off to keep the minimal look.
+    private func photoOptions(_ c: Intent) -> PhotoOptions {
+        PhotoOptions(showTitle: c.showTitle?.boolValue ?? true,
+                     showSubreddit: c.showSubreddit?.boolValue ?? false,
+                     showStats: c.showStats?.boolValue ?? false)
+    }
 
     func placeholder(in context: Context) -> WidgetEntry { .sample([WidgetSample.feed[4]]) }
 
     func getSnapshot(for configuration: Intent, in context: Context,
                      completion: @escaping (WidgetEntry) -> Void) {
-        if context.isPreview { completion(.sample([WidgetSample.feed[4]])); return }
+        let opts = photoOptions(configuration)
+        if context.isPreview {
+            var e = WidgetEntry.sample([WidgetSample.feed[4]]); e.photo = opts
+            completion(e); return
+        }
         let sub = resolvedSubreddit(configuration.subreddit, default: "EarthPorn")
-        if let first = PostCache.load("photo.\(sub)").first {
-            completion(WidgetEntry(date: Date(), state: .posts([RenderPost(post: first, imageData: nil)])))
-        } else { completion(.sample([WidgetSample.feed[4]])) }
+        let nsfw = configuration.allowNSFW?.boolValue ?? false
+        let sort = widgetSort(configuration.sort, default: .top)
+        if let first = PostCache.load("photo.\(sub)\(sortSuffix(sort))\(nsfw ? ".x" : "")").first {
+            var e = WidgetEntry(date: Date(), state: .posts([RenderPost(post: first, imageData: nil)]))
+            e.photo = opts
+            completion(e)
+        } else {
+            var e = WidgetEntry.sample([WidgetSample.feed[4]]); e.photo = opts
+            completion(e)
+        }
     }
 
     func getTimeline(for configuration: Intent, in context: Context,
@@ -168,10 +203,16 @@ struct PhotoProvider: IntentTimelineProvider {
         let sub = resolvedSubreddit(configuration.subreddit, default: "EarthPorn")
         // Photos default to Top (best images) when no sort is chosen.
         let sort = widgetSort(configuration.sort, default: .top)
+        let nsfw = configuration.allowNSFW?.boolValue ?? false
+        let opts = photoOptions(configuration)
+        // Separate NSFW/SFW + per-sort cache buckets so toggling never leaves
+        // stale opposite-rated or wrong-sort images on screen.
+        let key = "photo.\(sub)\(sortSuffix(sort))\(nsfw ? ".x" : "")"
+        rwLog.log("Photo r/\(sub, privacy: .public) sortRaw=\(configuration.sort.rawValue) → \(sort.path, privacy: .public)")
         runPostTimeline(
-            code: configuration.setupCode, cacheKey: "photo.\(sub)",
-            fetch: { try await $0.topPosts(subreddit: sub, sort: sort, limit: 25).filter { $0.isImagePost } },
-            assemble: { await assembleWithImages($0, key: "photo.\(sub)", maxPixel: 800) },
+            code: configuration.setupCode, cacheKey: key,
+            fetch: { try await $0.topPosts(subreddit: sub, sort: sort, limit: 25, allowNSFW: nsfw).filter { $0.isImagePost } },
+            assemble: { stamped(await assembleWithImages($0, key: key, maxPixel: 800), photo: opts) },
             completion: completion)
     }
 }

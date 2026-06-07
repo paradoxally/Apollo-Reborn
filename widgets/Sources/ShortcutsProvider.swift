@@ -6,6 +6,12 @@ struct ShortcutItem: Hashable {
     let subreddit: String
     let iconData: Data?
     var colorHex: String? = nil
+    var destinationURL: URL? = nil
+    var iconSubreddit: String? = nil
+
+    var label: String { subreddit }
+    var iconLookupSubreddit: String { iconSubreddit ?? subreddit }
+    var apolloURL: URL? { destinationURL ?? RedditPost.subredditURL(subreddit) }
 }
 
 struct ShortcutsEntry: TimelineEntry {
@@ -31,28 +37,28 @@ struct ShortcutsProvider: IntentTimelineProvider {
 
     func getSnapshot(for configuration: Intent, in context: Context,
                      completion: @escaping (ShortcutsEntry) -> Void) {
-        let subs = Self.parseSubs(configuration.subreddits)
-        if subs.isEmpty { completion(.placeholder); return }
+        let items = Self.items(for: configuration)
+        if items.isEmpty { completion(.placeholder); return }
         completion(ShortcutsEntry(date: Date(),
-                                  items: subs.map { ShortcutItem(subreddit: $0, iconData: nil) },
+                                  items: items,
                                   needsConfig: false))
     }
 
     func getTimeline(for configuration: Intent, in context: Context,
                      completion: @escaping (Timeline<ShortcutsEntry>) -> Void) {
-        let subs = Self.parseSubs(configuration.subreddits)
-        guard !subs.isEmpty else {
+        let shortcuts = Self.items(for: configuration)
+        guard !shortcuts.isEmpty else {
             completion(Timeline(entries: [ShortcutsEntry(date: Date(), items: [], needsConfig: true)],
                                 policy: .never))
             return
         }
 
         Task {
-            var items = subs.map { ShortcutItem(subreddit: $0, iconData: nil) }
+            var items = shortcuts
             // Best-effort icons via the shared setup code; letter avatars otherwise.
             if let creds = SetupCode.resolve(configuration.setupCode) {
                 let client = RedditAppOnlyClient(clientID: creds.clientID, userAgent: creds.resolvedUserAgent)
-                items = await Self.withIcons(subs, client: client)
+                items = await Self.withIcons(shortcuts, client: client)
             }
             // Refresh icons daily; subreddit icons rarely change.
             completion(Timeline(entries: [ShortcutsEntry(date: Date(), items: items, needsConfig: false)],
@@ -61,11 +67,11 @@ struct ShortcutsProvider: IntentTimelineProvider {
     }
 
     /// Concurrently fetch each subreddit's icon + brand color, preserving order.
-    private static func withIcons(_ subs: [String], client: RedditAppOnlyClient) async -> [ShortcutItem] {
+    private static func withIcons(_ items: [ShortcutItem], client: RedditAppOnlyClient) async -> [ShortcutItem] {
         await withTaskGroup(of: (Int, Data?, String?).self) { group in
-            for (i, sub) in subs.enumerated() {
+            for (i, item) in items.enumerated() {
                 group.addTask {
-                    let about = try? await client.subredditAbout(sub)
+                    let about = try? await client.subredditAbout(item.iconLookupSubreddit)
                     let data = await ImageLoader.fetchDownsampled(about?.icon ?? nil, maxPixel: 120)
                     return (i, data, about?.colorHex)
                 }
@@ -73,14 +79,61 @@ struct ShortcutsProvider: IntentTimelineProvider {
             var icons: [Int: Data?] = [:]
             var colors: [Int: String?] = [:]
             for await (i, data, color) in group { icons[i] = data; colors[i] = color }
-            return subs.enumerated().map {
-                ShortcutItem(subreddit: $1, iconData: icons[$0] ?? nil, colorHex: colors[$0] ?? nil)
+            return items.enumerated().map { idx, item in
+                ShortcutItem(subreddit: item.subreddit,
+                             iconData: icons[idx] ?? item.iconData,
+                             colorHex: colors[idx] ?? item.colorHex,
+                             destinationURL: item.destinationURL,
+                             iconSubreddit: item.iconSubreddit)
             }
         }
     }
 
+    static func items(for configuration: Intent) -> [ShortcutItem] {
+        switch configuration.source {
+        case .popular:
+            return [
+                preset("Popular", url: "apollo://reddit.com/r/popular", icon: "popular"),
+                preset("All", url: "apollo://reddit.com/r/all", icon: "all"),
+                custom("AskReddit"), custom("todayilearned"), custom("technology"), custom("pics"),
+                custom("aww"), custom("news"),
+            ]
+        case .new:
+            return [
+                preset("Popular New", url: "apollo://reddit.com/r/popular/new", icon: "popular"),
+                preset("All New", url: "apollo://reddit.com/r/all/new", icon: "all"),
+                custom("worldnews"), custom("technology"), custom("apple"), custom("iOS"),
+                custom("movies"), custom("gaming"),
+            ]
+        case .home:
+            return [
+                preset("Home", url: "apollo://reddit.com", icon: "popular"),
+                preset("Popular", url: "apollo://reddit.com/r/popular", icon: "popular"),
+                preset("All", url: "apollo://reddit.com/r/all", icon: "all"),
+                custom("AskReddit"), custom("todayilearned"), custom("technology"),
+                custom("pics"), custom("aww"),
+            ]
+        case .custom:
+            return parseSubs(configuration.subreddits).map { custom($0) }
+        @unknown default:
+            let customItems = parseSubs(configuration.subreddits).map { custom($0) }
+            return customItems.isEmpty ? [] : customItems
+        }
+    }
+
+    private static func custom(_ sub: String) -> ShortcutItem {
+        ShortcutItem(subreddit: sub, iconData: nil)
+    }
+
+    private static func preset(_ label: String, url: String, icon: String) -> ShortcutItem {
+        ShortcutItem(subreddit: label,
+                     iconData: nil,
+                     destinationURL: URL(string: url),
+                     iconSubreddit: icon)
+    }
+
     /// Split a user-typed list on commas/whitespace/newlines, normalize, dedupe,
-    /// cap at 12 (the large family's capacity).
+    /// cap at 8 (the large family's capacity).
     static func parseSubs(_ raw: String?) -> [String] {
         guard let raw else { return [] }
         let parts = raw.split(whereSeparator: { ", \n\t".contains($0) })
@@ -91,7 +144,7 @@ struct ShortcutsProvider: IntentTimelineProvider {
             guard !s.isEmpty else { continue }
             let lower = s.lowercased()
             if seen.insert(lower).inserted { out.append(s) }
-            if out.count == 12 { break }
+            if out.count == 8 { break }
         }
         return out
     }

@@ -114,9 +114,16 @@ struct PhotoWidgetView: View {
             mediaBackground(entry, fallback: BlueGradient())
         } content: { renders in
             let post = renders[0].post
-            VStack(alignment: .leading) {
+            let opts = entry.photo
+            // Subreddit/stats want a caption row; title shows when enabled.
+            // Small widgets only show the title (a stats line is too cramped),
+            // but still honor the user turning the title off.
+            let showCaption = opts.showSubreddit || opts.showStats
+            let hasOverlayText = opts.showTitle || (showCaption && family != .systemSmall)
+
+            VStack(alignment: .leading, spacing: 3) {
                 Spacer(minLength: 0)
-                if family != .systemSmall {
+                if opts.showTitle {
                     Text(post.title)
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(.white)
@@ -124,12 +131,22 @@ struct PhotoWidgetView: View {
                         .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                if showCaption, family != .systemSmall {
+                    StatsLine(post: post,
+                              display: opts.showStats ? .standard : .clean,
+                              showSubreddit: opts.showSubreddit,
+                              showComments: opts.showStats)
+                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
             .background(alignment: .bottom) {
-                LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
-                    .padding(-24)
-                    .allowsHitTesting(false)
+                // Only darken the bottom when there's text to keep legible.
+                if hasOverlayText {
+                    LinearGradient(colors: [.clear, .black.opacity(0.7)], startPoint: .center, endPoint: .bottom)
+                        .padding(-24)
+                        .allowsHitTesting(false)
+                }
             }
             .overlay(alignment: .topTrailing) {
                 NextOverlayButton(rotationKey: entry.rotationKey)

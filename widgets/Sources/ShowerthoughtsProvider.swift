@@ -22,6 +22,7 @@ struct ShowerthoughtsProvider: IntentTimelineProvider {
 
     func getTimeline(for configuration: Intent, in context: Context,
                      completion: @escaping (Timeline<WidgetEntry>) -> Void) {
+        rwLog.log("getTimeline Showerthoughts family=\(familyName(context.family), privacy: .public)")
         runPostTimeline(
             code: configuration.setupCode,
             cacheKey: "showerthoughts",

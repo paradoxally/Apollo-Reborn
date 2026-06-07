@@ -230,6 +230,20 @@ func isAccessoryFamily(_ family: WidgetFamily) -> Bool {
     }
 }
 
+/// Short stable name for a widget family, for diagnostic logging.
+func familyName(_ family: WidgetFamily) -> String {
+    switch family {
+    case .systemSmall: return "small"
+    case .systemMedium: return "medium"
+    case .systemLarge: return "large"
+    case .systemExtraLarge: return "xlarge"
+    case .accessoryRectangular: return "accRect"
+    case .accessoryInline: return "accInline"
+    case .accessoryCircular: return "accCircular"
+    @unknown default: return "family\(family.rawValue)"
+    }
+}
+
 /// Lock-screen (accessory) rendering for a text post. Accessory widgets are
 /// monochrome/tinted by the system, so no colors/images — just text + a symbol.
 /// Tapping opens the post in Apollo.

@@ -60,7 +60,7 @@ struct SinglePostWidget: Widget {
     let kind = "SinglePostWidget"
     var body: some WidgetConfiguration {
         IntentConfiguration(kind: kind,
-                            intent: SubredditConfigurationIntent.self,
+                            intent: PostConfigurationIntent.self,
                             provider: SinglePostProvider()) { entry in
             SinglePostWidgetView(entry: entry)
         }

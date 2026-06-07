@@ -35,32 +35,72 @@ struct SinglePostWidgetView: View {
         WidgetShell(entry: entry) {
             mediaBackground(entry, fallback: BlueGradient())
         } content: { renders in
-            let post = renders[0].post
-            VStack(alignment: .leading, spacing: 3) {
-                Spacer(minLength: 0)
-                Text(post.title)
-                    .font(.system(size: family == .systemSmall ? 14 : 17, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(family == .systemSmall ? 3 : 4)
-                    .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
-                // Small has no room for the subreddit; larger sizes show it.
-                StatsLine(post: post,
-                          showSubreddit: family != .systemSmall,
-                          showComments: family != .systemSmall)
-                    .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+            let render = renders[0]
+            // Adaptive: image posts get the photo-card treatment; text posts
+            // (showerthoughts, jokes, any self-post) render title + body on the
+            // gradient, like Apollo's text widgets.
+            if render.imageData != nil {
+                imageContent(render.post)
+            } else {
+                textContent(render.post)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-            .padding(.top, 30)
-            .background(alignment: .bottom) {
-                LinearGradient(colors: [.clear, .black.opacity(0.55), .black.opacity(0.85)],
-                               startPoint: .center, endPoint: .bottom)
-                    .padding(-24)
-                    .allowsHitTesting(false)
-            }
-            .overlay(alignment: .topTrailing) { NextOverlayButton(rotationKey: entry.rotationKey) }
-            .opensInApollo(post)
         }
+    }
+
+    private func imageContent(_ post: RedditPost) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Spacer(minLength: 0)
+            Text(post.title)
+                .font(.system(size: family == .systemSmall ? 14 : 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .minimumScaleFactor(0.7)
+                .lineLimit(family == .systemSmall ? 3 : 4)
+                .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+            StatsLine(post: post,
+                      display: entry.display,
+                      showSubreddit: family != .systemSmall,
+                      showComments: family != .systemSmall)
+                .shadow(color: .black.opacity(0.4), radius: 3, y: 1)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
+        .padding(.top, 30)
+        .background(alignment: .bottom) {
+            LinearGradient(colors: [.clear, .black.opacity(0.55), .black.opacity(0.85)],
+                           startPoint: .center, endPoint: .bottom)
+                .padding(-24)
+                .allowsHitTesting(false)
+        }
+        .overlay(alignment: .topTrailing) {
+            NextOverlayButton(rotationKey: entry.rotationKey)
+                .offset(y: -6)
+        }
+        .opensInApollo(post)
+    }
+
+    private func textContent(_ post: RedditPost) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            WidgetHeader(label: "r/\(post.subreddit)",
+                         trailing: AnyView(NextButton(rotationKey: entry.rotationKey)))
+            Spacer(minLength: 2)
+            Text(post.title)
+                .font(.system(size: family == .systemSmall ? 14 : 17, weight: .semibold))
+                .foregroundStyle(.white)
+                .minimumScaleFactor(0.7)
+                .lineLimit(family == .systemLarge ? 6 : (family == .systemSmall ? 5 : 4))
+            // Body preview only when the user enabled "Show Preview Text".
+            if entry.showPreview, !post.selftext.isEmpty {
+                Text(post.selftext)
+                    .font(.system(size: family == .systemLarge ? 15 : 13))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(family == .systemLarge ? 6 : 3)
+            }
+            Spacer(minLength: 2)
+            // Subreddit is already in the header, so omit it here.
+            StatsLine(post: post, display: entry.display, showSubreddit: false)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .opensInApollo(post)
     }
 }
 
@@ -91,7 +131,10 @@ struct PhotoWidgetView: View {
                     .padding(-24)
                     .allowsHitTesting(false)
             }
-            .overlay(alignment: .topTrailing) { NextOverlayButton(rotationKey: entry.rotationKey) }
+            .overlay(alignment: .topTrailing) {
+                NextOverlayButton(rotationKey: entry.rotationKey)
+                    .offset(y: -6)
+            }
             .opensInApollo(post)
         }
     }
@@ -129,6 +172,8 @@ struct FeedWidgetView: View {
                 }
                 Spacer(minLength: 0)
             }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
         }
     }
 

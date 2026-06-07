@@ -96,7 +96,8 @@ struct RedditAppOnlyClient {
         try await topPosts(subreddit: "showerthoughts", sort: .top, limit: limit)
     }
 
-    func topPosts(subreddit: String, sort: WidgetSort, limit: Int = 25) async throws -> [RedditPost] {
+    func topPosts(subreddit: String, sort: WidgetSort, limit: Int = 25,
+                  allowNSFW: Bool = false) async throws -> [RedditPost] {
         let bearer = try await token()
         let sub = RedditPost.normalizeSubreddit(subreddit)
         var comps = URLComponents(string: "https://oauth.reddit.com/r/\(sub)/\(sort.path)")!
@@ -105,6 +106,10 @@ struct RedditAppOnlyClient {
             URLQueryItem(name: "raw_json", value: "1"),
         ]
         if let t = sort.timeWindow { items.append(URLQueryItem(name: "t", value: t)) }
+        // Hint Reddit to include 18+ listings (best-effort; full NSFW access for
+        // dedicated 18+ subs generally needs a logged-in user token, not this
+        // app-only grant).
+        if allowNSFW { items.append(URLQueryItem(name: "include_over_18", value: "1")) }
         comps.queryItems = items
 
         var req = URLRequest(url: comps.url!)
@@ -114,7 +119,7 @@ struct RedditAppOnlyClient {
         let (data, resp) = try await rwSession.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw ClientError.badResponse }
         guard http.statusCode == 200 else { throw ClientError.http(http.statusCode) }
-        return Self.parseListing(data)
+        return Self.parseListing(data, allowNSFW: allowNSFW)
     }
 
     /// A subreddit's icon URL + brand color hex from /about (best-effort).
@@ -141,8 +146,11 @@ struct RedditAppOnlyClient {
         return (icon, colorHex)
     }
 
-    /// Parse a Reddit listing into posts, skipping stickied/meta entries.
-    static func parseListing(_ data: Data) -> [RedditPost] {
+    /// Parse a Reddit listing into posts, applying widget content-eligibility
+    /// rules (PRD §10): skip stickied, NSFW, spoiler, and removed/deleted posts,
+    /// and anything with an empty title. These widgets are a Home Screen surface
+    /// that other people may see, so unsafe content is filtered for every widget.
+    static func parseListing(_ data: Data, allowNSFW: Bool = false) -> [RedditPost] {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let dataObj = root["data"] as? [String: Any],
               let children = dataObj["children"] as? [[String: Any]] else { return [] }
@@ -151,7 +159,7 @@ struct RedditAppOnlyClient {
         for child in children {
             guard let post = child["data"] as? [String: Any],
                   let title = post["title"] as? String,
-                  !(post["stickied"] as? Bool ?? false) else { continue }
+                  isEligible(post, title: title, allowNSFW: allowNSFW) else { continue }
 
             let postHint = post["post_hint"] as? String ?? ""
             let isImage = postHint == "image"
@@ -168,9 +176,27 @@ struct RedditAppOnlyClient {
                 selftext: post["selftext"] as? String ?? "",
                 thumbnailURL: Self.thumbnail(from: post),
                 imageURL: Self.previewImage(from: post),
-                isImagePost: isImage))
+                isImagePost: isImage,
+                created: post["created_utc"] as? Double))
         }
         return out
+    }
+
+    /// Content-eligibility gate for a single listing child (PRD §10).
+    private static func isEligible(_ post: [String: Any], title: String, allowNSFW: Bool) -> Bool {
+        // Non-empty, non-removed/deleted title.
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed == "[removed]" || trimmed == "[deleted]" { return false }
+        // Stickied announcements aren't interesting content.
+        if post["stickied"] as? Bool ?? false { return false }
+        // NSFW is hidden unless this widget opted in; spoiler always hidden.
+        if !allowNSFW, post["over_18"] as? Bool ?? false { return false }
+        if post["spoiler"] as? Bool ?? false { return false }
+        // Mod-removed / author-deleted posts.
+        if (post["removed_by_category"] as? String)?.isEmpty == false { return false }
+        if (post["author"] as? String) == "[deleted]" { return false }
+        if (post["selftext"] as? String) == "[removed]" { return false }
+        return true
     }
 
     private static func looksLikeImage(_ url: String) -> Bool {

@@ -13,6 +13,18 @@ struct RedditPost: Codable, Hashable {
     var thumbnailURL: String?      // small thumbnail for feed rows
     var imageURL: String?          // larger preview for Photo / Single Post
     var isImagePost: Bool
+    var created: Double?           // created_utc epoch seconds (optional: old caches lack it)
+
+    /// Short relative age ("3h", "2d") for the Detailed display mode. Nil when
+    /// the timestamp is unavailable (e.g. decoded from an older cache).
+    var ageString: String? {
+        guard let created else { return nil }
+        let secs = Date().timeIntervalSince1970 - created
+        guard secs >= 0 else { return nil }
+        if secs < 3600 { return "\(max(1, Int(secs / 60)))m" }
+        if secs < 86_400 { return "\(Int(secs / 3600))h" }
+        return "\(Int(secs / 86_400))d"
+    }
 
     /// Deep link that opens this post natively in Apollo. Apollo rewrites a
     /// reddit.com URL to the apollo:// scheme; we emit that scheme directly so
@@ -40,6 +52,14 @@ struct RedditPost: Codable, Hashable {
         if s.hasSuffix("/") { s = String(s.dropLast()) }
         return s
     }
+}
+
+/// How much metadata the Post widget renders (PRD §8.6).
+///   clean    – title + subreddit only
+///   standard – + score + comments
+///   detailed – + age + author
+enum DisplayMode: Int, Codable, Hashable {
+    case clean, standard, detailed
 }
 
 /// Listing sort, mapped to the Reddit API path + time window.

@@ -129,9 +129,12 @@ struct ReloadButton: View {
     }
 }
 
-/// Apollo-style stat line, e.g. "r/Politics ↑57K 💬2K".
+/// Apollo-style stat line, e.g. "r/Politics ↑57K 💬2K". Density follows the
+/// Post widget's DisplayMode: Clean = subreddit only, Standard = + score +
+/// comments, Detailed = + age + author.
 struct StatsLine: View {
     let post: RedditPost
+    var display: DisplayMode = .standard
     var showSubreddit: Bool = true
     var showComments: Bool = true
     var body: some View {
@@ -139,9 +142,19 @@ struct StatsLine: View {
             if showSubreddit, !post.subreddit.isEmpty {
                 Text("r/\(post.subreddit)").fontWeight(.semibold)
             }
-            Label("\(post.score.abbreviated)", systemImage: "arrow.up")
-            if showComments {
-                Label("\(post.numComments.abbreviated)", systemImage: "bubble.right")
+            if display != .clean {
+                Label("\(post.score.abbreviated)", systemImage: "arrow.up")
+                if showComments {
+                    Label("\(post.numComments.abbreviated)", systemImage: "bubble.right")
+                }
+            }
+            if display == .detailed {
+                if let age = post.ageString {
+                    Label(age, systemImage: "clock")
+                }
+                if !post.author.isEmpty {
+                    Text("u/\(post.author)").lineLimit(1)
+                }
             }
         }
         .font(.caption2)

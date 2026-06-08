@@ -53,6 +53,15 @@ struct JokesWidgetView: View {
     let entry: WidgetEntry
 
     var body: some View {
+        if isAccessoryFamily(family) {
+            // Lock Screen shows the setup (title); tap opens Apollo for the punchline.
+            AccessoryPostView(entry: entry, label: "Jokes", icon: "face.smiling")
+        } else {
+            homeBody
+        }
+    }
+
+    private var homeBody: some View {
         WidgetShell(entry: entry) {
             PurpleGradient()
         } content: { renders in

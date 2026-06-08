@@ -12,6 +12,21 @@ struct ApolloRebornWidgetBundle: WidgetBundle {
         ShortcutsWidget()
         ApolloQuickActionsWidget()
         CalendarWidget()
+        HeadlineWidget()
+    }
+}
+
+struct HeadlineWidget: Widget {
+    let kind = "HeadlineWidget"
+    var body: some WidgetConfiguration {
+        IntentConfiguration(kind: kind,
+                            intent: HeadlineConfigurationIntent.self,
+                            provider: HeadlineProvider()) { entry in
+            HeadlineWidgetView(entry: entry)
+        }
+        .configurationDisplayName("Headline")
+        .description("The top headline from a subreddit you choose, on your Lock Screen.")
+        .supportedFamilies([.accessoryRectangular, .accessoryInline])
     }
 }
 
@@ -82,7 +97,8 @@ struct JokesWidget: Widget {
         }
         .configurationDisplayName("Jokes")
         .description("A joke from r/Jokes.")
-        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
+        .supportedFamilies([.systemSmall, .systemMedium, .systemLarge,
+                            .accessoryRectangular, .accessoryInline])
     }
 }
 

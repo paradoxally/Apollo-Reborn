@@ -1,7 +1,7 @@
 # Apollo Reborn Widgets
 
 Home Screen, Lock Screen, and StandBy widgets for Apollo, shipped as a single
-WidgetKit extension (`ApolloRebornWidgets.appex`) injected into the app. Eight
+WidgetKit extension (`ApolloRebornWidgets.appex`) injected into the app. Nine
 widgets live in one extension (one App ID), built with classic SiriKit
 `IntentConfiguration` so their configuration survives third-party re-signing.
 
@@ -10,13 +10,14 @@ widgets live in one extension (one App ID), built with classic SiriKit
 | Widget | Sizes | Configurable | Source / default |
 |---|---|---|---|
 | **Showerthoughts** | S · M · L · Lock (rect, inline) | Setup code only | r/showerthoughts · Top: Week |
-| **Jokes** | S · M · L | Setup code only | r/Jokes · Top: Today |
+| **Jokes** | S · M · L · Lock (rect, inline) | Setup code only | r/Jokes · Top: Today |
 | **Post** | S · M · L | Subreddit, Sort, Caption | r/popular · Hot |
 | **Feed** | M · L | Subreddit, Sort, Compact | r/popular · Hot |
 | **Photo** | S · M · L | Subreddit, Sort, Caption | r/EarthPorn · Top: Today |
 | **Shortcuts** | S · M · L | Source, Subreddits | curated / your list |
 | **Apollo Actions** | M | — (static) | fixed actions |
 | **Calendar** | S · M · L | Subreddit, Date Style, Show Title | r/EarthPorn · Top: Week (fixed) |
+| **Headline** | Lock (rect, inline) | Subreddit | r/worldnews · Hot |
 
 Sizes: **S** = small (2×2), **M** = medium (4×2), **L** = large (4×4), **Lock**
 = Lock Screen / StandBy accessory slots. Any widget that supports **S** also
@@ -87,10 +88,11 @@ A single rotating top post from r/showerthoughts on Apollo's blue gradient.
 ### Jokes
 A joke from r/Jokes — the title is the setup, the body is the punchline — on a
 purple gradient.
-- **Sizes:** Small, Medium, Large.
+- **Sizes:** Small, Medium, Large, Lock Screen (Rectangular, Inline).
 - **Config:** Setup Code only.
 - **How it works:** Top: Today, filtered to self-text jokes (so there's always a
-  punchline). Rotates; ↻ for the next.
+  punchline). Rotates; ↻ for the next. On the Lock Screen it shows the setup —
+  tap to open Apollo for the punchline.
 
 ### Post
 The top post from a subreddit you choose. Adapts to content: image posts get a
@@ -159,6 +161,14 @@ photo by day, a clean date display by night.
   days so the photo flips at midnight even without a reload. Dims in StandBy
   Night Mode. Tap opens the source post.
 
+### Headline
+The top headline from a subreddit, on your Lock Screen — a rotating ticker of
+what's hot.
+- **Sizes:** Lock Screen only (Rectangular, Inline).
+- **Config:** Setup Code · **Subreddit** (default `worldnews`).
+- **How it works:** fetches the current top ~10 (Hot) and rotates through their
+  titles; tap opens the post in Apollo. Text-only, like all Lock-Screen widgets.
+
 ---
 
 ## Availability notes
@@ -174,7 +184,7 @@ photo by day, a clean date display by night.
     (≈7 App IDs), which usually exceeds the free budget; a trimmed / widgets-only
     build (app + just the widget) is what fits a free account.
   - The **no-extensions** variant strips *all* extensions — including the widget —
-    to fit free accounts, so it has no widgets by design. (All 8 widgets live in
+    to fit free accounts, so it has no widgets by design. (All 9 widgets live in
     one extension, so they only ever cost one App ID, no matter how many you use.)
 - The widget extension is self-contained; it doesn't depend on Apollo's app
   version, only on the Apollo Reborn tweak being installed (for the setup-code

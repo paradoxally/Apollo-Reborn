@@ -50,7 +50,14 @@ struct RedditPost: Codable, Hashable {
             break
         }
         if s.hasSuffix("/") { s = String(s.dropLast()) }
-        return s
+        // Keep only characters Reddit allows in a subreddit/multireddit name
+        // (letters, digits, underscore, and "+" for multis). This is what makes
+        // the URLs we build safe — a stray "?", "#", space, etc. from a typed
+        // widget config could otherwise produce a nil URL and crash the
+        // extension, which poisons WidgetKit's enumeration of every widget.
+        let allowed = CharacterSet(charactersIn:
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_+")
+        return String(s.unicodeScalars.filter { allowed.contains($0) })
     }
 }
 

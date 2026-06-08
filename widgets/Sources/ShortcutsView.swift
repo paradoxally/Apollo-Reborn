@@ -124,7 +124,12 @@ struct ShortcutsWidgetView: View {
             Color(red: 0.55, green: 0.40, blue: 0.92), Color(red: 0.20, green: 0.68, blue: 0.70),
             Color(red: 0.92, green: 0.45, blue: 0.62), Color(red: 0.45, green: 0.50, blue: 0.95),
         ]
-        return palette[abs(item.label.lowercased().hashValue) % palette.count]
+        // Stable FNV-1a hash (not Swift's per-process-randomized hashValue, which
+        // would also trap on abs(Int.min)) so a tile's fallback color is the same
+        // every launch.
+        var h: UInt64 = 0xCBF29CE484222325
+        for b in item.label.lowercased().utf8 { h = (h ^ UInt64(b)) &* 0x100000001B3 }
+        return palette[Int(h % UInt64(palette.count))]
     }
 
     private var palette: ShortcutsPalette {

@@ -102,7 +102,13 @@ struct RedditAppOnlyClient {
                   allowNSFW: Bool = false) async throws -> [RedditPost] {
         let bearer = try await token()
         let sub = RedditPost.normalizeSubreddit(subreddit)
-        var comps = URLComponents(string: "https://oauth.reddit.com/r/\(sub)/\(sort.path)")!
+        // Built from a sanitized sub, but never force-unwrap: a nil URL must
+        // surface as an error, not a crash (a crashing extension poisons
+        // WidgetKit's enumeration of every widget).
+        guard !sub.isEmpty,
+              var comps = URLComponents(string: "https://oauth.reddit.com/r/\(sub)/\(sort.path)") else {
+            throw ClientError.badResponse
+        }
         var items = [
             URLQueryItem(name: "limit", value: String(limit)),
             URLQueryItem(name: "raw_json", value: "1"),
@@ -113,13 +119,14 @@ struct RedditAppOnlyClient {
         // app-only grant).
         if allowNSFW { items.append(URLQueryItem(name: "include_over_18", value: "1")) }
         comps.queryItems = items
+        guard let url = comps.url else { throw ClientError.badResponse }
 
-        var req = URLRequest(url: comps.url!)
+        var req = URLRequest(url: url)
         req.cachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         req.setValue("bearer \(bearer)", forHTTPHeaderField: "Authorization")
 
-        rwLog.log("fetch \(comps.url?.absoluteString ?? "?", privacy: .public)")
+        rwLog.log("fetch \(url.absoluteString, privacy: .public)")
         let (data, resp) = try await rwSession.data(for: req)
         guard let http = resp as? HTTPURLResponse else { throw ClientError.badResponse }
         guard http.statusCode == 200 else {
@@ -137,7 +144,11 @@ struct RedditAppOnlyClient {
     func subredditAbout(_ subreddit: String) async throws -> (icon: String?, colorHex: String?) {
         let bearer = try await token()
         let sub = RedditPost.normalizeSubreddit(subreddit)
-        var req = URLRequest(url: URL(string: "https://oauth.reddit.com/r/\(sub)/about?raw_json=1")!)
+        // Best-effort endpoint — a bad/empty sub just yields no icon, no crash.
+        guard !sub.isEmpty, let url = URL(string: "https://oauth.reddit.com/r/\(sub)/about?raw_json=1") else {
+            return (nil, nil)
+        }
+        var req = URLRequest(url: url)
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         req.setValue("bearer \(bearer)", forHTTPHeaderField: "Authorization")
 

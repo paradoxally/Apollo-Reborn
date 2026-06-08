@@ -12,11 +12,12 @@ static NSString *ApolloQuickActionNameFromURL(NSURL *url) {
     NSString *path = [[url.path lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"/"]];
     if (path.length == 0) return nil;
 
-    if ([path isEqualToString:@"all-posts"]) return @"all";
+    // Only the actions we actually route below. Popular/All are opened by the
+    // widget via Apollo's native apollo://reddit.com/r/popular|all URLs (host
+    // "reddit.com", not "reborn"), so we must NOT claim them here — claiming a
+    // URL we can't perform swallows it and then retries until it gives up.
     if ([path isEqualToString:@"search"] ||
         [path isEqualToString:@"home"] ||
-        [path isEqualToString:@"popular"] ||
-        [path isEqualToString:@"all"] ||
         [path isEqualToString:@"inbox"] ||
         [path isEqualToString:@"profile"] ||
         [path isEqualToString:@"settings"]) {

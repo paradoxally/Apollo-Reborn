@@ -50,10 +50,16 @@ done
 
 if [[ "$DO_BUILD" == "1" ]]; then
     echo "==> Building widget extension"
-    ( cd "$REPO_ROOT/widgets" && xcodegen generate && \
-      xcodebuild -project ApolloRebornWidgets.xcodeproj -scheme ApolloRebornWidgets \
-                 -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO \
-                 -derivedDataPath build build >/dev/null )
+    BUILD_LOG="$(mktemp -t apollo-widgets-build.XXXXXX.log)"
+    if ! ( cd "$REPO_ROOT/widgets" && xcodegen generate && \
+           xcodebuild -project ApolloRebornWidgets.xcodeproj -scheme ApolloRebornWidgets \
+                      -sdk iphoneos -configuration Release CODE_SIGNING_ALLOWED=NO \
+                      -derivedDataPath build build ) >"$BUILD_LOG" 2>&1; then
+        echo "error: widget build failed. Last lines of $BUILD_LOG:" >&2
+        tail -40 "$BUILD_LOG" >&2
+        exit 1
+    fi
+    rm -f "$BUILD_LOG"
 fi
 
 [[ ! -d "$APPEX_PATH" ]] && { echo "error: appex not found: $APPEX_PATH (try --build)" >&2; exit 1; }

@@ -164,10 +164,18 @@ photo by day, a clean date display by night.
 ## Availability notes
 
 - **iOS 17+** (the extension targets iOS 17; validated on iOS 26).
-- Requires a signer that supports app extensions (paid Apple Developer account
-  or TrollStore). The **no-extensions** sideload variant has no widgets by
-  design — a widget *is* an extension, which is exactly what that variant strips
-  to fit free-account App-ID limits.
+- **Sideloading / App-ID budget.** A widget is an app extension, and each
+  extension consumes one App ID. The limit depends on the signer:
+  - **Paid Apple Developer account or TrollStore:** no practical limit — widgets
+    work alongside Apollo's other extensions.
+  - **Free Apple ID:** capped at ~10 App IDs per 7 days, one per extension. App +
+    the single widget extension = 2 App IDs, which **fits** — so free accounts
+    *can* have widgets. The catch is the **standard** build ships ~6 extensions
+    (≈7 App IDs), which usually exceeds the free budget; a trimmed / widgets-only
+    build (app + just the widget) is what fits a free account.
+  - The **no-extensions** variant strips *all* extensions — including the widget —
+    to fit free accounts, so it has no widgets by design. (All 8 widgets live in
+    one extension, so they only ever cost one App ID, no matter how many you use.)
 - The widget extension is self-contained; it doesn't depend on Apollo's app
   version, only on the Apollo Reborn tweak being installed (for the setup-code
   button).

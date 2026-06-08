@@ -133,6 +133,14 @@ jobs:
           "$RUNNER_TEMP/cyan-venv/bin/cyan" --help >/dev/null
           echo "cyan installed: $RUNNER_TEMP/cyan-venv/bin/cyan"
 
+      - name: Install xcodegen
+        # Only the with-extensions path injects widgets (below), so xcodegen is
+        # only needed when injecting a tweak without the no-extensions flag.
+        if: inputs.inject_tweak && github.event.inputs.no_extensions != 'true'
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
       - name: Download Apollo IPA
         run: |
           curl -L --fail --retry 3 "${{ github.event.inputs.apollo_ipa_url }}" -o Apollo.ipa
@@ -150,6 +158,10 @@ jobs:
             echo "Injecting tweak with build-ipa.sh..."
             chmod +x ./build-ipa.sh
             bash ./build-ipa.sh --ipa Apollo.ipa --deb "$DEB" -o injected.ipa
+            # With-extensions build → include the Reborn widget extension too.
+            echo "Injecting Reborn widgets..."
+            bash ./scripts/inject-widgets.sh --ipa injected.ipa --build -o injected-ww.ipa
+            mv -f injected-ww.ipa injected.ipa
           fi
           if [ ! -f injected.ipa ]; then
             echo "Error: injection did not produce injected.ipa"

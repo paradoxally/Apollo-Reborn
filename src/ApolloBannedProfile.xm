@@ -885,7 +885,10 @@ static BOOL ApolloBannedProfileURLMatchesUserListEndpoint(NSURL *url) {
     NSString *username = ApolloBannedProfileUsernameFromViewController(self);
     if (username.length == 0) return;
     if (ApolloBannedProfileCachedIsSuspended(username)) {
+        // Keep the overlay pinned during layout, but also schedule a revalidation
+        // so a lifted ban clears it instead of re-pinning the stale cached state.
         ApolloBannedProfileInstallOverlay(self, username);
+        ApolloBannedProfileScheduleRefresh(self);
     }
 }
 

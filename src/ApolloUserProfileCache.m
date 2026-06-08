@@ -473,6 +473,14 @@ static UIImage *ApolloDecodedAvatarImage(UIImage *image) {
         // fresh entries still short-circuit and skip the network.
         if (info && [self isFreshInfo:info] && info.suspensionChecked && !info.isSuspended) return;
 
+        // A cached suspension must be revalidated against the network, not the
+        // HTTP cache. about.json for a suspended user is cacheable, so a normal
+        // fetch can be served the stale suspended response from NSURLCache and
+        // the overlay would never clear after the ban is lifted. Use the local
+        // `info` (not ApolloBannedProfileCachedIsSuspended) to avoid a
+        // dispatch_sync re-entry onto self.queue.
+        BOOL bypassHTTPCache = (info != nil && info.isSuspended);
+
         NSMutableArray<void (^)(ApolloUserProfileInfo *)> *callbacks = self.infoCompletions[key];
         if (callbacks) {
             if (completion) [callbacks addObject:[completion copy]];
@@ -482,7 +490,7 @@ static UIImage *ApolloDecodedAvatarImage(UIImage *image) {
         callbacks = [NSMutableArray array];
         if (completion) [callbacks addObject:[completion copy]];
         self.infoCompletions[key] = callbacks;
-        [self startInfoFetchForKey:key];
+        [self startInfoFetchForKey:key bypassingCache:bypassHTTPCache];
     });
 }
 

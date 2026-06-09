@@ -210,6 +210,9 @@ static BOOL ApolloQuickActionsHandleURL(NSURL *url) {
 %hook _TtC6Apollo13SceneDelegate
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet *)URLContexts {
+    NSMutableSet *unhandledContexts = [NSMutableSet setWithCapacity:URLContexts.count];
+    BOOL handledAny = NO;
+
     for (id context in URLContexts) {
         NSURL *url = nil;
         @try {
@@ -221,11 +224,17 @@ static BOOL ApolloQuickActionsHandleURL(NSURL *url) {
         }
 
         if (ApolloQuickActionsHandleURL(url)) {
-            return;
+            handledAny = YES;
+        } else if (context) {
+            [unhandledContexts addObject:context];
         }
     }
 
-    %orig(scene, URLContexts);
+    if (unhandledContexts.count > 0) {
+        %orig(scene, unhandledContexts);
+    } else if (!handledAny) {
+        %orig(scene, URLContexts);
+    }
 }
 
 %end

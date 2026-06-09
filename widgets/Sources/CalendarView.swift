@@ -35,9 +35,6 @@ struct CalendarWidgetView: View {
     private func text(_ date: Date, _ format: String) -> String {
         let f = DateFormatter()
         f.locale = .current
-        f.setLocalizedDateFormatFromTemplate(format)
-        // setLocalizedDateFormatFromTemplate reorders to locale; for fixed
-        // single-field templates that's fine.
         f.dateFormat = format
         return f.string(from: date)
     }

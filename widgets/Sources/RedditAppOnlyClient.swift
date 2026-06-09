@@ -186,9 +186,10 @@ struct RedditAppOnlyClient {
             let postHint = post["post_hint"] as? String ?? ""
             let isImage = postHint == "image"
                 || (post["url"] as? String).map { Self.looksLikeImage($0) } ?? false
+            let id = Self.stablePostID(from: post)
 
             out.append(RedditPost(
-                id: post["id"] as? String ?? UUID().uuidString,
+                id: id,
                 title: title,
                 author: post["author"] as? String ?? "",
                 subreddit: post["subreddit"] as? String ?? "",
@@ -202,6 +203,16 @@ struct RedditAppOnlyClient {
                 created: post["created_utc"] as? Double))
         }
         return out
+    }
+
+    private static func stablePostID(from post: [String: Any]) -> String {
+        if let id = post["id"] as? String, !id.isEmpty { return id }
+        if let permalink = post["permalink"] as? String, !permalink.isEmpty { return "permalink:\(permalink)" }
+        if let url = post["url"] as? String, !url.isEmpty { return "url:\(url)" }
+        let title = post["title"] as? String ?? ""
+        let author = post["author"] as? String ?? ""
+        let created = post["created_utc"] as? Double ?? 0
+        return "fallback:\(fnv1a("\(title)|\(author)|\(created)"))"
     }
 
     /// Content-eligibility gate for a single listing child (PRD §10).

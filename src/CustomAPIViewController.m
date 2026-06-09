@@ -1647,7 +1647,12 @@ typedef NS_ENUM(NSInteger, Tag) {
         return;
     }
     NSString *code = [json base64EncodedStringWithOptions:0];
-    [UIPasteboard generalPasteboard].string = code;
+    NSDictionary *item = @{ @"public.utf8-plain-text": code };
+    NSDictionary *options = @{
+        UIPasteboardOptionLocalOnly: @YES,
+        UIPasteboardOptionExpirationDate: [NSDate dateWithTimeIntervalSinceNow:10 * 60],
+    };
+    [[UIPasteboard generalPasteboard] setItems:@[item] options:options];
 
     [self showAlertWithTitle:@"Copied"
                      message:@"Setup code copied. On your Home Screen, add the Apollo “Showerthoughts” widget, long-press it → Edit Widget, and paste this code into Setup Code."];

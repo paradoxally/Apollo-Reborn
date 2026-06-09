@@ -82,7 +82,7 @@ enum DailyPhoto {
         let used = Set(hist.map { $0.id })
 
         // 3. Deterministic start index, then walk to first un-used candidate.
-        let start = Int(fnv1aHash("\(cfg)|\(day)") % UInt64(candidates.count))
+        let start = Int(fnv1a("\(cfg)|\(day)") % UInt64(candidates.count))
         var chosen: RedditPost?
         for i in 0..<candidates.count {
             let cand = candidates[(start + i) % candidates.count]
@@ -106,14 +106,6 @@ enum DailyPhoto {
         record(post.id, cfg, day)
         return post
     }
-}
-
-/// Stable FNV-1a hash (NOT Swift's per-process-randomized Hasher — that would
-/// change the pick every launch).
-private func fnv1aHash(_ s: String) -> UInt64 {
-    var h: UInt64 = 0xCBF29CE484222325
-    for b in s.utf8 { h = (h ^ UInt64(b)) &* 0x100000001B3 }
-    return h
 }
 
 // MARK: - Calendar widget timeline

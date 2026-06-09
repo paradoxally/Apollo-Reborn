@@ -214,7 +214,13 @@ struct SeededRNG: RandomNumberGenerator {
     }
 }
 
-private func fnv1a(_ s: String) -> UInt64 {
+/// Stable 64-bit FNV-1a hash over a string's UTF-8 bytes. Use this anywhere a
+/// deterministic, cross-launch-stable hash is needed (palette picks, dedup ids,
+/// per-day shuffle seeds) — never Swift's `Hasher`/`hashValue`, which is seeded
+/// with a per-process random value and so changes every time the widget
+/// extension is relaunched. Also avoids the `abs(Int.min)` trap of bucketing on
+/// a signed `hashValue`, since this returns an unsigned value.
+func fnv1a(_ s: String) -> UInt64 {
     var h: UInt64 = 0xCBF29CE484222325
     for b in s.utf8 { h = (h ^ UInt64(b)) &* 0x100000001B3 }
     return h

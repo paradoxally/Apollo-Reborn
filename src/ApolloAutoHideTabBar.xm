@@ -475,6 +475,9 @@ static void ApolloMirrorNavBarStateToTabBar(UINavigationController *nav, BOOL na
 - (void)didMoveToWindow {
     %orig;
     objc_setAssociatedObject((UIScrollView *)self, &kApolloScrollViewTabBarControllerBoxKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    if (self.window) {
+        ApolloApplyScrollEdgeEffectStyle(self);
+    }
 }
 
 - (void)setContentOffset:(CGPoint)contentOffset {

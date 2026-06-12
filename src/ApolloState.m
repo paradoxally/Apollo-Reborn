@@ -26,6 +26,7 @@ BOOL sShowUserAvatars = NO;
 BOOL sUseProfileAvatarTabIcon = NO;
 BOOL sShowSubredditHeaders = NO;
 BOOL sAutoHideTabBarShowOnIdle = NO;
+NSInteger sScrollEdgeEffectStyle = ApolloScrollEdgeEffectStyleAutomatic;
 BOOL sModernSubredditDividers = YES;
 BOOL sSubredditListEnhancements = YES;
 BOOL sEnableFlairColors = NO;

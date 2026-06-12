@@ -40,6 +40,9 @@ static NSString *const UDKeyShowUserAvatars = @"ShowUserAvatars";
 static NSString *const UDKeyUseProfileAvatarTabIcon = @"UseProfileAvatarTabIcon";
 static NSString *const UDKeyShowSubredditHeaders = @"ShowSubredditHeaders";
 static NSString *const UDKeyAutoHideTabBarShowOnIdle = @"AutoHideTabBarShowOnIdle";
+// Override for UIScrollView top/bottom scroll edge effects (Liquid Glass, iOS 26+).
+// 0 = Automatic (default), 1 = Soft, 2 = Hard, 3 = Hidden.
+static NSString *const UDKeyScrollEdgeEffectStyle = @"ScrollEdgeEffectStyle";
 // Render image URLs (i.redd.it, preview.redd.it, i.imgur.com, generic .png/.jpg/.jpeg/.webp)
 // inline within post selftext and comments instead of leaving them as plain text links.
 static NSString *const UDKeyEnableInlineImages = @"EnableInlineImages";

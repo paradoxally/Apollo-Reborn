@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 
+@class UIScrollView;
+
 extern NSString *sRedditClientId;
 extern NSString *sRedditClientSecret;
 extern NSString *sImgurClientId;
@@ -27,6 +29,22 @@ extern BOOL sShowUserAvatars;
 extern BOOL sUseProfileAvatarTabIcon;
 extern BOOL sShowSubredditHeaders;
 extern BOOL sAutoHideTabBarShowOnIdle;
+
+// Override for UIScrollView top/bottom scroll edge effects on iOS 26+ Liquid Glass.
+// iOS 26 defaults to Soft; iOS 27 betas default to Hard, which some users find
+// jarring. See ApolloScrollEdgeEffect.xm.
+typedef NS_ENUM(NSInteger, ApolloScrollEdgeEffectStyle) {
+    ApolloScrollEdgeEffectStyleAutomatic = 0,
+    ApolloScrollEdgeEffectStyleSoft      = 1,
+    ApolloScrollEdgeEffectStyleHard      = 2,
+    ApolloScrollEdgeEffectStyleHidden    = 3,
+};
+extern NSInteger sScrollEdgeEffectStyle;
+// Applies sScrollEdgeEffectStyle to a scroll view's top/bottom edge effects (no-op pre-iOS 26
+// or when not Liquid Glass). Called from UIScrollView's didMoveToWindow hook in
+// ApolloAutoHideTabBar.xm — kept here to avoid a second %hook UIScrollView didMoveToWindow,
+// which the Logos internal generator silently drops as a duplicate symbol.
+void ApolloApplyScrollEdgeEffectStyle(UIScrollView *scrollView);
 extern BOOL sModernSubredditDividers;
 // Master toggle for subreddit list enhancements (see UDKeySubredditListEnhancements).
 extern BOOL sSubredditListEnhancements;

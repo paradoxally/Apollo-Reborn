@@ -268,6 +268,59 @@ typedef NS_ENUM(NSInteger, Tag) {
     [[NSNotificationCenter defaultCenter] postNotificationName:@"ApolloAutoHideTabBarShowOnIdleChangedNotification" object:nil];
 }
 
+- (NSString *)scrollEdgeEffectStyleText {
+    switch (sScrollEdgeEffectStyle) {
+        case ApolloScrollEdgeEffectStyleSoft:   return @"Soft";
+        case ApolloScrollEdgeEffectStyleHard:   return @"Hard";
+        case ApolloScrollEdgeEffectStyleHidden: return @"Hidden";
+        default:                                return @"Automatic";
+    }
+}
+
+- (void)setScrollEdgeEffectStyle:(NSInteger)style {
+    sScrollEdgeEffectStyle = style;
+    [[NSUserDefaults standardUserDefaults] setInteger:sScrollEdgeEffectStyle forKey:UDKeyScrollEdgeEffectStyle];
+    [[NSNotificationCenter defaultCenter] postNotificationName:@"ApolloScrollEdgeEffectStyleChangedNotification" object:nil];
+
+    NSIndexPath *indexPath = [NSIndexPath indexPathForRow:(sShowDeletedComments ? 11 : 10) inSection:SectionGeneral];
+    if ([[self.tableView indexPathsForVisibleRows] containsObject:indexPath]) {
+        [self.tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationNone];
+    }
+}
+
+- (void)presentScrollEdgeEffectStyleSheetFromSourceView:(UIView *)sourceView {
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Scroll Edge Effect"
+                                                                     message:@"Controls the glass effect where content scrolls under the navigation and tab bars."
+                                                              preferredStyle:UIAlertControllerStyleActionSheet];
+
+    NSString *automaticTitle = (sScrollEdgeEffectStyle == ApolloScrollEdgeEffectStyleAutomatic) ? @"Automatic (Current)" : @"Automatic";
+    NSString *softTitle = (sScrollEdgeEffectStyle == ApolloScrollEdgeEffectStyleSoft) ? @"Soft (Current)" : @"Soft";
+    NSString *hardTitle = (sScrollEdgeEffectStyle == ApolloScrollEdgeEffectStyleHard) ? @"Hard (Current)" : @"Hard";
+    NSString *hiddenTitle = (sScrollEdgeEffectStyle == ApolloScrollEdgeEffectStyleHidden) ? @"Hidden (Current)" : @"Hidden";
+
+    [sheet addAction:[UIAlertAction actionWithTitle:automaticTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [self setScrollEdgeEffectStyle:ApolloScrollEdgeEffectStyleAutomatic];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:softTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [self setScrollEdgeEffectStyle:ApolloScrollEdgeEffectStyleSoft];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:hardTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [self setScrollEdgeEffectStyle:ApolloScrollEdgeEffectStyleHard];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:hiddenTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
+        [self setScrollEdgeEffectStyle:ApolloScrollEdgeEffectStyleHidden];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+
+    UIPopoverPresentationController *popover = sheet.popoverPresentationController;
+    if (popover && sourceView) {
+        popover.sourceView = sourceView;
+        popover.sourceRect = sourceView.bounds;
+    }
+
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
 - (void)setPreferredGIFFallbackFormat:(NSInteger)format {
     sPreferredGIFFallbackFormat = (format == 0) ? 0 : 1;
     [[NSUserDefaults standardUserDefaults] setInteger:sPreferredGIFFallbackFormat forKey:UDKeyPreferredGIFFallbackFormat];
@@ -661,7 +714,7 @@ typedef NS_ENUM(NSInteger, Tag) {
     switch (section) {
         case SectionBackupRestore: return 4;
         case SectionAPIKeys: return 10; // 7 text fields + Can't sign in? + API key setup guide + Copy Widget Setup Code
-        case SectionGeneral: return sShowDeletedComments ? 11 : 10;
+        case SectionGeneral: return (sShowDeletedComments ? 11 : 10) + (IsLiquidGlass() ? 1 : 0);
         case SectionMedia: return 12 + (sEnableInlineImages ? 0 : -kApolloMediaInlineDependentRows);
         case SectionSubreddits: return sSubredditListEnhancements ? 8 : 7;
         case SectionNotificationBackend: return 3; // URL + Registration Token + Test Connection
@@ -986,6 +1039,21 @@ typedef NS_ENUM(NSInteger, Tag) {
 
 - (UITableViewCell *)generalCellForRow:(NSInteger)row tableView:(UITableView *)tableView {
     NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+
+    NSInteger scrollEdgeEffectRow = sShowDeletedComments ? 11 : 10;
+    if (IsLiquidGlass() && row == scrollEdgeEffectRow) {
+        UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell_Gen_ScrollEdgeEffect"];
+        if (!cell) {
+            cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"Cell_Gen_ScrollEdgeEffect"];
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+            cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+        }
+        cell.textLabel.text = @"Scroll Edge Effect";
+        cell.detailTextLabel.text = [self scrollEdgeEffectStyleText];
+        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+        return cell;
+    }
+
     NSInteger effectiveRow = (!sShowDeletedComments && row >= 4) ? row + 1 : row;
     switch (effectiveRow) {
         case 0:
@@ -1566,6 +1634,12 @@ typedef NS_ENUM(NSInteger, Tag) {
         } else if (indexPath.row == 3) {
             [self exportLogs];
         }
+    } else if (indexPath.section == SectionGeneral) {
+        NSInteger scrollEdgeEffectRow = sShowDeletedComments ? 11 : 10;
+        if (IsLiquidGlass() && indexPath.row == scrollEdgeEffectRow) {
+            UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
+            [self presentScrollEdgeEffectStyleSheetFromSourceView:cell];
+        }
     } else if (indexPath.section == SectionMedia) {
         UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
         NSInteger row = ApolloMediaLogicalRow(indexPath.row);
@@ -1652,6 +1726,10 @@ typedef NS_ENUM(NSInteger, Tag) {
 - (BOOL)tableView:(UITableView *)tableView shouldHighlightRowAtIndexPath:(NSIndexPath *)indexPath {
     if (indexPath.section == SectionBackupRestore) return YES;
     if (indexPath.section == SectionAPIKeys && (indexPath.row == 7 || indexPath.row == 8 || indexPath.row == 9)) return YES;
+    if (indexPath.section == SectionGeneral) {
+        NSInteger scrollEdgeEffectRow = sShowDeletedComments ? 11 : 10;
+        return IsLiquidGlass() && indexPath.row == scrollEdgeEffectRow;
+    }
     if (indexPath.section == SectionMedia) {
         NSInteger row = ApolloMediaLogicalRow(indexPath.row);
         return (row == 0 || row == 1 || row == 2 || row == 5 || row == 6 || row == 7 || row == 8 || row == 9);

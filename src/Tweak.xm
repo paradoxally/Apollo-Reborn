@@ -1277,6 +1277,11 @@ static void initializeRandomSources() {
     sUseProfileAvatarTabIcon = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyUseProfileAvatarTabIcon];
     sShowSubredditHeaders = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyShowSubredditHeaders];
     sAutoHideTabBarShowOnIdle = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyAutoHideTabBarShowOnIdle];
+    sScrollEdgeEffectStyle = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyScrollEdgeEffectStyle];
+    if (sScrollEdgeEffectStyle < ApolloScrollEdgeEffectStyleAutomatic || sScrollEdgeEffectStyle > ApolloScrollEdgeEffectStyleHidden) {
+        sScrollEdgeEffectStyle = ApolloScrollEdgeEffectStyleAutomatic;
+        [standardDefaults setInteger:sScrollEdgeEffectStyle forKey:UDKeyScrollEdgeEffectStyle];
+    }
     sModernSubredditDividers = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyModernSubredditDividers];
     sSubredditListEnhancements = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySubredditListEnhancements];
     sEnableFlairColors = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyEnableFlairColors];

@@ -33,18 +33,47 @@
 #import "ApolloCommon.h"
 #import "ApolloState.h"
 #import "UserDefaultConstants.h"
+#import <math.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+
+// ASSizeRange is { CGSize min; CGSize max; }. Match the class-dumped
+// layoutSpecThatFits: ABI used elsewhere in the tweak.
+struct CDStruct_90e057aa { CGSize min; CGSize max; };
+
+// Binary-compatible subset of Texture's ASDimension. We define it locally to
+// avoid pulling Texture headers into the tweak build.
+typedef NS_ENUM(NSInteger, ApolloFlairASDimensionUnit) {
+    ApolloFlairASDimensionUnitAuto = 0,
+    ApolloFlairASDimensionUnitPoints = 1,
+    ApolloFlairASDimensionUnitFraction = 2,
+};
+
+typedef struct {
+    ApolloFlairASDimensionUnit unit;
+    CGFloat value;
+} ApolloFlairASDimension;
 
 #pragma mark - Associated object keys
 
 // Attached to each RDKFlair instance that we recovered colors for.
 static char kApolloFlairBackgroundColorKey;
 static char kApolloFlairTextColorKey;
-// Attached to a FlairNode once we've recolored its text (so reapply passes only
-// touch the cheap, layout-safe background color and don't re-edit attributed
-// text repeatedly).
-static char kApolloFlairNodeTextAppliedKey;
+// Attached to each flair content TEXT node we've recolored, holding the target
+// UIColor foreground. The global ASTextNode/ASTextNode2 setAttributedText: hook
+// reads this so it can re-impose our color any time Apollo overwrites the text
+// (app foreground re-theme, vote/score refresh, edit, etc.) regardless of
+// Texture interface-state timing. nil for every non-flair text node, so the
+// hook is a strict no-op for the rest of the app.
+static char kApolloFlairTextNodeForegroundKey;
+// Attached to a FlairNode the first time we successfully resolve its colors,
+// memoizing the exact background + text color. Every later reapply (app
+// foreground, re-display) reuses these instead of re-resolving — otherwise the
+// post-foreground path, where the RDKFlair associated colors are gone and
+// richtext flairs have a nil text cache key, falls through to the generated
+// hash color and the flair drifts to a wrong shade (e.g. purple -> teal).
+static char kApolloFlairNodeResolvedBackgroundKey;
+static char kApolloFlairNodeResolvedTextKey;
 
 #pragma mark - Fallback cache (text -> colors)
 
@@ -163,7 +192,21 @@ static NSArray *ApolloFlairSwiftArrayIvar(id node, const char *name) {
         }
         return nil;
     }
+
     return nil;
+}
+
+static BOOL ApolloFlairBoolIvar(id node, const char *name) {
+    if (!node || !name) return NO;
+    for (Class cls = object_getClass(node); cls && cls != [NSObject class]; cls = class_getSuperclass(cls)) {
+        Ivar ivar = class_getInstanceVariable(cls, name);
+        if (!ivar) continue;
+        const char *type = ivar_getTypeEncoding(ivar);
+        if (!type || (type[0] != 'B' && type[0] != 'c' && type[0] != 'C')) return NO;
+        ptrdiff_t offset = ivar_getOffset(ivar);
+        return *(BOOL *)((uint8_t *)(__bridge void *)node + offset);
+    }
+    return NO;
 }
 
 #pragma mark - Recovery (Mantle deserialization)
@@ -298,6 +341,57 @@ static void ApolloFlairSetBackground(id node, UIColor *background) {
     ((void (*)(id, SEL, BOOL))objc_msgSend)(node, @selector(setClipsToBounds:), YES);
 }
 
+static CGFloat ApolloFlairMaxTextHeight(NSArray *contentNodes) {
+    if (![contentNodes isKindOfClass:[NSArray class]]) return 0.0;
+
+    CGFloat maxHeight = 0.0;
+    for (id contentNode in contentNodes) {
+        if (![contentNode respondsToSelector:@selector(attributedText)]) continue;
+        id attributed = ApolloFlairPerformObject(contentNode, @selector(attributedText));
+        if (![attributed isKindOfClass:[NSAttributedString class]] || [(NSAttributedString *)attributed length] == 0) continue;
+
+        NSAttributedString *text = (NSAttributedString *)attributed;
+        __block CGFloat maxLineHeight = 0.0;
+        [text enumerateAttribute:NSFontAttributeName
+                         inRange:NSMakeRange(0, text.length)
+                         options:0
+                      usingBlock:^(id value, __unused NSRange range, __unused BOOL *stop) {
+            if ([value isKindOfClass:[UIFont class]]) {
+                maxLineHeight = MAX(maxLineHeight, [(UIFont *)value lineHeight]);
+            }
+        }];
+
+        CGRect bounds = [text boundingRectWithSize:CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX)
+                                          options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading
+                                          context:nil];
+        maxHeight = MAX(maxHeight, ceil(MAX(maxLineHeight, bounds.size.height)));
+    }
+    return maxHeight;
+}
+
+static void ApolloFlairSetLayoutMaxHeight(id layoutElement, CGFloat height) {
+    if (!layoutElement || !isfinite(height) || height <= 0.0) return;
+    id style = ApolloFlairPerformObject(layoutElement, @selector(style));
+    if (!style || ![style respondsToSelector:@selector(setMaxHeight:)]) return;
+
+    ApolloFlairASDimension dimension = { ApolloFlairASDimensionUnitPoints, height };
+    ((void (*)(id, SEL, ApolloFlairASDimension))objc_msgSend)(style, @selector(setMaxHeight:), dimension);
+}
+
+static void ApolloFlairFixMaxHeight(id node, id layoutSpec) {
+    NSArray *contentNodes = ApolloFlairSwiftArrayIvar(node, "contentNodes");
+    CGFloat textHeight = ApolloFlairMaxTextHeight(contentNodes);
+    if (textHeight <= 0.0) return;
+
+    BOOL isForAlert = ApolloFlairBoolIvar(node, "isForAlert");
+    CGFloat nativeMaxHeight = isForAlert ? 21.0 : 16.0;
+    CGFloat desiredMaxHeight = MAX(nativeMaxHeight, ceil(textHeight + 2.0));
+    if (desiredMaxHeight <= nativeMaxHeight + 0.5) return;
+
+    id innerStack = ApolloFlairPerformObject(layoutSpec, @selector(child));
+    ApolloFlairSetLayoutMaxHeight(innerStack ?: layoutSpec, desiredMaxHeight);
+}
+
 static void ApolloFlairRecolorTextNodes(NSArray *contentNodes, UIColor *textColor) {
     if (![contentNodes isKindOfClass:[NSArray class]]) return;
     Class imageNodeClass = objc_getClass("ASImageNode");
@@ -307,8 +401,20 @@ static void ApolloFlairRecolorTextNodes(NSArray *contentNodes, UIColor *textColo
         // Recolor text runs (leave emoji/image attachments alone).
         if ([contentNode respondsToSelector:@selector(attributedText)] &&
             [contentNode respondsToSelector:@selector(setAttributedText:)]) {
+            // Tag the node with our target foreground so the global
+            // setAttributedText: chokepoint can re-impose it whenever Apollo
+            // rewrites the text later (e.g. on app foreground).
+            objc_setAssociatedObject(contentNode, &kApolloFlairTextNodeForegroundKey, foreground, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             id attributed = ApolloFlairPerformObject(contentNode, @selector(attributedText));
             if ([attributed isKindOfClass:[NSAttributedString class]] && [(NSAttributedString *)attributed length] > 0) {
+                // Idempotency guard: if the first character already carries our
+                // target foreground color, the text is already recolored. This
+                // lets us safely re-run on every display-state re-entry (e.g.
+                // returning from background) without churning setAttributedText:.
+                UIColor *existing = [(NSAttributedString *)attributed attribute:NSForegroundColorAttributeName
+                                                                       atIndex:0
+                                                                effectiveRange:NULL];
+                if ([existing isEqual:foreground]) continue;
                 NSMutableAttributedString *recolored = [(NSAttributedString *)attributed mutableCopy];
                 [recolored addAttribute:NSForegroundColorAttributeName value:foreground range:NSMakeRange(0, recolored.length)];
                 ((void (*)(id, SEL, id))objc_msgSend)(contentNode, @selector(setAttributedText:), recolored);
@@ -325,24 +431,53 @@ static void ApolloFlairRecolorTextNodes(NSArray *contentNodes, UIColor *textColo
     }
 }
 
+// Re-impose our recovered flair foreground color onto an attributed string that
+// Apollo is about to set on a tagged flair text node. Returns the input
+// untouched for any node we don't own, or when the color is already present.
+static NSAttributedString *ApolloFlairRecolorAttributedForNode(id node, NSAttributedString *input) {
+    UIColor *foreground = objc_getAssociatedObject(node, &kApolloFlairTextNodeForegroundKey);
+    if (!foreground) return input;
+    if (![input isKindOfClass:[NSAttributedString class]] || input.length == 0) return input;
+    UIColor *existing = [input attribute:NSForegroundColorAttributeName atIndex:0 effectiveRange:NULL];
+    if ([existing isEqual:foreground]) return input;
+    NSMutableAttributedString *recolored = [input mutableCopy];
+    [recolored addAttribute:NSForegroundColorAttributeName value:foreground range:NSMakeRange(0, recolored.length)];
+    return recolored;
+}
+
 static void ApolloFlairApply(id node, BOOL allowTextRecolor) {
     if (!sEnableFlairColors || !node) return;
 
     NSArray *flairs = ApolloFlairSwiftArrayIvar(node, "flairs");
     if (flairs.count == 0) return;
 
-    UIColor *background = nil, *textColor = nil;
-    // Prefer Reddit's assigned color; otherwise generate a stable color from the
-    // flair text so flairs still stand out in subreddits that set no color.
-    if (!ApolloFlairResolveColors(flairs, &background, &textColor) || !background) {
-        NSString *text = ApolloFlairText(flairs.firstObject);
-        if (!ApolloFlairGeneratedColors(text, &background, &textColor) || !background) return;
+    // Reuse the colors we resolved the first time for this node. This is what
+    // keeps the color stable across app foreground / re-display: on those paths
+    // the precise RDKFlair associations are gone and richtext flairs have a nil
+    // text cache key, so a fresh resolve would miss and fall to the generated
+    // hash color (wrong shade). Memoizing avoids that drift entirely.
+    UIColor *background = objc_getAssociatedObject(node, &kApolloFlairNodeResolvedBackgroundKey);
+    UIColor *textColor = objc_getAssociatedObject(node, &kApolloFlairNodeResolvedTextKey);
+
+    if (!background) {
+        // Prefer Reddit's assigned color; otherwise generate a stable color from
+        // the flair text so flairs still stand out in subreddits that set none.
+        if (!ApolloFlairResolveColors(flairs, &background, &textColor) || !background) {
+            NSString *text = ApolloFlairText(flairs.firstObject);
+            if (!ApolloFlairGeneratedColors(text, &background, &textColor) || !background) return;
+        }
+        objc_setAssociatedObject(node, &kApolloFlairNodeResolvedBackgroundKey, background, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(node, &kApolloFlairNodeResolvedTextKey, textColor, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
 
     ApolloFlairSetBackground(node, background);
 
-    if (allowTextRecolor && !objc_getAssociatedObject(node, &kApolloFlairNodeTextAppliedKey)) {
-        objc_setAssociatedObject(node, &kApolloFlairNodeTextAppliedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    // Recolor is now idempotent (ApolloFlairRecolorTextNodes skips text nodes
+    // already carrying our color), so it's safe to re-run on every render pass.
+    // We no longer set a permanent guard — that one-shot guard caused flairs to
+    // revert to Apollo's default grey after the app returned from background,
+    // because the content text nodes get rebuilt and our recolor was blocked.
+    if (allowTextRecolor) {
         NSArray *contentNodes = ApolloFlairSwiftArrayIvar(node, "contentNodes");
         ApolloFlairRecolorTextNodes(contentNodes, textColor);
     }
@@ -418,6 +553,12 @@ static void ApolloFlairRecoverForModel(id model, NSDictionary *json) {
 
 %hook _TtC6Apollo9FlairNode
 
+- (id)layoutSpecThatFits:(struct CDStruct_90e057aa)constrainedSize {
+    id spec = %orig;
+    ApolloFlairFixMaxHeight((id)self, spec);
+    return spec;
+}
+
 - (void)didLoad {
     %orig;
     static NSUInteger sDidLoadLogCount = 0;
@@ -435,9 +576,60 @@ static void ApolloFlairRecoverForModel(id model, NSDictionary *json) {
 
 - (void)didEnterPreloadState {
     %orig;
-    // Reapply only the (layout-safe) background in case Apollo re-set it after
-    // didLoad; text was already handled and is guarded against repeats.
-    ApolloFlairApply(self, NO);
+    // Reapply background + (idempotent) text in case Apollo re-set them after
+    // didLoad.
+    ApolloFlairApply(self, YES);
+}
+
+- (void)didEnterDisplayState {
+    %orig;
+    // Fires on scroll / re-display (cell reuse). Idempotent reapply.
+    ApolloFlairApply(self, YES);
+}
+
+- (void)didEnterVisibleState {
+    %orig;
+    // THIS is the callback that fires when the app returns from the background.
+    // On app background, Texture clears the node's Visible interface state while
+    // typically RETAINING the Display state, so didEnterDisplayState does NOT
+    // re-fire on foreground — only didEnterVisibleState does. Apollo re-themes the
+    // flair to its default grey during its own %orig here, so we reapply our
+    // colors AFTER %orig to win the race. Idempotent (no-op if already colored).
+    static NSUInteger sVisibleLogCount = 0;
+    if (sVisibleLogCount < 20) {
+        sVisibleLogCount++;
+        ApolloLog(@"[FlairColors] FlairNode.didEnterVisibleState enabled=%d reapplying", (int)sEnableFlairColors);
+    }
+    ApolloFlairApply(self, YES);
+}
+
+%end
+
+#pragma mark - Text-node re-theme chokepoint
+
+// Apollo overwrites a flair's content text node back to its default grey on a
+// number of pathways that don't reliably re-fire Texture's interface-state
+// callbacks — most importantly when the app returns from the background. To
+// guarantee our color survives all of them, we intercept setAttributedText: on
+// the text node classes and re-impose our recovered foreground for any node we
+// previously tagged in ApolloFlairRecolorTextNodes. This is the same proven
+// pattern ApolloTranslation uses for translated comment bodies. Strict no-op
+// for every untagged node, so the rest of the app is unaffected.
+
+%hook ASTextNode
+
+- (void)setAttributedText:(NSAttributedString *)attributedText {
+    if (!sEnableFlairColors) { %orig; return; }
+    %orig(ApolloFlairRecolorAttributedForNode(self, attributedText));
+}
+
+%end
+
+%hook ASTextNode2
+
+- (void)setAttributedText:(NSAttributedString *)attributedText {
+    if (!sEnableFlairColors) { %orig; return; }
+    %orig(ApolloFlairRecolorAttributedForNode(self, attributedText));
 }
 
 %end

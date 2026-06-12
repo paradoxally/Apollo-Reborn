@@ -28,3 +28,6 @@ widgets/build/
 widgets/build-*/
 widgets/*.xcodeproj/
 widgets/Info.plist
+
+# Local iOS Simulator working dir (scripts/run-in-sim.sh)
+.sim/

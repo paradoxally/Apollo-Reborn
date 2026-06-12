@@ -1,9 +1,11 @@
 Package: com.apollo.reborn
 Name: Apollo-Reborn
-Version: 3.1.0
+Version: 3.1.1
 Architecture: iphoneos-arm
 Description: Apollo for Reddit tweak with in-app configurable API keys
 Maintainer: Apollo Reborn team
 Author: Apollo Reborn team
 Section: Tweaks
 Depends: mobilesubstrate (>= 0.9.5000)
+Conflicts: ca.jeffrey.apollo-improvedcustomapi,ca.jeffrey.apollo-customapicredentialsplus,com.ethanarbuckle.apollo-customapicredentials,com.ichitaso.apollopatcher,com.ryannair05.apolloapi
+Replaces: ca.jeffrey.apollo-improvedcustomapi,ca.jeffrey.apollo-customapicredentialsplus,com.ethanarbuckle.apollo-customapicredentials

@@ -262,6 +262,12 @@ static NSMutableDictionary<NSString *, NSNumber *> *sPostSummaryMode;
 static NSMutableDictionary<NSString *, NSString *> *sArticleTextCache;
 static NSMutableDictionary<NSString *, NSNumber *> *sCommentSummarySourceCounts;
 static NSMutableDictionary<NSString *, NSString *> *sCommentSummarySignatures;
+// fullName -> label of the model that generated the CACHED summary ("gpt-5-mini",
+// "Apple Intelligence", ...). Rendered in the card's trust caption so the user can
+// tell which backend produced it (a summary may come from the cloud one day and
+// the on-device fallback the next). Missing (old cache) -> generic "AI-generated".
+static NSMutableDictionary<NSString *, NSString *> *sPostSummaryModelLabels;
+static NSMutableDictionary<NSString *, NSString *> *sCommentSummaryModelLabels;
 // fullNames whose post / comment generation is currently running, so we don't
 // kick off duplicate concurrent requests for the same thread.
 static NSMutableSet<NSString *> *sPostInFlight;
@@ -378,6 +384,8 @@ static void ApolloAIPruneExpiredSummaries(void) {
         [sPostSummaryMode removeObjectForKey:name];
         [sCommentSummarySourceCounts removeObjectForKey:name];
         [sCommentSummarySignatures removeObjectForKey:name];
+        [sPostSummaryModelLabels removeObjectForKey:name];
+        [sCommentSummaryModelLabels removeObjectForKey:name];
         [sSummaryTimestamps removeObjectForKey:name];
         // Drop the per-thread side state for the same thread so these maps don't
         // accumulate stale entries for summaries that no longer exist:
@@ -425,11 +433,15 @@ static void ApolloAILoadPersistedSummaries(void) {
     NSDictionary *signatures = root[@"commentSignatures"];
     NSDictionary *postModes = root[@"postModes"];
     NSDictionary *timestamps = root[@"timestamps"];
+    NSDictionary *postModelLabels = root[@"postModelLabels"];
+    NSDictionary *commentModelLabels = root[@"commentModelLabels"];
     if ([post isKindOfClass:[NSDictionary class]]) [sPostSummaryCache addEntriesFromDictionary:post];
     if ([comment isKindOfClass:[NSDictionary class]]) [sCommentSummaryCache addEntriesFromDictionary:comment];
     if ([postModes isKindOfClass:[NSDictionary class]]) [sPostSummaryMode addEntriesFromDictionary:postModes];
     if ([sourceCounts isKindOfClass:[NSDictionary class]]) [sCommentSummarySourceCounts addEntriesFromDictionary:sourceCounts];
     if ([signatures isKindOfClass:[NSDictionary class]]) [sCommentSummarySignatures addEntriesFromDictionary:signatures];
+    if ([postModelLabels isKindOfClass:[NSDictionary class]]) [sPostSummaryModelLabels addEntriesFromDictionary:postModelLabels];
+    if ([commentModelLabels isKindOfClass:[NSDictionary class]]) [sCommentSummaryModelLabels addEntriesFromDictionary:commentModelLabels];
     if ([timestamps isKindOfClass:[NSDictionary class]]) [sSummaryTimestamps addEntriesFromDictionary:timestamps];
     // Drop anything past its expiry before it's ever shown.
     ApolloAIPruneExpiredSummaries();
@@ -445,6 +457,8 @@ static void ApolloAIPersistSummaries(void) {
     NSDictionary *sourceCountSnapshot = [sCommentSummarySourceCounts copy];
     NSDictionary *signatureSnapshot = [sCommentSummarySignatures copy];
     NSDictionary *postModeSnapshot = [sPostSummaryMode copy];
+    NSDictionary *postModelLabelSnapshot = [sPostSummaryModelLabels copy];
+    NSDictionary *commentModelLabelSnapshot = [sCommentSummaryModelLabels copy];
     NSDictionary *timestampSnapshot = [sSummaryTimestamps copy];
     dispatch_async(ApolloAIPersistQueue(), ^{
         NSMutableDictionary *post = [postSnapshot mutableCopy];
@@ -467,6 +481,8 @@ static void ApolloAIPersistSummaries(void) {
             @"commentSourceCounts": sourceCountSnapshot,
             @"commentSignatures": signatureSnapshot,
             @"postModes": postModeSnapshot ?: @{},
+            @"postModelLabels": postModelLabelSnapshot ?: @{},
+            @"commentModelLabels": commentModelLabelSnapshot ?: @{},
             @"timestamps": timestamps,
         };
         [root writeToFile:ApolloAISummariesCachePath() atomically:YES];
@@ -486,6 +502,8 @@ static void ApolloAIEnsureState(void) {
         sArticleTextCache = [NSMutableDictionary dictionary];
         sCommentSummarySourceCounts = [NSMutableDictionary dictionary];
         sCommentSummarySignatures = [NSMutableDictionary dictionary];
+        sPostSummaryModelLabels = [NSMutableDictionary dictionary];
+        sCommentSummaryModelLabels = [NSMutableDictionary dictionary];
         sPostInFlight = [NSMutableSet set];
         sCommentInFlight = [NSMutableSet set];
         sPostRequestIDs = [NSMutableDictionary dictionary];
@@ -525,6 +543,8 @@ NSUInteger ApolloAIClearSummaryCache(void) {
     [sArticleTextCache removeAllObjects];
     [sCommentSummarySourceCounts removeAllObjects];
     [sCommentSummarySignatures removeAllObjects];
+    [sPostSummaryModelLabels removeAllObjects];
+    [sCommentSummaryModelLabels removeAllObjects];
     [sCapturedComments removeAllObjects];
     [sCapturedCommentKeys removeAllObjects];
     [sPostInFlight removeAllObjects];
@@ -1660,6 +1680,7 @@ static NSAttributedString *ApolloAISummaryAttributedText(NSString *title,
                                                          BOOL expanded,
                                                          BOOL isPost,
                                                          NSUInteger sourceCount,
+                                                         NSString *modelLabel,
                                                          UIColor *accent) {
     if (state == ApolloAIBoxStateNone) return nil;
 
@@ -1763,11 +1784,14 @@ static NSAttributedString *ApolloAISummaryAttributedText(NSString *title,
     }
     if (state == ApolloAIBoxStateReady) {
         // Quiet trust/expectation footer so the summary isn't mistaken for the
-        // author's own words.
+        // author's own words. Leads with the model that generated it (cloud model
+        // name or "Apple Intelligence") so the backend is visible at a glance;
+        // summaries cached before labels existed fall back to "AI-generated".
+        NSString *generator = modelLabel.length > 0 ? modelLabel : @"AI-generated";
         NSString *caption = (!isPost && sourceCount > 0)
-            ? [NSString stringWithFormat:@"\n\nAI-generated · Based on %lu representative comments · may be inaccurate",
-                                         (unsigned long)sourceCount]
-            : @"\n\nAI-generated · may be inaccurate";
+            ? [NSString stringWithFormat:@"\n\n%@ · based on %lu representative comments · may be inaccurate",
+                                         generator, (unsigned long)sourceCount]
+            : [NSString stringWithFormat:@"\n\n%@ · may be inaccurate", generator];
         [result appendAttributedString:[[NSAttributedString alloc] initWithString:caption
                                                                        attributes:captionAttributes]];
     }
@@ -1841,6 +1865,9 @@ static void ApolloAIRenderSummaryNode(id headerNode, BOOL isPost) {
         : objc_getAssociatedObject(headerNode, summaryKey);
     NSString *fullName = objc_getAssociatedObject(headerNode, &kApolloAIHeaderFullNameKey);
     NSUInteger sourceCount = isPost ? 0 : [sCommentSummarySourceCounts[fullName] unsignedIntegerValue];
+    NSString *modelLabel = fullName.length > 0
+        ? (isPost ? sPostSummaryModelLabels[fullName] : sCommentSummaryModelLabels[fullName])
+        : nil;
     ASTextNode *textNode = ApolloAIEnsureSummaryNode(headerNode, isPost);
     NSString *title;
     if (isPost) {
@@ -1857,7 +1884,7 @@ static void ApolloAIRenderSummaryNode(id headerNode, BOOL isPost) {
         title = @"Discussion so far";
     }
     textNode.attributedText = ApolloAISummaryAttributedText(
-        title, state, body, expanded, isPost, sourceCount, ApolloAISummaryThemeAccent(headerNode));
+        title, state, body, expanded, isPost, sourceCount, modelLabel, ApolloAISummaryThemeAccent(headerNode));
     // Clamp the chevron-less collapsed states (idle / loading / empty) to a single
     // line so a long title + "· Tap to summarize" subtitle can't wrap. Ready/Error
     // collapsed cards KEEP their trailing chevron, so leave them unclamped — at large
@@ -2572,6 +2599,9 @@ static NSString *ApolloAITruncateForFM(NSString *prompt) {
     return [prompt substringToIndex:kFMPromptCap];
 }
 
+// User-facing label for a summary produced by the on-device model.
+static NSString *const kApolloAIOnDeviceModelLabel = @"Apple Intelligence";
+
 // The single seam every summary generation goes through. With no cloud key this
 // is byte-for-byte the old direct bridge call. With a cloud key the cloud model
 // is tried FIRST; on any cloud failure except cancellation (code 6 — covers both
@@ -2580,10 +2610,14 @@ static NSString *ApolloAITruncateForFM(NSString *prompt) {
 // its existing FM semantics (sTimedOutRequests swallow, code-6 early return,
 // code-9 transient retry, cache write) — cloud never emits code 9, so the
 // transient-retry loop can only engage for an FM result.
+//
+// `modelLabel` names the backend that produced `final` ("gpt-5-mini",
+// "Apple Intelligence", ...) so callers can record it next to the cached
+// summary for the card's trust caption; nil on error.
 static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, NSString *instructions,
                                           NSInteger cloudResponseTokens, NSInteger fmResponseTokens,
                                           void (^onPartial)(NSString *partial),
-                                          void (^onComplete)(NSString *final, NSError *error)) {
+                                          void (^onComplete)(NSString *final, NSError *error, NSString *modelLabel)) {
     ApolloFoundationModels *bridge = ApolloAIBridge();
 
     void (^runFM)(NSString *) = ^(NSString *fmText) {
@@ -2596,7 +2630,9 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
              instructions:instructions
     maximumResponseTokens:fmResponseTokens
                 onPartial:onPartial
-               onComplete:onComplete];
+               onComplete:^(NSString *final, NSError *error) {
+                    onComplete(final, error, error ? nil : kApolloAIOnDeviceModelLabel);
+               }];
     };
 
     if (!ApolloAICloudConfigured()) {
@@ -2604,14 +2640,17 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
         return;
     }
 
+    // Capture the model the request will actually be sent with, in case the
+    // user edits the setting while the request is in flight.
+    NSString *cloudModelLabel = [sCloudAIModel copy] ?: @"cloud model";
     [[ApolloAICloudClient shared] summarize:text
                                  identifier:identifier
                                instructions:instructions
                       maximumResponseTokens:cloudResponseTokens
                                   onPartial:onPartial
                                  onComplete:^(NSString *final, NSError *error) {
-        if (!error && final.length > 0) { onComplete(final, nil); return; }
-        if (error.code == 6) { onComplete(nil, error); return; }   // cancelled: never fall back
+        if (!error && final.length > 0) { onComplete(final, nil, cloudModelLabel); return; }
+        if (error.code == 6) { onComplete(nil, error, nil); return; }   // cancelled: never fall back
         if (ApolloAIFMUsable()) {
             ApolloLog(@"[AISummary] cloud failed for %@ (code %ld) — falling back to on-device",
                       identifier, (long)error.code);
@@ -2620,7 +2659,7 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
         }
         onComplete(nil, error ?: [NSError errorWithDomain:ApolloAICloudErrorDomain
                                                      code:ApolloAICloudErrorProvider
-                                                 userInfo:@{NSLocalizedDescriptionKey: @"Cloud generation failed"}]);
+                                                 userInfo:@{NSLocalizedDescriptionKey: @"Cloud generation failed"}], nil);
     }];
 }
 
@@ -2692,7 +2731,7 @@ static void ApolloAISummarizeArticleText(NSString *fullName, NSString *requestID
             ^(NSString *partial) {
                 ApolloAIApplyStreamingPartial(fullName, YES, partial);
             },
-            ^(NSString *final, NSError *error) {
+            ^(NSString *final, NSError *error, NSString *modelLabel) {
                 [sPostInFlight removeObject:fullName];
                 if ([sPostRequestIDs[fullName] isEqualToString:requestID]) {
                     [sPostRequestIDs removeObjectForKey:fullName];
@@ -2737,6 +2776,7 @@ static void ApolloAISummarizeArticleText(NSString *fullName, NSString *requestID
                 }
                 sPostSummaryCache[fullName] = final;
                 sPostSummaryMode[fullName] = @(ApolloAIDesiredPostMode(fullName));
+                if (modelLabel.length > 0) sPostSummaryModelLabels[fullName] = modelLabel;
                 ApolloAIStampSummary(fullName);
                 ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateReady, final);
                 if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -2957,7 +2997,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                     ^(NSString *partial) {
                         ApolloAIApplyStreamingPartial(fullName, YES, partial);
                     },
-                    ^(NSString *final, NSError *error) {
+                    ^(NSString *final, NSError *error, NSString *modelLabel) {
                         [sPostInFlight removeObject:fullName];
                         if ([sPostRequestIDs[fullName] isEqualToString:requestID]) {
                             [sPostRequestIDs removeObjectForKey:fullName];
@@ -2991,6 +3031,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                         }
                         sPostSummaryCache[fullName] = final;
                         sPostSummaryMode[fullName] = @(ApolloAIDesiredPostMode(fullName));
+                        if (modelLabel.length > 0) sPostSummaryModelLabels[fullName] = modelLabel;
                         ApolloAIStampSummary(fullName);
                         ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateReady, final);
                         if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -3069,7 +3110,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                     ^(NSString *partial) {
                         ApolloAIApplyStreamingPartial(fullName, NO, partial);
                     },
-                    ^(NSString *final, NSError *error) {
+                    ^(NSString *final, NSError *error, NSString *modelLabel) {
                         [sCommentInFlight removeObject:fullName];
                         if ([sCommentRequestIDs[fullName] isEqualToString:requestID]) {
                             [sCommentRequestIDs removeObjectForKey:fullName];
@@ -3102,6 +3143,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                             return;
                         }
                         sCommentSummaryCache[fullName] = final;
+                        if (modelLabel.length > 0) sCommentSummaryModelLabels[fullName] = modelLabel;
                         ApolloAIStampSummary(fullName);
                         sCommentSummarySourceCounts[fullName] = @(commentCount);
                         if (commentSignature.length > 0) {

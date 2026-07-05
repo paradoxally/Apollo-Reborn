@@ -8,8 +8,40 @@
 #import "ApolloThemeAIOverlay.h"
 #import "ApolloThemeGalleryCatalog.h"
 #import "ApolloThemeGalleryViewController.h"
+#import "ApolloThemeShareImage.h"
+#import "ApolloThemeQRScanViewController.h"
 #import "ApolloCommon.h"
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+#import <PhotosUI/PhotosUI.h>
+#import <LinkPresentation/LinkPresentation.h>
+
+// ---------------------------------------------------------------------------
+// Share-sheet item for the theme card
+// ---------------------------------------------------------------------------
+
+// A bare UIImage activity item gives the share sheet no preview metadata, so
+// its header shows the generic white app-icon-grid placeholder. Wrap the card
+// so the header shows the card itself + the theme name; the underlying item is
+// still the plain UIImage, so Save Image / Messages / Mail behave unchanged.
+@interface ApolloThemeCardActivityItem : NSObject <UIActivityItemSource>
+@property (nonatomic, strong) UIImage *image;
+@property (nonatomic, copy) NSString *title;
+@end
+
+@implementation ApolloThemeCardActivityItem
+- (id)activityViewControllerPlaceholderItem:(UIActivityViewController *)controller { return self.image; }
+- (id)activityViewController:(UIActivityViewController *)controller itemForActivityType:(UIActivityType)type { return self.image; }
+- (NSString *)activityViewController:(UIActivityViewController *)controller subjectForActivityType:(UIActivityType)type { return self.title ?: @""; }
+- (LPLinkMetadata *)activityViewControllerLinkMetadata:(UIActivityViewController *)controller {
+    LPLinkMetadata *metadata = [[LPLinkMetadata alloc] init];
+    metadata.title = self.title;
+    if (self.image) {
+        metadata.imageProvider = [[NSItemProvider alloc] initWithObject:self.image];
+        metadata.iconProvider = [[NSItemProvider alloc] initWithObject:self.image];
+    }
+    return metadata;
+}
+@end
 
 extern BOOL ApolloThemeOpenNativeThemePickerFromHub(UIViewController *hub);
 extern BOOL ApolloThemeOpenNativeLightDarkFromHub(UIViewController *hub);
@@ -290,7 +322,7 @@ typedef void (^ApolloThemeFontSelectionHandler)(ApolloThemeFont font);
 
 // ---------------------------------------------------------------------------
 
-@interface ApolloThemeManagerViewController () <UIColorPickerViewControllerDelegate, UIDocumentPickerDelegate>
+@interface ApolloThemeManagerViewController () <UIColorPickerViewControllerDelegate, UIDocumentPickerDelegate, PHPickerViewControllerDelegate>
 @property (nonatomic, copy) NSString *editingThemeID;     // nil = list mode
 @property (nonatomic, assign) ApolloThemeMode editingMode; // which appearance the editor shows
 @property (nonatomic, copy) NSString *pickingInputKey;     // input key currently in the colour picker
@@ -303,9 +335,10 @@ typedef void (^ApolloThemeFontSelectionHandler)(ApolloThemeFont font);
 
 // List mode:   hub IA: Current | Create | Browse | My Themes | Imported | Options
 // Editor mode: 0 Name | 1 Variant+Mode | 2 Colours | 3 Advanced | 4 Font
+//              5 Generate | 6 Preview | 7 Share | 8 Apply | 9 Delete
 //              5 Generate | 6 Preview | 7 Apply | 8 Delete
 enum { HSCurrent, HSCreate, HSBrowse, HSMyThemes, HSImported, HSOptions, HSCount };
-enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, ESApply, ESDelete, ESCount };
+enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, ESShare, ESApply, ESDelete, ESCount };
 
 @implementation ApolloThemeManagerViewController
 
@@ -356,7 +389,44 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
         return ApolloThemeUIColorFromRGB([compiled rgbForToken:token mode:CurrentAppearanceMode(self.traitCollection)]);
     }
 
-    return fallback;
+    // No Apollo-Reborn custom theme active. Instead of hard-coding system
+    // colours (which would leave this screen grey/black even when a *stock*
+    // Apollo theme like Solarized or Outrun is applied), inherit the ambient
+    // Apollo theme the same way ApolloSettingsTableViewController /
+    // CustomAPIViewController do: sample the presenting Appearance settings
+    // table (which Apollo itself themes). This makes the Theme Manager and
+    // Gallery match the rest of Apollo's settings under any theme, stock or
+    // custom. Surface tokens come from the sampled table; text tokens keep
+    // system-semantic fallbacks, which adapt correctly on top of the inherited
+    // background — exactly as CustomAPIViewController uses labelColor /
+    // secondaryLabelColor.
+    switch (token) {
+        case ApolloThemeTokenBackground: {
+            UITableView *source = ApolloInheritedSettingsThemeSourceTableView(self);
+            return source.backgroundColor ?: fallback;
+        }
+        case ApolloThemeTokenSecondaryBackground:
+        case ApolloThemeTokenTertiaryBackground:
+        case ApolloThemeTokenElevatedBackground:
+            return [self apollo_themeCellBackgroundColor];
+        case ApolloThemeTokenSeparator:
+        case ApolloThemeTokenOpaqueSeparator: {
+            UITableView *source = ApolloInheritedSettingsThemeSourceTableView(self);
+            return source.separatorColor ?: fallback;
+        }
+        case ApolloThemeTokenAccent:
+        case ApolloThemeTokenLink:
+            return [self apollo_themeAccentColor];
+        default:
+            return fallback;
+    }
+}
+
+// Base-class hook (ApolloSettingsTableViewController) — redirect to our own
+// tinting so we keep sole control over per-cell theming in willDisplayCell:,
+// including the editor's live-preview swatch cells the base loop would clobber.
+- (void)apollo_applyTheme {
+    [self applyThemeTint];
 }
 
 - (UIColor *)themeAccentColor {
@@ -387,15 +457,42 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
     return [self importedThemes].count > 0;
 }
 
-- (NSString *)apolloThemeDetail {
-    if ([self store].activeSelectionKind != ApolloThemeSelectionApollo) return @"Not Active";
+// "majesticPurple" -> "Majestic Purple". AppColorTheme's raw keys are
+// camelCase, not underscore_separated, so stringByReplacingOccurrencesOfString
+// @"_" was always a no-op here — capitalizedString then only uppercases the
+// first letter of the whole (space-less) run, e.g. "Majesticpurple".
+static NSString *SpacedThemeName(NSString *raw) {
+    if (!raw.length) return raw;
+    static NSRegularExpression *boundary;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        boundary = [NSRegularExpression regularExpressionWithPattern:@"(?<=[a-z0-9])(?=[A-Z])" options:0 error:nil];
+    });
+    NSString *spaced = [boundary stringByReplacingMatchesInString:raw
+                                                            options:0
+                                                              range:NSMakeRange(0, raw.length)
+                                                       withTemplate:@" "];
+    spaced = [spaced stringByReplacingOccurrencesOfString:@"_" withString:@" "];
+    return spaced.capitalizedString ?: raw;
+}
+
+// The raw AppColorTheme key ("majesticPurple") while an Apollo theme is
+// actually active, else nil. Shared by the display-name string and the
+// stock-theme colour lookup below — both need the same donor-aware read.
+- (NSString *)activeApolloThemeRawKey {
+    if ([self store].activeSelectionKind != ApolloThemeSelectionApollo) return nil;
     NSString *raw = [[NSUserDefaults standardUserDefaults] stringForKey:@"AppColorTheme"];
     if (!raw.length) raw = [[[NSUserDefaults alloc] initWithSuiteName:@"group.com.christianselig.apollo"] stringForKey:@"AppColorTheme"];
     NSString *donor = [[self store] runtimeDonorTheme];
     if ([raw isEqualToString:donor]) raw = [self store].previousApolloTheme;
+    return raw;
+}
+
+- (NSString *)apolloThemeDetail {
+    if ([self store].activeSelectionKind != ApolloThemeSelectionApollo) return @"Not Active";
+    NSString *raw = [self activeApolloThemeRawKey];
     if (!raw.length) return @"Default";
-    NSString *spaced = [raw stringByReplacingOccurrencesOfString:@"_" withString:@" "];
-    return spaced.capitalizedString ?: raw;
+    return SpacedThemeName(raw);
 }
 
 // Only reports a value while an Apollo theme is what's actually active —
@@ -486,22 +583,23 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
     NSDictionary *theme = [store activeTheme];
     NSMutableArray<NSString *> *chips = [NSMutableArray array];
     ApolloThemeFont font = ApolloThemeFontFromKey(theme[kApolloThemeFontKey]);
-    if (font != ApolloThemeFontSystem) [chips addObject:ApolloThemeFontDetailName(font)];
-    if ([theme[kApolloThemeAdvancedOptionsEnabledKey] boolValue]) [chips addObject:@"Advanced"];
+    if (font != ApolloThemeFontSystem) [chips addObject:ApolloThemeFontDisplayName(font)];
+    if ([theme[kApolloThemeAdvancedOptionsEnabledKey] boolValue]) [chips addObject:@"Custom Colours"];
+    if ([theme[kApolloThemeVoteArrowsAccentKey] boolValue]) [chips addObject:@"Accent Arrows"];
     if (chips.count == 0) return out;
 
-    UIColor *chipFill = [[self themeAccentColor] colorWithAlphaComponent:0.16];
-    UIColor *chipText = [self themeAccentColor] ?: self.view.tintColor ?: UIColor.systemBlueColor;
-    UIFont *chipFont = [UIFont systemFontOfSize:12.0 weight:UIFontWeightSemibold];
-    for (NSString *chip in chips) {
-        [out appendAttributedString:[[NSAttributedString alloc] initWithString:@"  "]];
-        NSString *padded = [NSString stringWithFormat:@" %@ ", chip];
-        [out appendAttributedString:[[NSAttributedString alloc] initWithString:padded attributes:@{
-            NSFontAttributeName: chipFont,
-            NSForegroundColorAttributeName: chipText,
-            NSBackgroundColorAttributeName: chipFill,
-        }]];
-    }
+    // Plain text, no per-chip background pill: NSBackgroundColorAttributeName
+    // spans don't clip to line-wrap boundaries, so once this label wraps to
+    // multiple lines (long theme names, several chips) each pill left a
+    // stray colour fragment trailing off the end of its line.
+    NSString *joined = [chips componentsJoinedByString:@" · "];
+    [out appendAttributedString:[[NSAttributedString alloc] initWithString:@"  " attributes:@{
+        NSForegroundColorAttributeName: UIColor.secondaryLabelColor,
+    }]];
+    [out appendAttributedString:[[NSAttributedString alloc] initWithString:joined attributes:@{
+        NSFontAttributeName: [UIFont systemFontOfSize:13.0 weight:UIFontWeightSemibold],
+        NSForegroundColorAttributeName: [self themeAccentColor] ?: self.view.tintColor ?: UIColor.systemBlueColor,
+    }]];
     return out;
 }
 
@@ -515,7 +613,8 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
         NSDictionary *theme = [store activeTheme];
         ApolloThemeFont font = ApolloThemeFontFromKey(theme[kApolloThemeFontKey]);
         if (font != ApolloThemeFontSystem) [parts addObject:[NSString stringWithFormat:@"%@ font", ApolloThemeFontDetailName(font)]];
-        if ([theme[kApolloThemeAdvancedOptionsEnabledKey] boolValue]) [parts addObject:@"Advanced options enabled"];
+        if ([theme[kApolloThemeAdvancedOptionsEnabledKey] boolValue]) [parts addObject:@"Custom text and separator colours enabled"];
+        if ([theme[kApolloThemeVoteArrowsAccentKey] boolValue]) [parts addObject:@"Vote arrows use accent colour"];
     }
     return [parts componentsJoinedByString:@", "];
 }
@@ -618,7 +717,7 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
         }
     }
     if ((!self.editingThemeID && (ip.section == HSCreate || (ip.section == HSCurrent && ip.row > 0))) ||
-        (self.editingThemeID && (ip.section == ESGenerate || ip.section == ESApply))) {
+        (self.editingThemeID && (ip.section == ESGenerate || ip.section == ESShare || ip.section == ESApply))) {
         cell.textLabel.textColor = accent;
     }
     if (self.editingThemeID && ip.section == ESDelete) {
@@ -632,6 +731,12 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
     [self applyThemeTint];
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 72.0;
+    // Without an estimate, a self-sizing multi-line footer (e.g. the Options
+    // section's) can render its first pass using a too-short guessed height,
+    // overlapping the section container above until the next layout pass
+    // corrects it. Give it a realistic starting estimate.
+    self.tableView.estimatedSectionFooterHeight = 60.0;
+    self.tableView.sectionFooterHeight = UITableViewAutomaticDimension;
     if (self.editingThemeID) {
         NSDictionary *t = [[self store] themeWithID:self.editingThemeID];
         self.title = t[@"name"] ?: @"Edit Theme";
@@ -705,10 +810,11 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
             case ESName:     return 1;
             case ESVariant:  return 1;  // appearance mode (Light/Dark) only — variant is AI-only
             case ESColors:   return ApolloThemeDefaultInputKeys().count;
-            case ESAdvanced: return 1 + (advancedEnabled ? ApolloThemeAdvancedInputKeys().count : 0);
+            case ESAdvanced: return 2 + (advancedEnabled ? ApolloThemeAdvancedInputKeys().count : 0);
             case ESFont:     return 1;
             case ESGenerate: return 1;
             case ESPreview:  return 4;
+            case ESShare:    return 1;
             case ESApply:    return 1;
             case ESDelete:   return 1;
         }
@@ -756,16 +862,48 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
     return nil;
 }
 
-- (NSString *)tableView:(UITableView *)tv titleForFooterInSection:(NSInteger)section {
+- (NSString *)footerTextForSection:(NSInteger)section {
     if (self.editingThemeID && section == ESAdvanced)
         return @"Turn on advanced options to override text and separator colours.";
     if (self.editingThemeID && section == ESFont)
         return @"Used across the app while this theme is active. Applies immediately; the odd view catches up after scrolling or reopening.";
+    if (self.editingThemeID && section == ESShare)
+        return @"Share as an image (a picture of this theme with a QR code anyone can import) or as a theme file.";
     if (self.editingThemeID && section == ESApply)
         return @"Applying selects this theme and enables custom theming.";
     if (!self.editingThemeID && [self listSectionKind:section] == HSOptions)
         return @"Light/dark switching applies to all themes. Pure black affects Apollo themes only — custom themes control their own dark background.";
     return nil;
+}
+
+// A plain titleForFooterInSection: string sits flush against the InsetGrouped
+// section card above it — no top padding of its own. Building the footer as
+// a view instead gives it real breathing room via a layout constraint,
+// rather than a string with a leading newline standing in for spacing.
+- (UIView *)tableView:(UITableView *)tv viewForFooterInSection:(NSInteger)section {
+    NSString *text = [self footerTextForSection:section];
+    if (!text.length) return nil;
+
+    UILabel *label = [UILabel new];
+    label.translatesAutoresizingMaskIntoConstraints = NO;
+    label.text = text;
+    label.numberOfLines = 0;
+    label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    label.textColor = [self themeColorForToken:ApolloThemeTokenSecondaryLabel fallback:UIColor.secondaryLabelColor];
+
+    UIView *container = [UIView new];
+    [container addSubview:label];
+    [NSLayoutConstraint activateConstraints:@[
+        [label.leadingAnchor constraintEqualToAnchor:container.leadingAnchor constant:20.0],
+        [label.trailingAnchor constraintEqualToAnchor:container.trailingAnchor constant:-20.0],
+        [label.topAnchor constraintEqualToAnchor:container.topAnchor constant:12.0],
+        [label.bottomAnchor constraintEqualToAnchor:container.bottomAnchor constant:-8.0],
+    ]];
+    return container;
+}
+
+- (CGFloat)tableView:(UITableView *)tv heightForFooterInSection:(NSInteger)section {
+    return [self footerTextForSection:section].length ? UITableViewAutomaticDimension : CGFLOAT_MIN;
 }
 
 // ===========================================================================
@@ -821,6 +959,7 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
         }
         cell.textLabel.text = [self activeThemeTitle];
         cell.detailTextLabel.attributedText = [self currentThemeDetailAttributedString];
+        cell.detailTextLabel.numberOfLines = 0;
         cell.accessibilityValue = [self currentThemeAccessibilityValue];
         NSDictionary *active = [store activeTheme];
         if (active) {
@@ -859,6 +998,7 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
             if (row == 0) {
                 cell.textLabel.text = @"Generate with AI…";
                 cell.detailTextLabel.text = @"Describe a theme and let Apollo build it.";
+                cell.detailTextLabel.numberOfLines = 0;
                 cell.imageView.image = [UIImage systemImageNamed:@"sparkles"];
                 return cell;
             }
@@ -895,6 +1035,8 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
         } else {
             cell.textLabel.text = @"Comments Theme";
             cell.detailTextLabel.text = [self commentsThemeDetail];
+            cell.detailTextLabel.adjustsFontSizeToFitWidth = YES;
+            cell.detailTextLabel.minimumScaleFactor = 0.8;
             cell.imageView.image = [UIImage systemImageNamed:@"text.bubble"];
         }
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
@@ -923,6 +1065,7 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
             BOOL active = [theme[@"id"] isEqualToString:store.activeThemeID] && store.customThemeEnabled;
             cell.imageView.image = ThemeSwatchImage(lightBG, darkBG, accent);
             cell.detailTextLabel.text = [self originDetailForTheme:theme];
+            cell.detailTextLabel.numberOfLines = 0;
             cell.detailTextLabel.textColor = active ? self.view.tintColor : UIColor.secondaryLabelColor;
             cell.accessibilityValue = active ? @"Active" : nil;
             NSString *themeID = [theme[@"id"] copy];
@@ -1001,6 +1144,18 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
                 cell.selectionStyle = UITableViewCellSelectionStyleNone;
                 return cell;
             }
+            NSInteger advancedColorCount = (ip.section == ESAdvanced && advancedEnabled) ? (NSInteger)ApolloThemeAdvancedInputKeys().count : 0;
+            if (ip.section == ESAdvanced && ip.row == 1 + advancedColorCount) {
+                cell.textLabel.text = @"Colourize Vote Arrows";
+                cell.detailTextLabel.text = @"Idle arrows use the accent colour. A cast vote still shows Apollo's green/blue.";
+                cell.detailTextLabel.numberOfLines = 0;
+                UISwitch *sw = [[UISwitch alloc] init];
+                sw.on = [theme[kApolloThemeVoteArrowsAccentKey] boolValue];
+                [sw addTarget:self action:@selector(voteArrowsAccentSwitchChanged:) forControlEvents:UIControlEventValueChanged];
+                cell.accessoryView = sw;
+                cell.selectionStyle = UITableViewCellSelectionStyleNone;
+                return cell;
+            }
             NSArray *keys = (ip.section == ESColors) ? ApolloThemeDefaultInputKeys() : ApolloThemeAdvancedInputKeys();
             NSString *key = (ip.section == ESColors) ? keys[ip.row] : keys[ip.row - 1];
             cell.textLabel.text = ApolloThemeInputDisplayName(key);
@@ -1046,6 +1201,13 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
         }
         case ESPreview:
             return [self previewCellForRow:ip.row];
+        case ESShare: {
+            UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+            cell.textLabel.text = @"Share…";
+            cell.textLabel.textColor = self.view.tintColor;
+            cell.imageView.image = [UIImage systemImageNamed:@"square.and.arrow.up"];
+            return cell;
+        }
         case ESApply: {
             UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
             cell.textLabel.text = @"Apply Theme";
@@ -1246,15 +1408,21 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
         case ESName: [self renameTapped]; break;
         case ESColors:
             [self beginPickingInputKey:ApolloThemeDefaultInputKeys()[ip.row]]; break;
-        case ESAdvanced:
+        case ESAdvanced: {
+            BOOL advancedEnabled = [self advancedOptionsEnabledForTheme:[[self store] themeWithID:self.editingThemeID]];
+            NSInteger advancedColorCount = advancedEnabled ? (NSInteger)ApolloThemeAdvancedInputKeys().count : 0;
             if (ip.row == 0) {
-                [self setAdvancedOptionsEnabled:![self advancedOptionsEnabledForTheme:[[self store] themeWithID:self.editingThemeID]]];
+                [self setAdvancedOptionsEnabled:!advancedEnabled];
+            } else if (ip.row == 1 + advancedColorCount) {
+                // Switch row — its own target/action handles taps on the switch.
             } else {
                 [self beginPickingInputKey:ApolloThemeAdvancedInputKeys()[ip.row - 1]];
             }
             break;
+        }
         case ESFont: break;
         case ESGenerate: [self generateOppositeMode]; break;
+        case ESShare: [self shareOptionsFromIndexPath:ip]; break;
         case ESApply: [self applyTheme]; break;
         case ESDelete: [self confirmDeleteFromEditor]; break;
     }
@@ -1507,6 +1675,18 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
     [self setAdvancedOptionsEnabled:sw.on];
 }
 
+// Independent of "Advanced options" — not a colour override, so it isn't
+// stripped when Advanced is off. See ApolloThemeRuntime.xm's DualStateButtonNode
+// sink for what this actually recolors.
+- (void)voteArrowsAccentSwitchChanged:(UISwitch *)sw {
+    if (!sw) return;
+    ApolloThemeStore *store = [self store];
+    [store updateTheme:self.editingThemeID mutations:^(NSMutableDictionary *t) {
+        t[kApolloThemeVoteArrowsAccentKey] = @(sw.on);
+    }];
+    [self maybeLiveReload];
+}
+
 - (void)setThemeFont:(ApolloThemeFont)font {
     [[self store] setFont:font themeID:self.editingThemeID];
     // Colours are untouched, so no recompilePreview. If this theme is the live
@@ -1575,10 +1755,48 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
 // Import / export
 // ===========================================================================
 
+// "Import Theme…" fans out to the three routes: a .json export file, a shared
+// theme-card image (QR), or a live camera scan of someone else's card.
 - (void)importTapped {
-    UTType *json = UTTypeJSON ?: [UTType typeWithIdentifier:@"public.json"];
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Import Theme"
+                                                                   message:nil
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"From File…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
+        [self presentImportDocumentPicker];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"From Photo…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
+        [self presentImageImportPicker];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Scan with Camera…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
+        [self presentThemeQRScanner];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    UIView *anchor = [self viewForCreateImportRow] ?: self.view;
+    sheet.popoverPresentationController.sourceView = anchor;
+    sheet.popoverPresentationController.sourceRect = anchor.bounds;
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+// The visible "Import Theme…" row cell (Create section), for iPad popover
+// anchoring; nil if it isn't laid out.
+- (UIView *)viewForCreateImportRow {
+    for (UITableViewCell *cell in self.tableView.visibleCells) {
+        NSIndexPath *ip = [self.tableView indexPathForCell:cell];
+        if (ip && [self listSectionKind:ip.section] == HSCreate) return cell;
+    }
+    return nil;
+}
+
+- (void)presentImportDocumentPicker {
+    // Widened beyond JSON: theme-card images import here too, and sideloaded
+    // installs often see .json tagged as public.data / dyn.* types.
+    NSMutableArray<UTType *> *types = [NSMutableArray array];
+    for (UTType *t in @[UTTypeJSON ?: [UTType typeWithIdentifier:@"public.json"],
+                        UTTypeImage, UTTypePlainText, UTTypeData, UTTypeItem]) {
+        if (t) [types addObject:t];
+    }
     UIDocumentPickerViewController *picker =
-        [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:@[json]];
+        [[UIDocumentPickerViewController alloc] initForOpeningContentTypes:types];
     picker.delegate = self;
     picker.allowsMultipleSelection = NO;
     [self presentViewController:picker animated:YES completion:nil];
@@ -1587,21 +1805,92 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     NSURL *url = urls.firstObject;
     if (!url) return;
+    // Defer past the picker's own dismissal animation — a result alert presented
+    // while the picker is still animating out is silently dropped on device.
+    dispatch_async(dispatch_get_main_queue(), ^{ [self importThemeFromPickedURL:url]; });
+}
+
+- (void)importThemeFromPickedURL:(NSURL *)url {
     BOOL scoped = [url startAccessingSecurityScopedResource];
-    // Reject oversized files BEFORE reading into memory (spec §14.2).
+    // Theme-card images are legitimately multi-MB; only the strict JSON cap
+    // applies on the JSON branch below.
+    static const unsigned long long kMaxImportFileBytes = 40ull * 1024 * 1024;
     NSNumber *size = nil;
     [url getResourceValue:&size forKey:NSURLFileSizeKey error:NULL];
-    if (size && size.unsignedLongLongValue > [ApolloThemeStore maxImportBytes]) {
+    if (size && size.unsignedLongLongValue > kMaxImportFileBytes) {
         if (scoped) [url stopAccessingSecurityScopedResource];
         [self showError:@"That file is too large to be a theme."];
         return;
     }
     NSData *data = [NSData dataWithContentsOfURL:url];
     if (scoped) [url stopAccessingSecurityScopedResource];
+    if (!data.length) { [self showError:@"Couldn't read that file."]; return; }
+
+    // Sniff by content, not declared type: anything that decodes as an image
+    // goes down the QR route.
+    UIImage *image = [UIImage imageWithData:data];
+    if (image) { [self importFromCardImage:image]; return; }
+    if (data.length > [ApolloThemeStore maxImportBytes]) {
+        [self showError:@"That file is too large to be a theme."];
+        return;
+    }
     NSString *err = nil;
     NSDictionary *parsed = [[self store] parseImportData:data error:&err];
     if (!parsed) { [self showError:err ?: @"Couldn't read that theme."]; return; }
     [self confirmImport:parsed];
+}
+
+// Decode a picked/photographed theme card off-main (Vision on a full-res photo
+// can take a beat), then confirm on main.
+- (void)importFromCardImage:(UIImage *)image {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSDictionary *parsed = ApolloThemeShareDecodeImage(image);
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (!parsed) {
+                [self showError:@"This image doesn't contain an Apollo theme code. Import the original shared theme image (screenshots of it work too, as long as the QR code is visible)."];
+                return;
+            }
+            [self confirmImport:parsed];
+        });
+    });
+}
+
+- (void)presentImageImportPicker {
+    PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
+    config.filter = [PHPickerFilter imagesFilter];
+    config.selectionLimit = 1;
+    PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:config];
+    picker.delegate = self;
+    [self presentViewController:picker animated:YES completion:nil];
+}
+
+- (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results {
+    PHPickerResult *result = results.firstObject;
+    // Do everything from the dismissal completion — an alert (or a fast decode's
+    // confirm) presented while the sheet is still animating out is dropped.
+    [picker dismissViewControllerAnimated:YES completion:^{
+        if (!result) return; // cancelled
+        NSItemProvider *provider = result.itemProvider;
+        if (![provider canLoadObjectOfClass:[UIImage class]]) {
+            [self showError:@"Couldn't read that image."];
+            return;
+        }
+        [provider loadObjectOfClass:[UIImage class] completionHandler:^(id<NSItemProviderReading> object, NSError *error) {
+            UIImage *image = [object isKindOfClass:[UIImage class]] ? (UIImage *)object : nil;
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if (!image) { [self showError:@"Couldn't read that image."]; return; }
+                [self importFromCardImage:image];
+            });
+        }];
+    }];
+}
+
+- (void)presentThemeQRScanner {
+    ApolloThemeQRScanViewController *scanner = [[ApolloThemeQRScanViewController alloc] init];
+    scanner.modalPresentationStyle = UIModalPresentationFullScreen;
+    __weak typeof(self) weakSelf = self;
+    scanner.onScan = ^(NSDictionary *parsed) { [weakSelf confirmImport:parsed]; };
+    [self presentViewController:scanner animated:YES completion:nil];
 }
 
 - (void)confirmImport:(NSDictionary *)parsed {
@@ -1613,22 +1902,74 @@ enum { ESName, ESVariant, ESColors, ESAdvanced, ESFont, ESGenerate, ESPreview, E
     [a addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
     [a addAction:[UIAlertAction actionWithTitle:@"Import" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
         NSString *newID = [[self store] importParsedTheme:parsed];
+        // Importing makes the new theme active — if custom theming is live,
+        // reload so the app doesn't keep the previous theme's colours.
+        if ([self store].customThemeEnabled) {
+            ApolloThemeRuntimeReload();
+            ApolloThemeRuntimeInvalidate();
+        }
         [self.tableView reloadData];
         [self openEditorForThemeID:newID];
     }]];
     [self presentViewController:a animated:YES completion:nil];
 }
 
-- (void)exportTheme:(NSDictionary *)theme {
+// ---------------------------------------------------------------------------
+// Share (editor "Share…" row) — image card or .json file
+// ---------------------------------------------------------------------------
+
+- (void)shareOptionsFromIndexPath:(NSIndexPath *)ip {
+    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Share Theme"
+                                                                   message:nil
+                                                            preferredStyle:UIAlertControllerStyleActionSheet];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"As Image…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
+        [self shareThemeAsImageFromIndexPath:ip];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"As Theme File…" style:UIAlertActionStyleDefault handler:^(UIAlertAction *x) {
+        [self shareThemeFile:[[self store] themeWithID:self.editingThemeID]
+                    fromView:[self.tableView cellForRowAtIndexPath:ip]];
+    }]];
+    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
+    UIView *anchor = [self.tableView cellForRowAtIndexPath:ip] ?: self.view;
+    sheet.popoverPresentationController.sourceView = anchor;
+    sheet.popoverPresentationController.sourceRect = anchor.bounds;
+    [self presentViewController:sheet animated:YES completion:nil];
+}
+
+- (void)shareThemeAsImageFromIndexPath:(NSIndexPath *)ip {
+    NSDictionary *theme = [[self store] themeWithID:self.editingThemeID];
+    UIImage *card = ApolloThemeShareRenderCard(theme, self.editingMode);
+    if (!card) { [self showError:@"Couldn't render a share image for this theme."]; return; }
+    ApolloThemeCardActivityItem *item = [[ApolloThemeCardActivityItem alloc] init];
+    item.image = card;
+    item.title = ([theme[@"name"] isKindOfClass:[NSString class]] && [theme[@"name"] length])
+        ? [NSString stringWithFormat:@"%@ — Apollo theme", theme[@"name"]] : @"Apollo theme";
+    UIActivityViewController *av = [[UIActivityViewController alloc] initWithActivityItems:@[item] applicationActivities:nil];
+    UIView *anchor = [self.tableView cellForRowAtIndexPath:ip] ?: self.view;
+    av.popoverPresentationController.sourceView = anchor;
+    av.popoverPresentationController.sourceRect = anchor.bounds;
+    [self presentViewController:av animated:YES completion:nil];
+}
+
+// Write the theme's portable .json to temp and share it (Save to Files /
+// Messages / Mail…). Anchored to `anchor`, falling back to view-centre.
+- (void)shareThemeFile:(NSDictionary *)theme fromView:(UIView *)anchor {
     NSData *data = [[self store] exportDataForTheme:theme];
     if (!data) { [self showError:@"Couldn't export that theme."]; return; }
     NSString *name = [[self store] exportFilenameForName:theme[@"name"]];
     NSURL *tmp = [[NSURL fileURLWithPath:NSTemporaryDirectory()] URLByAppendingPathComponent:name];
-    [data writeToURL:tmp atomically:YES];
+    if (![data writeToURL:tmp atomically:YES]) { [self showError:@"Couldn't export that theme."]; return; }
     UIActivityViewController *av = [[UIActivityViewController alloc] initWithActivityItems:@[tmp] applicationActivities:nil];
-    av.popoverPresentationController.sourceView = self.view;
-    av.popoverPresentationController.sourceRect = CGRectMake(self.view.bounds.size.width / 2, self.view.bounds.size.height / 2, 1, 1);
+    UIView *src = anchor ?: self.view;
+    av.popoverPresentationController.sourceView = src;
+    av.popoverPresentationController.sourceRect = anchor ? src.bounds
+        : CGRectMake(src.bounds.size.width / 2, src.bounds.size.height / 2, 1, 1);
     [self presentViewController:av animated:YES completion:nil];
+}
+
+// The list's Export swipe action shares the .json file (anchored to view-centre).
+- (void)exportTheme:(NSDictionary *)theme {
+    [self shareThemeFile:theme fromView:nil];
 }
 
 - (void)showError:(NSString *)message {

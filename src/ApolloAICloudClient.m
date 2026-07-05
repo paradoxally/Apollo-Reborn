@@ -133,14 +133,18 @@ static BOOL ApolloAICloudIsReasoningModel(NSString *model) {
     return NO;
 }
 
-// Returns nil for a base URL that NSURL can't parse (user-entered setting —
-// e.g. contains spaces). Callers must treat nil as a hard config error rather
-// than build a request from it: requestWithURL:nil crashes/creates an invalid
-// task before any of the error mapping in didCompleteWithError can run.
+// Returns nil for a base URL that can't produce a usable request (user-entered
+// setting — e.g. contains spaces, or lacks a scheme/host). Callers must treat
+// nil as a hard config error rather than build a request from it: a malformed
+// URL either crashes requestWithURL: or dies later as a generic transport
+// error, hiding that the problem is the setting, not connectivity.
 static NSURL *ApolloAICloudChatCompletionsURL(void) {
     NSString *base = sCloudAIBaseURL ?: @"";
     while ([base hasSuffix:@"/"]) base = [base substringToIndex:base.length - 1];
-    return [NSURL URLWithString:[base stringByAppendingString:@"/chat/completions"]];
+    NSURL *url = [NSURL URLWithString:[base stringByAppendingString:@"/chat/completions"]];
+    NSString *scheme = url.scheme.lowercaseString;
+    BOOL httpScheme = [scheme isEqualToString:@"https"] || [scheme isEqualToString:@"http"];
+    return (httpScheme && url.host.length > 0) ? url : nil;
 }
 
 // Retry-override keys (values adjusting the primary shape after a 400 that
@@ -561,6 +565,14 @@ didCompleteWithError:(NSError *)error {
     }
 
     // --- 2xx ---
+    // A stream that closes without a trailing newline leaves its final line —
+    // often the last delta — unconsumed in lineBuffer. Flush it as a complete
+    // line before judging the result. (Same serial delegate queue as
+    // didReceiveData:, so this can't race an in-flight append.)
+    if (stream.lineBuffer.length > 0) {
+        [stream.lineBuffer appendData:[@"\n" dataUsingEncoding:NSUTF8StringEncoding]];
+        [self processBufferedLinesForStream:stream];
+    }
     if (stream.droppedOversizedLine) {
         // Content after the dropped line is missing; surfacing a truncated
         // summary as success would be silent data loss — fail so the router
@@ -569,7 +581,10 @@ didCompleteWithError:(NSError *)error {
                  message:@"The cloud AI service sent an oversized response"];
         return;
     }
-    if (stream.streamedErrorObject && stream.content.length == 0) {
+    if (stream.streamedErrorObject) {
+        // Even with partial content accumulated: an in-stream {"error": ...}
+        // event means the output is incomplete — fail rather than surface (and
+        // cache) a truncated summary.
         [self finishTask:task stream:stream code:ApolloAICloudErrorProvider
                  message:@"The cloud AI service reported an error"];
         return;

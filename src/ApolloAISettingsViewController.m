@@ -1,5 +1,6 @@
 #import "ApolloAISettingsViewController.h"
 
+#import "ApolloAICloudClient.h"
 #import "ApolloAISummary.h"
 #import "ApolloCommon.h"
 #import "ApolloState.h"
@@ -8,9 +9,16 @@
 typedef NS_ENUM(NSInteger, ApolloAISettingsSection) {
     ApolloAISettingsSectionGeneral = 0,
     ApolloAISettingsSectionSummaries,
+    ApolloAISettingsSectionCloudModel,
     ApolloAISettingsSectionAvailability,
     ApolloAISettingsSectionMaintenance,
     ApolloAISettingsSectionCount,
+};
+
+typedef NS_ENUM(NSInteger, ApolloAICloudFieldTag) {
+    ApolloAICloudFieldTagAPIKey = 100,
+    ApolloAICloudFieldTagBaseURL,
+    ApolloAICloudFieldTagModel,
 };
 
 // ObjC surface exported by ApolloFoundationModels.swift. Resolve it dynamically
@@ -52,6 +60,55 @@ typedef NS_ENUM(NSInteger, ApolloAISettingsSection) {
     return cell;
 }
 
+// Inline label-left / field-right text row (mirrors TranslationSettingsViewController's
+// pattern, including the save-on-blur delegate flow).
+- (UITableViewCell *)textFieldCellWithIdentifier:(NSString *)identifier
+                                           label:(NSString *)label
+                                     placeholder:(NSString *)placeholder
+                                            text:(NSString *)text
+                                             tag:(NSInteger)tag
+                                     secureEntry:(BOOL)secureEntry {
+    UITableViewCell *cell = [self.tableView dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:identifier];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+
+        UITextField *textField = [[UITextField alloc] init];
+        textField.tag = tag;
+        textField.delegate = self;
+        textField.textAlignment = NSTextAlignmentRight;
+        textField.clearButtonMode = UITextFieldViewModeWhileEditing;
+        textField.font = [UIFont systemFontOfSize:16];
+        textField.autocorrectionType = UITextAutocorrectionTypeNo;
+        textField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+        textField.returnKeyType = UIReturnKeyDone;
+        textField.translatesAutoresizingMaskIntoConstraints = NO;
+
+        [cell.contentView addSubview:textField];
+        [NSLayoutConstraint activateConstraints:@[
+            [textField.trailingAnchor constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.trailingAnchor],
+            [textField.centerYAnchor constraintEqualToAnchor:cell.contentView.centerYAnchor],
+            [textField.widthAnchor constraintEqualToAnchor:cell.contentView.widthAnchor multiplier:0.60],
+        ]];
+    }
+
+    UITextField *textField = nil;
+    for (UIView *subview in cell.contentView.subviews) {
+        if ([subview isKindOfClass:[UITextField class]]) {
+            textField = (UITextField *)subview;
+            break;
+        }
+    }
+
+    cell.textLabel.text = label;
+    textField.placeholder = placeholder;
+    textField.text = text;
+    textField.tag = tag;
+    textField.secureTextEntry = secureEntry;
+
+    return cell;
+}
+
 - (NSInteger)modelAvailabilityStatus {
     Class bridgeClass = NSClassFromString(@"ApolloFoundationModels");
     if (!bridgeClass || ![bridgeClass respondsToSelector:@selector(shared)]) return 4;
@@ -87,7 +144,8 @@ typedef NS_ENUM(NSInteger, ApolloAISettingsSection) {
     switch (section) {
         case ApolloAISettingsSectionGeneral: return 1;
         case ApolloAISettingsSectionSummaries: return 4;
-        case ApolloAISettingsSectionAvailability: return 1;
+        case ApolloAISettingsSectionCloudModel: return 3;
+        case ApolloAISettingsSectionAvailability: return 2;
         case ApolloAISettingsSectionMaintenance: return 2;
         default: return 0;
     }
@@ -97,6 +155,7 @@ typedef NS_ENUM(NSInteger, ApolloAISettingsSection) {
     switch (section) {
         case ApolloAISettingsSectionGeneral: return @"General";
         case ApolloAISettingsSectionSummaries: return @"Summaries";
+        case ApolloAISettingsSectionCloudModel: return @"Cloud Model";
         case ApolloAISettingsSectionAvailability: return @"Availability";
         case ApolloAISettingsSectionMaintenance: return @"Maintenance";
         default: return nil;
@@ -105,13 +164,16 @@ typedef NS_ENUM(NSInteger, ApolloAISettingsSection) {
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if (section == ApolloAISettingsSectionGeneral) {
-        return @"Summaries are generated entirely on-device using Apple Intelligence — no post or comment text is sent to an external AI service. Summarizing a linked article does fetch that page from its source website, which happens automatically when you open a thread unless Tap to Summarize is on.";
+        return @"Without a Cloud Model key, summaries are generated entirely on-device using Apple Intelligence — no post or comment text is sent to an external AI service. With a Cloud Model key set, post, comment, and linked-article text is sent to the service you configure below. Summarizing a linked article also fetches that page from its source website, which happens automatically when you open a thread unless Tap to Summarize is on.";
     }
     if (section == ApolloAISettingsSectionSummaries) {
         return @"Tap to Summarize generates only the card you tap, and opens it once it's ready. Open Summaries Automatically instead generates enabled summaries when you open a thread and expands them on their own. These two are alternatives, so turning one on turns the other off.";
     }
+    if (section == ApolloAISettingsSectionCloudModel) {
+        return @"Any OpenAI-compatible service works (OpenAI, OpenRouter, Groq, …). When a key is set, summaries are generated by this model first and fall back to on-device Apple Intelligence if it fails. The key is stored on this device and included in settings backups — keep backups private.";
+    }
     if (section == ApolloAISettingsSectionAvailability) {
-        return @"Availability is diagnostic. On some iOS versions, sideloaded apps may report Apple Intelligence as disabled even when generation still works.";
+        return @"Availability is diagnostic. On some iOS versions, sideloaded apps may report Apple Intelligence as disabled even when generation still works. A configured Cloud Model enables summaries even on devices without Apple Intelligence.";
     }
     if (section == ApolloAISettingsSectionMaintenance) {
         return @"Clearing the cache removes saved summaries and extracted article text. Apollo AI logs contain only AI-specific Reborn diagnostics from the current app session.";
@@ -160,11 +222,44 @@ typedef NS_ENUM(NSInteger, ApolloAISettingsSection) {
         }
     }
 
+    if (indexPath.section == ApolloAISettingsSectionCloudModel) {
+        switch (indexPath.row) {
+            case 0:
+                return [self textFieldCellWithIdentifier:@"Cell_CloudAI_Key"
+                                                   label:@"API Key"
+                                             placeholder:@"sk-…"
+                                                    text:sCloudAIAPIKey ?: @""
+                                                     tag:ApolloAICloudFieldTagAPIKey
+                                             secureEntry:YES];
+            case 1:
+                return [self textFieldCellWithIdentifier:@"Cell_CloudAI_BaseURL"
+                                                   label:@"Base URL"
+                                             placeholder:@"https://api.openai.com/v1"
+                                                    text:sCloudAIBaseURL ?: @""
+                                                     tag:ApolloAICloudFieldTagBaseURL
+                                             secureEntry:NO];
+            case 2:
+                return [self textFieldCellWithIdentifier:@"Cell_CloudAI_Model"
+                                                   label:@"Model"
+                                             placeholder:@"gpt-5-mini"
+                                                    text:sCloudAIModel ?: @""
+                                                     tag:ApolloAICloudFieldTagModel
+                                             secureEntry:NO];
+            default:
+                break;
+        }
+    }
+
     if (indexPath.section == ApolloAISettingsSectionAvailability) {
         UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
-        cell.textLabel.text = @"On-Device Model";
-        cell.detailTextLabel.text = [self modelAvailabilityText];
+        if (indexPath.row == 0) {
+            cell.textLabel.text = @"On-Device Model";
+            cell.detailTextLabel.text = [self modelAvailabilityText];
+        } else {
+            cell.textLabel.text = @"Cloud Model";
+            cell.detailTextLabel.text = ApolloAICloudConfigured() ? @"Configured" : @"Not Configured";
+        }
         cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
         return cell;
     }
@@ -222,6 +317,39 @@ typedef NS_ENUM(NSInteger, ApolloAISettingsSection) {
     activity.popoverPresentationController.sourceView = cell ?: self.view;
     activity.popoverPresentationController.sourceRect = cell ? cell.bounds : CGRectZero;
     [self presentViewController:activity animated:YES completion:nil];
+}
+
+#pragma mark - Text fields (Cloud Model)
+
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    [textField resignFirstResponder];
+    return YES;
+}
+
+// Save-on-blur, mirroring TranslationSettingsViewController: trim, persist,
+// resolve empties (key -> nil/off, URL and model -> their defaults), and write
+// the resolved value back into the field so the user sees what will be used.
+- (void)textFieldDidEndEditing:(UITextField *)textField {
+    NSString *trimmed = [textField.text stringByTrimmingCharactersInSet:
+                         [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+
+    if (textField.tag == ApolloAICloudFieldTagAPIKey) {
+        sCloudAIAPIKey = trimmed.length > 0 ? [trimmed copy] : nil;
+        [defaults setObject:trimmed ?: @"" forKey:UDKeyAICloudAPIKey];
+        textField.text = trimmed;
+        // Configured/Not Configured status row + availability footer depend on the key.
+        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:ApolloAISettingsSectionAvailability]
+                      withRowAnimation:UITableViewRowAnimationNone];
+    } else if (textField.tag == ApolloAICloudFieldTagBaseURL) {
+        sCloudAIBaseURL = trimmed.length > 0 ? [trimmed copy] : @"https://api.openai.com/v1";
+        [defaults setObject:sCloudAIBaseURL forKey:UDKeyAICloudBaseURL];
+        textField.text = sCloudAIBaseURL;
+    } else if (textField.tag == ApolloAICloudFieldTagModel) {
+        sCloudAIModel = trimmed.length > 0 ? [trimmed copy] : @"gpt-5-mini";
+        [defaults setObject:sCloudAIModel forKey:UDKeyAICloudModel];
+        textField.text = sCloudAIModel;
+    }
 }
 
 #pragma mark - Actions

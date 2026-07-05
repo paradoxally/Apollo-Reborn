@@ -110,6 +110,12 @@ extern BOOL sEnableAIPostSummaries;     // post / link / both summaries
 extern BOOL sEnableAICommentSummaries;  // the "Discussion so far" summary
 extern BOOL sEnableTapToSummarize;      // generate only on tap (off = automatic)
 extern BOOL sEnableAIAutoExpandSummaries; // auto-open a summary card once it's ready (off = stay collapsed)
+// Cloud model backend for AI summaries (OpenAI-compatible, bring-your-own-key).
+// sCloudAIAPIKey nil when unset (feature off); URL/model always resolve to a
+// non-empty value (defaults: https://api.openai.com/v1 / gpt-5-mini).
+extern NSString *sCloudAIAPIKey;
+extern NSString *sCloudAIBaseURL;
+extern NSString *sCloudAIModel;
 
 // Horizontal alignment for inline media containers narrower than the row width
 // (tall portrait images, height-capped images). Has no effect on full-width media.

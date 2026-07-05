@@ -258,7 +258,16 @@ typedef NS_ENUM(NSInteger, ApolloAICloudFieldTag) {
             cell.detailTextLabel.text = [self modelAvailabilityText];
         } else {
             cell.textLabel.text = @"Cloud Model";
-            cell.detailTextLabel.text = ApolloAICloudConfigured() ? @"Configured" : @"Not Configured";
+            if (!ApolloAICloudConfigured()) {
+                cell.detailTextLabel.text = @"Not Configured";
+            } else if (!ApolloAICloudBaseURLIsValid()) {
+                // Key present but every request would abort on the base URL —
+                // "Configured" here would hide exactly the problem the user
+                // came to this screen to find.
+                cell.detailTextLabel.text = @"Invalid Base URL";
+            } else {
+                cell.detailTextLabel.text = @"Configured";
+            }
         }
         cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
         return cell;
@@ -345,6 +354,9 @@ typedef NS_ENUM(NSInteger, ApolloAICloudFieldTag) {
         sCloudAIBaseURL = trimmed.length > 0 ? [trimmed copy] : @"https://api.openai.com/v1";
         [defaults setObject:sCloudAIBaseURL forKey:UDKeyAICloudBaseURL];
         textField.text = sCloudAIBaseURL;
+        // The status row can flip between Configured and Invalid Base URL.
+        [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:ApolloAISettingsSectionAvailability]
+                      withRowAnimation:UITableViewRowAnimationNone];
     } else if (textField.tag == ApolloAICloudFieldTagModel) {
         sCloudAIModel = trimmed.length > 0 ? [trimmed copy] : @"gpt-5-mini";
         [defaults setObject:sCloudAIModel forKey:UDKeyAICloudModel];

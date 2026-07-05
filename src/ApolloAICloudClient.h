@@ -24,6 +24,12 @@ __BEGIN_DECLS
 // sCloudAIBaseURL). Gates the cloud-first path and the raised input caps.
 BOOL ApolloAICloudConfigured(void);
 
+// YES when the configured base URL composes into a usable chat-completions
+// endpoint (parseable, http(s) scheme — http only for local hosts, non-empty
+// host). Diagnostic: settings uses it so the status row doesn't claim
+// "Configured" for a base URL every request would abort on.
+BOOL ApolloAICloudBaseURLIsValid(void);
+
 extern NSString *const ApolloAICloudErrorDomain;
 
 typedef NS_ENUM(NSInteger, ApolloAICloudErrorCode) {

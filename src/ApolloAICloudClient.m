@@ -188,6 +188,10 @@ static NSURL *ApolloAICloudChatCompletionsURL(void) {
     return (schemeOK && url.host.length > 0) ? url : nil;
 }
 
+BOOL ApolloAICloudBaseURLIsValid(void) {
+    return ApolloAICloudChatCompletionsURL() != nil;
+}
+
 // Retry-override keys (values adjusting the primary shape after a 400 that
 // names the offending parameter — see ApolloAICloudRetryOverridesForError):
 //   kApolloAICloudOverrideSwapTokenKey    -> @YES to use the token-cap key the

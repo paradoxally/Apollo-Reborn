@@ -28,6 +28,8 @@
 #import "ApolloCommon.h"
 #import "ApolloState.h"
 
+#include <ctype.h>
+
 NSString *const ApolloAICloudErrorDomain = @"ApolloAICloud";
 
 BOOL ApolloAICloudConfigured(void) {
@@ -124,6 +126,10 @@ static BOOL ApolloAICloudIsReasoningModel(NSString *model) {
     return NO;
 }
 
+// Returns nil for a base URL that NSURL can't parse (user-entered setting —
+// e.g. contains spaces). Callers must treat nil as a hard config error rather
+// than build a request from it: requestWithURL:nil crashes/creates an invalid
+// task before any of the error mapping in didCompleteWithError can run.
 static NSURL *ApolloAICloudChatCompletionsURL(void) {
     NSString *base = sCloudAIBaseURL ?: @"";
     while ([base hasSuffix:@"/"]) base = [base substringToIndex:base.length - 1];
@@ -161,7 +167,9 @@ static NSData *ApolloAICloudRequestBody(NSString *text, NSString *instructions,
 }
 
 - (NSURLSessionDataTask *)taskForStream:(ApolloAICloudStream *)stream stripped:(BOOL)stripped {
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:ApolloAICloudChatCompletionsURL()];
+    NSURL *url = ApolloAICloudChatCompletionsURL();
+    if (!url) return nil;
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
     request.HTTPMethod = @"POST";
     [request setValue:[@"Bearer " stringByAppendingString:sCloudAIAPIKey ?: @""] forHTTPHeaderField:@"Authorization"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
@@ -196,6 +204,16 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     stream.maximumResponseTokens = maximumResponseTokens;
 
     NSURLSessionDataTask *task = [self taskForStream:stream stripped:NO];
+    if (!task) {
+        // Unparseable user-entered base URL. Surface as the "check the base
+        // URL" error (code 12) so the router can fall back to on-device.
+        ApolloLog(@"[AISummary][cloud] request %@ aborted: base URL is not a valid URL", stream.identifier);
+        NSError *error = [NSError errorWithDomain:ApolloAICloudErrorDomain
+                                             code:ApolloAICloudErrorNetwork
+                                         userInfo:@{NSLocalizedDescriptionKey: @"The cloud AI base URL is invalid"}];
+        dispatch_async(dispatch_get_main_queue(), ^{ if (onComplete) onComplete(nil, error); });
+        return;
+    }
 
     [self.lock lock];
     // A newer request for the same identifier supersedes any in-flight one
@@ -269,6 +287,11 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     stream.streamedErrorObject = NO;
 
     NSURLSessionDataTask *retryTask = [self taskForStream:stream stripped:YES];
+    if (!retryTask) {   // base URL edited to something unparseable mid-flight
+        [self finishTask:task stream:stream code:ApolloAICloudErrorNetwork
+                 message:@"The cloud AI base URL is invalid"];
+        return;
+    }
     [self.lock lock];
     [self.streamsByTask removeObjectForKey:@(task.taskIdentifier)];
     self.streamsByTask[@(retryTask.taskIdentifier)] = stream;

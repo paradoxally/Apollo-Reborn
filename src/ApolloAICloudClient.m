@@ -45,6 +45,7 @@ BOOL ApolloAICloudConfigured(void) {
 @property (nonatomic) NSInteger httpStatus;
 @property (nonatomic) BOOL sawDone;                         // saw `data: [DONE]`
 @property (nonatomic) BOOL streamedErrorObject;             // saw a top-level {"error": ...} SSE payload
+@property (nonatomic) BOOL droppedOversizedLine;            // an SSE line blew past the buffer cap and was discarded
 @property (nonatomic) BOOL didStripRetry;                   // the one-shot 400 parameter-strip retry was used
 @property (nonatomic) BOOL cancelled;                       // cancelRequest: hit this stream (set under the lock)
 @property (nonatomic, copy) void (^onPartial)(NSString *);
@@ -144,11 +145,12 @@ static NSURL *ApolloAICloudChatCompletionsURL(void) {
 
 // Retry-override keys (values adjusting the primary shape after a 400 that
 // names the offending parameter — see ApolloAICloudRetryOverridesForError):
-//   kApolloAICloudOverrideTokenKey        -> NSString, the token-cap key to use
+//   kApolloAICloudOverrideSwapTokenKey    -> @YES to use the token-cap key the
+//                                            primary shape did NOT send
 //   kApolloAICloudOverrideReasoningEffort -> NSString replacement, or NSNull to drop
 //   kApolloAICloudOverrideDropTemperature -> @YES to drop temperature
 //   kApolloAICloudOverrideFullStrip       -> @YES for the legacy drop-everything shape
-static NSString *const kApolloAICloudOverrideTokenKey = @"tokenKey";
+static NSString *const kApolloAICloudOverrideSwapTokenKey = @"swapTokenKey";
 static NSString *const kApolloAICloudOverrideReasoningEffort = @"reasoningEffort";
 static NSString *const kApolloAICloudOverrideDropTemperature = @"dropTemperature";
 static NSString *const kApolloAICloudOverrideFullStrip = @"fullStrip";
@@ -174,8 +176,9 @@ static NSData *ApolloAICloudRequestBody(NSString *text, NSString *instructions,
     }];
 
     NSString *tokenKey = reasoning ? @"max_completion_tokens" : @"max_tokens";
-    if (fullStrip) tokenKey = reasoning ? @"max_tokens" : @"max_completion_tokens";  // legacy swap
-    if (overrides[kApolloAICloudOverrideTokenKey]) tokenKey = overrides[kApolloAICloudOverrideTokenKey];
+    if (fullStrip || [overrides[kApolloAICloudOverrideSwapTokenKey] boolValue]) {
+        tokenKey = reasoning ? @"max_tokens" : @"max_completion_tokens";
+    }
     if (maxTokens > 0) body[tokenKey] = @(maxTokens);
 
     if (!fullStrip) {
@@ -209,11 +212,13 @@ static NSDictionary *ApolloAICloudRetryOverridesForError(NSString *param, NSStri
     NSString *lowerMessage = message.lowercaseString ?: @"";
     NSString *subject = param.length > 0 ? param.lowercaseString : lowerMessage;
 
-    if ([subject containsString:@"max_tokens"] && ![subject containsString:@"max_completion_tokens"]) {
-        return @{kApolloAICloudOverrideTokenKey: @"max_completion_tokens"};
-    }
-    if ([subject containsString:@"max_completion_tokens"]) {
-        return @{kApolloAICloudOverrideTokenKey: @"max_tokens"};
+    // The primary shape only ever sends ONE of the two token-cap keys, so an
+    // error naming either one can only mean "the key you sent is wrong" — swap
+    // to the other. No need to work out which key the message is complaining
+    // about vs suggesting ("'max_tokens' is not supported... Use
+    // 'max_completion_tokens' instead" names both).
+    if ([subject containsString:@"max_tokens"] || [subject containsString:@"max_completion_tokens"]) {
+        return @{kApolloAICloudOverrideSwapTokenKey: @YES};
     }
     if ([subject containsString:@"reasoning_effort"] || [lowerMessage containsString:@"reasoning_effort"]) {
         // Newer models renamed the lowest effort "minimal" -> "none"; use it
@@ -353,6 +358,7 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     stream.httpStatus = 0;
     stream.sawDone = NO;
     stream.streamedErrorObject = NO;
+    stream.droppedOversizedLine = NO;
 
     NSURLSessionDataTask *retryTask = [self taskForStream:stream overrides:overrides];
     if (!retryTask) {   // base URL edited to something unparseable mid-flight
@@ -477,11 +483,14 @@ didReceiveResponse:(NSURLResponse *)response
         // Whatever remains has no newline yet. A single line past the cap is
         // pathological (real deltas are a few KB) — drop it rather than grow
         // until OOM. The line's later chunks then read as newline-terminated
-        // fragments without a `data:` prefix and are skipped harmlessly.
+        // fragments without a `data:` prefix and are skipped harmlessly. The
+        // flag fails the request at completion: content past the drop may be
+        // missing, and a silently truncated summary is worse than falling back.
         if (stream.lineBuffer.length > kApolloAICloudMaxBufferedBody) {
             ApolloLog(@"[AISummary][cloud] request %@ dropped an oversized SSE line (%lu bytes buffered)",
                       stream.identifier, (unsigned long)stream.lineBuffer.length);
             stream.lineBuffer = [NSMutableData data];
+            stream.droppedOversizedLine = YES;
         }
     }
 }
@@ -552,6 +561,14 @@ didCompleteWithError:(NSError *)error {
     }
 
     // --- 2xx ---
+    if (stream.droppedOversizedLine) {
+        // Content after the dropped line is missing; surfacing a truncated
+        // summary as success would be silent data loss — fail so the router
+        // falls back to on-device.
+        [self finishTask:task stream:stream code:ApolloAICloudErrorProvider
+                 message:@"The cloud AI service sent an oversized response"];
+        return;
+    }
     if (stream.streamedErrorObject && stream.content.length == 0) {
         [self finishTask:task stream:stream code:ApolloAICloudErrorProvider
                  message:@"The cloud AI service reported an error"];

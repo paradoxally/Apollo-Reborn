@@ -241,7 +241,7 @@ typedef NS_ENUM(NSInteger, ApolloAICloudFieldTag) {
             case 2:
                 return [self textFieldCellWithIdentifier:@"Cell_CloudAI_Model"
                                                    label:@"Model"
-                                             placeholder:@"gpt-5-mini"
+                                             placeholder:@"gpt-5.4-mini"
                                                     text:sCloudAIModel ?: @""
                                                      tag:ApolloAICloudFieldTagModel
                                              secureEntry:NO];
@@ -358,7 +358,7 @@ typedef NS_ENUM(NSInteger, ApolloAICloudFieldTag) {
         [self.tableView reloadSections:[NSIndexSet indexSetWithIndex:ApolloAISettingsSectionAvailability]
                       withRowAnimation:UITableViewRowAnimationNone];
     } else if (textField.tag == ApolloAICloudFieldTagModel) {
-        sCloudAIModel = trimmed.length > 0 ? [trimmed copy] : @"gpt-5-mini";
+        sCloudAIModel = trimmed.length > 0 ? [trimmed copy] : @"gpt-5.4-mini";
         [defaults setObject:sCloudAIModel forKey:UDKeyAICloudModel];
         textField.text = sCloudAIModel;
     }

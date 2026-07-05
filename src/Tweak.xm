@@ -1502,7 +1502,7 @@ static void initializeRandomSources() {
                                     UDKeyEnableAIAutoExpandSummaries: @NO,
                                     UDKeyAICloudAPIKey: @"",
                                     UDKeyAICloudBaseURL: @"https://api.openai.com/v1",
-                                    UDKeyAICloudModel: @"gpt-5-mini",
+                                    UDKeyAICloudModel: @"gpt-5.4-mini",
                                     UDKeyPictureInPictureEnabled: @NO,
                                     UDKeyPictureInPictureActivation: @(ApolloPiPActivationModeUnmutedOnly),
                                     UDKeyPictureInPictureStartPosition: @(ApolloPiPStartPositionTopRight),
@@ -1575,7 +1575,7 @@ static void initializeRandomSources() {
     NSString *cloudAIBaseURL = (NSString *)[[NSUserDefaults standardUserDefaults] objectForKey:UDKeyAICloudBaseURL];
     sCloudAIBaseURL = cloudAIBaseURL.length > 0 ? [cloudAIBaseURL copy] : @"https://api.openai.com/v1";
     NSString *cloudAIModel = (NSString *)[[NSUserDefaults standardUserDefaults] objectForKey:UDKeyAICloudModel];
-    sCloudAIModel = cloudAIModel.length > 0 ? [cloudAIModel copy] : @"gpt-5-mini";
+    sCloudAIModel = cloudAIModel.length > 0 ? [cloudAIModel copy] : @"gpt-5.4-mini";
     sInlineImageAlignment = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyInlineImageAlignment];
     if (sInlineImageAlignment < ApolloInlineImageAlignmentCenter || sInlineImageAlignment > ApolloInlineImageAlignmentRight) {
         sInlineImageAlignment = ApolloInlineImageAlignmentCenter;

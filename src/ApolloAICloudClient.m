@@ -133,17 +133,41 @@ static BOOL ApolloAICloudIsReasoningModel(NSString *model) {
     return NO;
 }
 
+// YES only for a literal dotted-quad IPv4 address: exactly four all-numeric
+// octets, each 0-255, no leading zeros (inet-style resolvers treat "010" as
+// octal, so "010.1.2.3" could connect somewhere other than 10.1.2.3).
+// Hostnames like "10.evil.com" or "127.0.0.1.evil.com" must NOT parse — they
+// resolve wherever their owner points them.
+static BOOL ApolloAICloudParseIPv4(NSString *host, NSInteger octets[4]) {
+    NSArray<NSString *> *parts = [host componentsSeparatedByString:@"."];
+    if (parts.count != 4) return NO;
+    for (NSUInteger i = 0; i < 4; i++) {
+        NSString *part = parts[i];
+        if (part.length == 0 || part.length > 3) return NO;
+        if (part.length > 1 && [part hasPrefix:@"0"]) return NO;
+        for (NSUInteger j = 0; j < part.length; j++) {
+            unichar c = [part characterAtIndex:j];
+            if (c < '0' || c > '9') return NO;
+        }
+        NSInteger value = part.integerValue;
+        if (value > 255) return NO;
+        octets[i] = value;
+    }
+    return YES;
+}
+
 // Loopback / RFC1918-LAN / mDNS hosts — the places a local-development model
-// server (mock, LM Studio, Ollama proxy) legitimately lives.
+// server (mock, LM Studio, Ollama proxy) legitimately lives. Private IP ranges
+// are only honored for literal IPv4 addresses; name lookups (other than mDNS
+// .local, which never resolves through public DNS) can point anywhere.
 static BOOL ApolloAICloudHostIsLocal(NSString *host) {
     NSString *h = host.lowercaseString;
     if ([h isEqualToString:@"localhost"] || [h isEqualToString:@"::1"] || [h hasSuffix:@".local"]) return YES;
-    if ([h hasPrefix:@"127."] || [h hasPrefix:@"10."] || [h hasPrefix:@"192.168."]) return YES;
-    if ([h hasPrefix:@"172."]) {   // 172.16.0.0/12
-        NSArray<NSString *> *octets = [h componentsSeparatedByString:@"."];
-        NSInteger second = octets.count > 1 ? octets[1].integerValue : -1;
-        return second >= 16 && second <= 31;
-    }
+    NSInteger o[4];
+    if (!ApolloAICloudParseIPv4(h, o)) return NO;
+    if (o[0] == 127 || o[0] == 10) return YES;                 // loopback, 10/8
+    if (o[0] == 192 && o[1] == 168) return YES;                // 192.168/16
+    if (o[0] == 172 && o[1] >= 16 && o[1] <= 31) return YES;   // 172.16/12
     return NO;
 }
 

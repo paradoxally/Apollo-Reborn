@@ -47,6 +47,7 @@ BOOL ApolloAICloudConfigured(void) {
 @property (nonatomic) BOOL sawDone;                         // saw `data: [DONE]`
 @property (nonatomic) BOOL streamedErrorObject;             // saw a top-level {"error": ...} SSE payload
 @property (nonatomic) BOOL didStripRetry;                   // the one-shot 400 parameter-strip retry was used
+@property (nonatomic) BOOL cancelled;                       // cancelRequest: hit this stream (set under the lock)
 @property (nonatomic, copy) void (^onPartial)(NSString *);
 @property (nonatomic, copy) void (^onComplete)(NSString *, NSError *);
 // Retained request material so the strip-retry can rebuild the request.
@@ -243,6 +244,12 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     if (identifier.length == 0) return;
     [self.lock lock];
     NSURLSessionDataTask *task = self.tasksByRequestID[identifier];
+    // Also flag the stream itself: a cancel can land while the original task is
+    // inside its 400 strip-retry handoff (already completed, retry not yet
+    // resumed) — cancelling the completed task alone would be a no-op and the
+    // retry would run anyway. stripRetryTask: checks this flag under the lock.
+    ApolloAICloudStream *stream = task ? self.streamsByTask[@(task.taskIdentifier)] : nil;
+    stream.cancelled = YES;
     [self.lock unlock];
     // The cancel surfaces in didCompleteWithError: as NSURLErrorCancelled and
     // is mapped to code 6 there; bookkeeping is cleaned up in one place.
@@ -302,16 +309,27 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
                  message:@"The cloud AI base URL is invalid"];
         return;
     }
+    // Retry only while this request still owns its identifier slot AND wasn't
+    // cancelled. A cancel that landed after the original task completed (so its
+    // [task cancel] was a no-op) or a superseding request both win this race —
+    // the retry must not run behind them.
+    BOOL proceed = NO;
     [self.lock lock];
     [self.streamsByTask removeObjectForKey:@(task.taskIdentifier)];
-    self.streamsByTask[@(retryTask.taskIdentifier)] = stream;
-    // Keep the cancellation mapping pointed at the live task (unless superseded).
-    if (self.tasksByRequestID[stream.identifier] == task ||
-        self.tasksByRequestID[stream.identifier] == nil) {
+    if (!stream.cancelled &&
+        (self.tasksByRequestID[stream.identifier] == task ||
+         self.tasksByRequestID[stream.identifier] == nil)) {
+        self.streamsByTask[@(retryTask.taskIdentifier)] = stream;
         self.tasksByRequestID[stream.identifier] = retryTask;
+        proceed = YES;
     }
     [self.lock unlock];
-    [retryTask resume];
+    if (proceed) {
+        [retryTask resume];
+        return;
+    }
+    [retryTask cancel];
+    [self finishTask:task stream:stream code:ApolloAICloudErrorCancelled message:@"Cancelled"];
 }
 
 #pragma mark SSE parsing
@@ -395,8 +413,12 @@ didReceiveResponse:(NSURLResponse *)response
     [self.lock unlock];
     if (!stream) return;
 
+    // Clamp the append to the remaining budget — a single oversized chunk must
+    // not carry the buffer past the cap.
     if (stream.rawBody.length < kApolloAICloudMaxBufferedBody) {
-        [stream.rawBody appendData:data];
+        NSUInteger remaining = kApolloAICloudMaxBufferedBody - stream.rawBody.length;
+        [stream.rawBody appendData:data.length <= remaining
+            ? data : [data subdataWithRange:NSMakeRange(0, remaining)]];
     }
     if (stream.httpStatus >= 200 && stream.httpStatus < 300) {
         [stream.lineBuffer appendData:data];

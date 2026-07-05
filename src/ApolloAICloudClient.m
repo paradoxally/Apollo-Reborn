@@ -205,8 +205,18 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
 
     NSURLSessionDataTask *task = [self taskForStream:stream stripped:NO];
     if (!task) {
-        // Unparseable user-entered base URL. Surface as the "check the base
-        // URL" error (code 12) so the router can fall back to on-device.
+        // Unparseable user-entered base URL. This abort still SUPERSEDES any
+        // in-flight request for the same identifier (cancel + clear, exactly
+        // like the success path below) so a stale request can't keep streaming
+        // into the card while the caller runs its error/fallback flow.
+        [self.lock lock];
+        NSURLSessionDataTask *previous = self.tasksByRequestID[stream.identifier];
+        [self.tasksByRequestID removeObjectForKey:stream.identifier];
+        [self.lock unlock];
+        [previous cancel];
+
+        // Surface as the "check the base URL" error (code 12) so the router
+        // can fall back to on-device.
         ApolloLog(@"[AISummary][cloud] request %@ aborted: base URL is not a valid URL", stream.identifier);
         NSError *error = [NSError errorWithDomain:ApolloAICloudErrorDomain
                                              code:ApolloAICloudErrorNetwork

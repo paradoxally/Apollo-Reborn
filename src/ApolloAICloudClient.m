@@ -29,8 +29,6 @@
 #import "ApolloCommon.h"
 #import "ApolloState.h"
 
-#include <ctype.h>
-
 NSString *const ApolloAICloudErrorDomain = @"ApolloAICloud";
 
 BOOL ApolloAICloudConfigured(void) {
@@ -98,9 +96,12 @@ static const NSUInteger kApolloAICloudMaxBufferedBody = 512 * 1024;
         _tasksByRequestID = [NSMutableDictionary dictionary];
 
         NSURLSessionConfiguration *config = [NSURLSessionConfiguration defaultSessionConfiguration];
-        // Idle timeout between chunks; the overall bound is ApolloAISummary's
-        // generation watchdog, which cancels us (-> code 6).
-        config.timeoutIntervalForRequest = 60.0;
+        // Idle timeout between chunks. The overall bound is ApolloAISummary's
+        // generation watchdog, which cancels us (-> code 6) — so this must sit
+        // ABOVE the largest watchdog value (120s cloud/sim), otherwise a
+        // long-thinking model that streams nothing while reasoning gets cut
+        // off by the transport before the watchdog can rule.
+        config.timeoutIntervalForRequest = 150.0;
         config.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
         NSOperationQueue *queue = [[NSOperationQueue alloc] init];
         queue.maxConcurrentOperationCount = 1;
@@ -123,8 +124,11 @@ static NSString *ApolloAICloudBareModelName(NSString *model) {
 static BOOL ApolloAICloudIsReasoningModel(NSString *model) {
     NSString *bare = ApolloAICloudBareModelName(model).lowercaseString;
     if ([bare hasPrefix:@"gpt-5"]) return YES;
+    // Explicit '0'..'9' bounds: characterAtIndex returns a unichar, and
+    // passing values outside unsigned char to isdigit() is undefined behavior.
+    unichar second = bare.length >= 2 ? [bare characterAtIndex:1] : 0;
     if (bare.length >= 2 && [bare characterAtIndex:0] == 'o' &&
-        isdigit([bare characterAtIndex:1])) return YES;
+        second >= '0' && second <= '9') return YES;
     return NO;
 }
 
@@ -470,6 +474,15 @@ didReceiveResponse:(NSURLResponse *)response
     if (stream.httpStatus >= 200 && stream.httpStatus < 300) {
         [stream.lineBuffer appendData:data];
         [self processBufferedLinesForStream:stream];
+        // Whatever remains has no newline yet. A single line past the cap is
+        // pathological (real deltas are a few KB) — drop it rather than grow
+        // until OOM. The line's later chunks then read as newline-terminated
+        // fragments without a `data:` prefix and are skipped harmlessly.
+        if (stream.lineBuffer.length > kApolloAICloudMaxBufferedBody) {
+            ApolloLog(@"[AISummary][cloud] request %@ dropped an oversized SSE line (%lu bytes buffered)",
+                      stream.identifier, (unsigned long)stream.lineBuffer.length);
+            stream.lineBuffer = [NSMutableData data];
+        }
     }
 }
 

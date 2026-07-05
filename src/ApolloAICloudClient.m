@@ -16,9 +16,10 @@
 //    reasoning_effort=minimal + max_completion_tokens and no temperature (they
 //    reject it, and thinking latency/cost is pure waste for a 3-sentence
 //    summary); everything else gets temperature=0 + max_tokens. If a provider
-//    rejects the shape with an HTTP 400 naming a parameter, the request is
-//    transparently re-issued ONCE with the optional params stripped and the
-//    token-cap key swapped.
+//    rejects the shape with an HTTP 400, the request is transparently
+//    re-issued ONCE, fixing only the parameter the error names (token-cap key
+//    swap, reasoning_effort remap/drop, temperature drop); an unidentifiable
+//    400 falls back to the fully stripped legacy shape.
 //  - Privacy: never log the API key, the request body, or any streamed text —
 //    diagnostics are identifier/status/byte-count only, matching the
 //    "never log generated text" discipline in ApolloAISummary.xm.
@@ -137,12 +138,28 @@ static NSURL *ApolloAICloudChatCompletionsURL(void) {
     return [NSURL URLWithString:[base stringByAppendingString:@"/chat/completions"]];
 }
 
-// stripped=YES is the retry shape: no temperature/reasoning_effort, and the
-// token-cap key swapped relative to the primary shape.
+// Retry-override keys (values adjusting the primary shape after a 400 that
+// names the offending parameter — see ApolloAICloudRetryOverridesForError):
+//   kApolloAICloudOverrideTokenKey        -> NSString, the token-cap key to use
+//   kApolloAICloudOverrideReasoningEffort -> NSString replacement, or NSNull to drop
+//   kApolloAICloudOverrideDropTemperature -> @YES to drop temperature
+//   kApolloAICloudOverrideFullStrip       -> @YES for the legacy drop-everything shape
+static NSString *const kApolloAICloudOverrideTokenKey = @"tokenKey";
+static NSString *const kApolloAICloudOverrideReasoningEffort = @"reasoningEffort";
+static NSString *const kApolloAICloudOverrideDropTemperature = @"dropTemperature";
+static NSString *const kApolloAICloudOverrideFullStrip = @"fullStrip";
+
+// Builds the request body. overrides=nil is the primary shape (reasoning models:
+// max_completion_tokens + reasoning_effort=minimal; others: max_tokens +
+// temperature=0). With overrides, the primary shape is adjusted per the keys
+// above — fixing ONLY what the provider complained about keeps the rest of the
+// tuning intact (a blind full-strip swapped the token key too, which itself
+// 400s on newer models that reject max_tokens outright).
 static NSData *ApolloAICloudRequestBody(NSString *text, NSString *instructions,
-                                        NSInteger maxTokens, BOOL stripped) {
+                                        NSInteger maxTokens, NSDictionary *overrides) {
     NSString *model = sCloudAIModel ?: @"gpt-5-mini";
     BOOL reasoning = ApolloAICloudIsReasoningModel(model);
+    BOOL fullStrip = [overrides[kApolloAICloudOverrideFullStrip] boolValue];
     NSMutableDictionary *body = [NSMutableDictionary dictionaryWithDictionary:@{
         @"model": model,
         @"stream": @YES,
@@ -151,23 +168,24 @@ static NSData *ApolloAICloudRequestBody(NSString *text, NSString *instructions,
             @{@"role": @"user", @"content": text ?: @""},
         ],
     }];
-    // Primary: reasoning models take max_completion_tokens, others max_tokens.
-    // Stripped retry: swap the key, drop every optional knob.
-    BOOL useCompletionTokensKey = stripped ? !reasoning : reasoning;
-    if (maxTokens > 0) {
-        body[useCompletionTokensKey ? @"max_completion_tokens" : @"max_tokens"] = @(maxTokens);
-    }
-    if (!stripped) {
+
+    NSString *tokenKey = reasoning ? @"max_completion_tokens" : @"max_tokens";
+    if (fullStrip) tokenKey = reasoning ? @"max_tokens" : @"max_completion_tokens";  // legacy swap
+    if (overrides[kApolloAICloudOverrideTokenKey]) tokenKey = overrides[kApolloAICloudOverrideTokenKey];
+    if (maxTokens > 0) body[tokenKey] = @(maxTokens);
+
+    if (!fullStrip) {
         if (reasoning) {
-            body[@"reasoning_effort"] = @"minimal";
-        } else {
+            id effort = overrides[kApolloAICloudOverrideReasoningEffort] ?: @"minimal";
+            if (![effort isKindOfClass:[NSNull class]]) body[@"reasoning_effort"] = effort;
+        } else if (![overrides[kApolloAICloudOverrideDropTemperature] boolValue]) {
             body[@"temperature"] = @0;
         }
     }
     return [NSJSONSerialization dataWithJSONObject:body options:0 error:NULL];
 }
 
-- (NSURLSessionDataTask *)taskForStream:(ApolloAICloudStream *)stream stripped:(BOOL)stripped {
+- (NSURLSessionDataTask *)taskForStream:(ApolloAICloudStream *)stream overrides:(NSDictionary *)overrides {
     NSURL *url = ApolloAICloudChatCompletionsURL();
     if (!url) return nil;
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
@@ -176,8 +194,35 @@ static NSData *ApolloAICloudRequestBody(NSString *text, NSString *instructions,
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:@"text/event-stream, application/json" forHTTPHeaderField:@"Accept"];
     request.HTTPBody = ApolloAICloudRequestBody(stream.text, stream.instructions,
-                                                stream.maximumResponseTokens, stripped);
+                                                stream.maximumResponseTokens, overrides);
     return [self.session dataTaskWithRequest:request];
+}
+
+// Maps a parsed 400 ("param" + message, both optional) to targeted overrides
+// for the one-shot retry. Returns the full-strip fallback when the offending
+// parameter can't be identified.
+static NSDictionary *ApolloAICloudRetryOverridesForError(NSString *param, NSString *message) {
+    NSString *lowerMessage = message.lowercaseString ?: @"";
+    NSString *subject = param.length > 0 ? param.lowercaseString : lowerMessage;
+
+    if ([subject containsString:@"max_tokens"] && ![subject containsString:@"max_completion_tokens"]) {
+        return @{kApolloAICloudOverrideTokenKey: @"max_completion_tokens"};
+    }
+    if ([subject containsString:@"max_completion_tokens"]) {
+        return @{kApolloAICloudOverrideTokenKey: @"max_tokens"};
+    }
+    if ([subject containsString:@"reasoning_effort"] || [lowerMessage containsString:@"reasoning_effort"]) {
+        // Newer models renamed the lowest effort "minimal" -> "none"; use it
+        // when the error's supported-values list offers it, else drop the knob.
+        if ([lowerMessage containsString:@"'none'"]) {
+            return @{kApolloAICloudOverrideReasoningEffort: @"none"};
+        }
+        return @{kApolloAICloudOverrideReasoningEffort: [NSNull null]};
+    }
+    if ([subject containsString:@"temperature"]) {
+        return @{kApolloAICloudOverrideDropTemperature: @YES};
+    }
+    return @{kApolloAICloudOverrideFullStrip: @YES};
 }
 
 #pragma mark Public API
@@ -204,7 +249,7 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     stream.instructions = instructions;
     stream.maximumResponseTokens = maximumResponseTokens;
 
-    NSURLSessionDataTask *task = [self taskForStream:stream stripped:NO];
+    NSURLSessionDataTask *task = [self taskForStream:stream overrides:nil];
     if (!task) {
         // Unparseable user-entered base URL. This abort still SUPERSEDES any
         // in-flight request for the same identifier (cancel + clear, exactly
@@ -290,11 +335,13 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     [self finishTask:task stream:stream final:nil error:error];
 }
 
-// Re-issues the request once with optional parameters stripped, transferring
+// Re-issues the request once with the given parameter overrides, transferring
 // the context to the new task. Returns without firing onComplete.
-- (void)stripRetryTask:(NSURLSessionTask *)task stream:(ApolloAICloudStream *)stream {
-    ApolloLog(@"[AISummary][cloud] request %@ rejected (HTTP 400); retrying with stripped parameters",
-              stream.identifier);
+- (void)stripRetryTask:(NSURLSessionTask *)task
+                stream:(ApolloAICloudStream *)stream
+             overrides:(NSDictionary *)overrides {
+    ApolloLog(@"[AISummary][cloud] request %@ rejected (HTTP 400); retrying with adjusted parameters (%@)",
+              stream.identifier, [overrides.allKeys componentsJoinedByString:@","]);
     stream.didStripRetry = YES;
     stream.lineBuffer = [NSMutableData data];
     stream.rawBody = [NSMutableData data];
@@ -303,7 +350,7 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     stream.sawDone = NO;
     stream.streamedErrorObject = NO;
 
-    NSURLSessionDataTask *retryTask = [self taskForStream:stream stripped:YES];
+    NSURLSessionDataTask *retryTask = [self taskForStream:stream overrides:overrides];
     if (!retryTask) {   // base URL edited to something unparseable mid-flight
         [self finishTask:task stream:stream code:ApolloAICloudErrorNetwork
                  message:@"The cloud AI base URL is invalid"];
@@ -449,12 +496,15 @@ didCompleteWithError:(NSError *)error {
     NSInteger status = stream.httpStatus;
     if (status < 200 || status >= 300) {
         NSString *providerMessage = nil;
+        NSString *providerParam = nil;
         id json = stream.rawBody.length > 0
             ? [NSJSONSerialization JSONObjectWithData:stream.rawBody options:0 error:NULL] : nil;
         if ([json isKindOfClass:[NSDictionary class]] &&
             [json[@"error"] isKindOfClass:[NSDictionary class]]) {
             NSString *msg = json[@"error"][@"message"];
             if ([msg isKindOfClass:[NSString class]]) providerMessage = msg;
+            NSString *param = json[@"error"][@"param"];
+            if ([param isKindOfClass:[NSString class]]) providerParam = param;
         }
 
         if (status == 401 || status == 403) {
@@ -473,9 +523,10 @@ didCompleteWithError:(NSError *)error {
             } else if (!stream.didStripRetry) {
                 // Most 400s on a well-formed request are parameter-shape
                 // rejections (max_tokens vs max_completion_tokens, temperature
-                // on a reasoning model, unknown reasoning_effort). One retry
-                // with the minimal body settles it either way.
-                [self stripRetryTask:task stream:stream];
+                // on a reasoning model, a reasoning_effort value this model
+                // dropped). One targeted retry settles it either way.
+                [self stripRetryTask:task stream:stream
+                           overrides:ApolloAICloudRetryOverridesForError(providerParam, providerMessage)];
             } else {
                 [self finishTask:task stream:stream code:ApolloAICloudErrorProvider
                          message:@"The cloud AI service rejected the request"];

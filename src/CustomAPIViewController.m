@@ -2925,6 +2925,13 @@ static void ApolloReplayValetKeychainItems(NSArray<NSDictionary *> *items) {
     NSString *libreAPIKey = [defaults stringForKey:UDKeyLibreTranslateAPIKey];
     sLibreTranslateAPIKey = libreAPIKey.length > 0 ? libreAPIKey : nil;
 
+    NSString *cloudAIKey = [defaults stringForKey:UDKeyAICloudAPIKey];
+    sCloudAIAPIKey = cloudAIKey.length > 0 ? cloudAIKey : nil;
+    NSString *cloudAIBaseURL = [defaults stringForKey:UDKeyAICloudBaseURL];
+    sCloudAIBaseURL = cloudAIBaseURL.length > 0 ? cloudAIBaseURL : @"https://api.openai.com/v1";
+    NSString *cloudAIModel = [defaults stringForKey:UDKeyAICloudModel];
+    sCloudAIModel = cloudAIModel.length > 0 ? cloudAIModel : @"gpt-5-mini";
+
     // Restore group preferences, including the NSUserDefaults account state
     // (LoggedInAccountDetails, CurrentRedditAccountIndex, and the RedditAccounts2 /
     // RedditApplicationOnlyAccount2 mirrors). Apollo's AccountManager actually loads accounts

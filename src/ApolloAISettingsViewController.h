@@ -1,4 +1,4 @@
 #import "ApolloSettingsTableViewController.h"
 
-@interface ApolloAISettingsViewController : ApolloSettingsTableViewController
+@interface ApolloAISettingsViewController : ApolloSettingsTableViewController <UITextFieldDelegate>
 @end

@@ -133,18 +133,35 @@ static BOOL ApolloAICloudIsReasoningModel(NSString *model) {
     return NO;
 }
 
+// Loopback / RFC1918-LAN / mDNS hosts — the places a local-development model
+// server (mock, LM Studio, Ollama proxy) legitimately lives.
+static BOOL ApolloAICloudHostIsLocal(NSString *host) {
+    NSString *h = host.lowercaseString;
+    if ([h isEqualToString:@"localhost"] || [h isEqualToString:@"::1"] || [h hasSuffix:@".local"]) return YES;
+    if ([h hasPrefix:@"127."] || [h hasPrefix:@"10."] || [h hasPrefix:@"192.168."]) return YES;
+    if ([h hasPrefix:@"172."]) {   // 172.16.0.0/12
+        NSArray<NSString *> *octets = [h componentsSeparatedByString:@"."];
+        NSInteger second = octets.count > 1 ? octets[1].integerValue : -1;
+        return second >= 16 && second <= 31;
+    }
+    return NO;
+}
+
 // Returns nil for a base URL that can't produce a usable request (user-entered
 // setting — e.g. contains spaces, or lacks a scheme/host). Callers must treat
 // nil as a hard config error rather than build a request from it: a malformed
 // URL either crashes requestWithURL: or dies later as a generic transport
 // error, hiding that the problem is the setting, not connectivity.
+// http is only allowed for local hosts: the request carries the API key and
+// post/comment text, which must not cross the open internet in cleartext.
 static NSURL *ApolloAICloudChatCompletionsURL(void) {
     NSString *base = sCloudAIBaseURL ?: @"";
     while ([base hasSuffix:@"/"]) base = [base substringToIndex:base.length - 1];
     NSURL *url = [NSURL URLWithString:[base stringByAppendingString:@"/chat/completions"]];
     NSString *scheme = url.scheme.lowercaseString;
-    BOOL httpScheme = [scheme isEqualToString:@"https"] || [scheme isEqualToString:@"http"];
-    return (httpScheme && url.host.length > 0) ? url : nil;
+    BOOL schemeOK = [scheme isEqualToString:@"https"] ||
+                    ([scheme isEqualToString:@"http"] && ApolloAICloudHostIsLocal(url.host));
+    return (schemeOK && url.host.length > 0) ? url : nil;
 }
 
 // Retry-override keys (values adjusting the primary shape after a 400 that
@@ -180,10 +197,12 @@ static NSData *ApolloAICloudRequestBody(NSString *text, NSString *instructions,
     }];
 
     NSString *tokenKey = reasoning ? @"max_completion_tokens" : @"max_tokens";
-    if (fullStrip || [overrides[kApolloAICloudOverrideSwapTokenKey] boolValue]) {
+    if ([overrides[kApolloAICloudOverrideSwapTokenKey] boolValue]) {
         tokenKey = reasoning ? @"max_tokens" : @"max_completion_tokens";
     }
-    if (maxTokens > 0) body[tokenKey] = @(maxTokens);
+    // The full-strip fallback sends NO optional params at all — including the
+    // token cap, whose key might itself be what the provider objected to.
+    if (!fullStrip && maxTokens > 0) body[tokenKey] = @(maxTokens);
 
     if (!fullStrip) {
         if (reasoning) {
@@ -416,17 +435,24 @@ static NSString *ApolloAICloudDeltaFromPayload(NSData *payload, BOOL *outIsError
 
 - (void)processBufferedLinesForStream:(ApolloAICloudStream *)stream {
     while (YES) {
-        NSData *newline = [@"\n" dataUsingEncoding:NSUTF8StringEncoding];
-        NSRange lineEnd = [stream.lineBuffer rangeOfData:newline
-                                                 options:0
-                                                   range:NSMakeRange(0, stream.lineBuffer.length)];
-        if (lineEnd.location == NSNotFound) return;
+        // SSE lines may end in LF, CR, or CRLF (WHATWG spec) — scan for the
+        // first of either delimiter byte.
+        const uint8_t *bytes = stream.lineBuffer.bytes;
+        NSUInteger length = stream.lineBuffer.length;
+        NSUInteger end = 0;
+        while (end < length && bytes[end] != '\n' && bytes[end] != '\r') end++;
+        if (end == length) return;   // no complete line buffered yet
+        // A CR as the very last buffered byte is ambiguous (bare CR vs first
+        // half of a CRLF split across chunks) — wait for the next byte. This
+        // can't stall forever: the completion path flushes with a trailing LF.
+        if (bytes[end] == '\r' && end + 1 == length) return;
+        NSUInteger consumed = end + 1;
+        if (bytes[end] == '\r' && bytes[end + 1] == '\n') consumed++;
 
-        NSData *lineData = [stream.lineBuffer subdataWithRange:NSMakeRange(0, lineEnd.location)];
-        [stream.lineBuffer replaceBytesInRange:NSMakeRange(0, NSMaxRange(lineEnd)) withBytes:NULL length:0];
+        NSData *lineData = [stream.lineBuffer subdataWithRange:NSMakeRange(0, end)];
+        [stream.lineBuffer replaceBytesInRange:NSMakeRange(0, consumed) withBytes:NULL length:0];
 
         NSString *line = [[NSString alloc] initWithData:lineData encoding:NSUTF8StringEncoding];
-        line = [line stringByTrimmingCharactersInSet:[NSCharacterSet characterSetWithCharactersInString:@"\r"]];
         // Blank keep-alives, `: comment` heartbeats (OpenRouter), and
         // `event:`/`id:` framing lines are all ignorable.
         if (line.length == 0 || [line hasPrefix:@":"]) continue;

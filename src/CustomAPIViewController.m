@@ -2930,7 +2930,7 @@ static void ApolloReplayValetKeychainItems(NSArray<NSDictionary *> *items) {
     NSString *cloudAIBaseURL = [defaults stringForKey:UDKeyAICloudBaseURL];
     sCloudAIBaseURL = cloudAIBaseURL.length > 0 ? cloudAIBaseURL : @"https://api.openai.com/v1";
     NSString *cloudAIModel = [defaults stringForKey:UDKeyAICloudModel];
-    sCloudAIModel = cloudAIModel.length > 0 ? cloudAIModel : @"gpt-5-mini";
+    sCloudAIModel = cloudAIModel.length > 0 ? cloudAIModel : @"gpt-5.4-mini";
 
     // Restore group preferences, including the NSUserDefaults account state
     // (LoggedInAccountDetails, CurrentRedditAccountIndex, and the RedditAccounts2 /

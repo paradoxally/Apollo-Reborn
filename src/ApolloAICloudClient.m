@@ -12,10 +12,12 @@
 //  - SSE parsing: the response is a stream of `data: {json}` lines terminated
 //    by `data: [DONE]`. Cumulative assistant text accumulates per request and
 //    is delivered to onPartial on the main thread.
-//  - Parameter shaping: reasoning models (gpt-5*, o<digit>*) get
-//    reasoning_effort=minimal + max_completion_tokens and no temperature (they
-//    reject it, and thinking latency/cost is pure waste for a 3-sentence
-//    summary); everything else gets temperature=0 + max_tokens. If a provider
+//  - Parameter shaping: reasoning models (gpt-5*, o<digit>*) get their
+//    family's lowest reasoning_effort ("none" for dotted gpt-5.x, "minimal"
+//    for the original gpt-5 family, "low" for o-series) + max_completion_tokens
+//    and no temperature (they reject it, and thinking latency/cost is pure
+//    waste for a 3-sentence summary); everything else gets temperature=0 +
+//    max_tokens. If a provider
 //    rejects the shape with an HTTP 400, the request is transparently
 //    re-issued ONCE, fixing only the parameter the error names (token-cap key
 //    swap, reasoning_effort remap/drop, temperature drop); an unidentifiable
@@ -204,15 +206,29 @@ static NSString *const kApolloAICloudOverrideReasoningEffort = @"reasoningEffort
 static NSString *const kApolloAICloudOverrideDropTemperature = @"dropTemperature";
 static NSString *const kApolloAICloudOverrideFullStrip = @"fullStrip";
 
+// Lowest reasoning effort each family accepts — thinking latency/cost is pure
+// waste for a 3-sentence summary. Dotted gpt-5.x models (gpt-5.1+) renamed
+// "minimal" to "none"; the original gpt-5 family only knows "minimal"; the
+// o-series (o1/o3/o4-mini) never had either, so "low" is its floor. Predicting
+// this correctly avoids a wasted 400+retry roundtrip on every request for the
+// default model; the one-shot retry stays as the net for models this table
+// mispredicts.
+static NSString *ApolloAICloudDefaultReasoningEffort(NSString *model) {
+    NSString *bare = ApolloAICloudBareModelName(model).lowercaseString;
+    if ([bare hasPrefix:@"gpt-5."]) return @"none";
+    if ([bare hasPrefix:@"gpt-5"]) return @"minimal";
+    return @"low";
+}
+
 // Builds the request body. overrides=nil is the primary shape (reasoning models:
-// max_completion_tokens + reasoning_effort=minimal; others: max_tokens +
-// temperature=0). With overrides, the primary shape is adjusted per the keys
-// above — fixing ONLY what the provider complained about keeps the rest of the
-// tuning intact (a blind full-strip swapped the token key too, which itself
-// 400s on newer models that reject max_tokens outright).
+// max_completion_tokens + the family's lowest reasoning_effort; others:
+// max_tokens + temperature=0). With overrides, the primary shape is adjusted
+// per the keys above — fixing ONLY what the provider complained about keeps the
+// rest of the tuning intact (a blind full-strip swapped the token key too,
+// which itself 400s on newer models that reject max_tokens outright).
 static NSData *ApolloAICloudRequestBody(NSString *text, NSString *instructions,
                                         NSInteger maxTokens, NSDictionary *overrides) {
-    NSString *model = sCloudAIModel ?: @"gpt-5-mini";
+    NSString *model = sCloudAIModel ?: @"gpt-5.4-mini";
     BOOL reasoning = ApolloAICloudIsReasoningModel(model);
     BOOL fullStrip = [overrides[kApolloAICloudOverrideFullStrip] boolValue];
     NSMutableDictionary *body = [NSMutableDictionary dictionaryWithDictionary:@{
@@ -234,7 +250,8 @@ static NSData *ApolloAICloudRequestBody(NSString *text, NSString *instructions,
 
     if (!fullStrip) {
         if (reasoning) {
-            id effort = overrides[kApolloAICloudOverrideReasoningEffort] ?: @"minimal";
+            id effort = overrides[kApolloAICloudOverrideReasoningEffort]
+                ?: ApolloAICloudDefaultReasoningEffort(model);
             if (![effort isKindOfClass:[NSNull class]]) body[@"reasoning_effort"] = effort;
         } else if (![overrides[kApolloAICloudOverrideDropTemperature] boolValue]) {
             body[@"temperature"] = @0;

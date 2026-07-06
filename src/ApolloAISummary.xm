@@ -193,7 +193,36 @@ static inline NSTimeInterval ApolloAIGenerationTimeout(void) {
 }
 // Bumped to 3 for the cache-entry timestamp format (age-based expiry). Older
 // caches lack timestamps and are simply dropped on first launch (regenerable).
-static NSString *const kApolloAICacheVersion = @"3";
+// Language the cloud directive pins output to: the device's preferred language
+// plus its script variant when the locale carries one (zh-Hans vs zh-Hant,
+// sr-Cyrl vs sr-Latn), region dropped — the region never changes the writing
+// system, but the script does.
+static NSString *ApolloAIDirectiveLanguageIdentifier(void) {
+    NSString *preferred = [NSLocale preferredLanguages].firstObject ?: @"en";
+    NSDictionary *parts = [NSLocale componentsFromLocaleIdentifier:preferred];
+    NSString *lang = parts[NSLocaleLanguageCode] ?: @"en";
+    NSString *script = parts[NSLocaleScriptCode];
+    return script.length > 0 ? [NSString stringWithFormat:@"%@-%@", lang, script] : lang;
+}
+
+// English display name for the directive ("Portuguese", "Chinese (Simplified)").
+static NSString *ApolloAIDirectiveLanguageName(void) {
+    NSString *identifier = ApolloAIDirectiveLanguageIdentifier();
+    NSLocale *english = [NSLocale localeWithLocaleIdentifier:@"en_US"];
+    NSString *name = [english localizedStringForLocaleIdentifier:identifier]
+        ?: [english localizedStringForLanguageCode:identifier];
+    return name ?: @"English";
+}
+
+// v4: cloud requests gained the leading language directive — cached summaries
+// generated without it (possibly wrong language / mixed script) must regenerate.
+// The directive language is folded in so a device-language change also
+// invalidates summaries generated in the previous language.
+static NSString *const kApolloAICacheVersionBase = @"4";
+static NSString *ApolloAIEffectiveCacheVersion(void) {
+    return [NSString stringWithFormat:@"%@/%@",
+            kApolloAICacheVersionBase, ApolloAIDirectiveLanguageIdentifier()];
+}
 
 static NSString *const kApolloAIPostInstructions =
     @"Summarize this Reddit post in 2 short plain sentences. State the main point "
@@ -424,7 +453,7 @@ static void ApolloAIEvictOldestEntries(NSMutableDictionary *cache, NSDictionary 
 static void ApolloAILoadPersistedSummaries(void) {
     NSDictionary *root = [NSDictionary dictionaryWithContentsOfFile:ApolloAISummariesCachePath()];
     if (![root isKindOfClass:[NSDictionary class]]) return;
-    if (![root[@"version"] isEqualToString:kApolloAICacheVersion]) {
+    if (![root[@"version"] isEqualToString:ApolloAIEffectiveCacheVersion()]) {
         ApolloLog(@"[AISummary] ignoring stale summary cache version %@", root[@"version"] ?: @"(none)");
         return;
     }
@@ -476,7 +505,7 @@ static void ApolloAIPersistSummaries(void) {
             if (![live containsObject:k]) [timestamps removeObjectForKey:k];
         }
         NSDictionary *root = @{
-            @"version": kApolloAICacheVersion,
+            @"version": ApolloAIEffectiveCacheVersion(),
             @"post": post,
             @"comment": comment,
             @"commentSourceCounts": sourceCountSnapshot,
@@ -2599,6 +2628,21 @@ static NSString *ApolloAITruncateForFM(NSString *prompt) {
 // User-facing label for a summary produced by the on-device model.
 static NSString *const kApolloAIOnDeviceModelLabel = @"Apple Intelligence";
 
+// Leading language directive for CLOUD requests only. Cloud models mirror the
+// thread's language unless told otherwise (the on-device model always answers
+// in the instruction language), so pin the output to the device locale; the
+// alphabet clause suppresses mixed-script glitches some small models exhibit
+// when generating non-English text. Both clauses must LEAD the instructions —
+// models ignore trailing directives at low reasoning effort. The FM leg keeps
+// the bare instructions: it already behaves, and its ~4k window shouldn't
+// spend tokens on a directive it doesn't need.
+static NSString *ApolloAICloudLanguageDirective(void) {
+    return [NSString stringWithFormat:
+            @"Write your entire response in %@, regardless of the language of the "
+            @"content. Use only that language's standard alphabet; never mix in "
+            @"characters from other writing systems. ", ApolloAIDirectiveLanguageName()];
+}
+
 // The single seam every summary generation goes through. With no cloud key this
 // is byte-for-byte the old direct bridge call. With a cloud key the cloud model
 // is tried FIRST; on any cloud failure except cancellation (code 6 — covers both
@@ -2640,9 +2684,11 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
     // Capture the model the request will actually be sent with, in case the
     // user edits the setting while the request is in flight.
     NSString *cloudModelLabel = [sCloudAIModel copy] ?: @"cloud model";
+    NSString *cloudInstructions = [ApolloAICloudLanguageDirective()
+                                   stringByAppendingString:instructions ?: @""];
     [[ApolloAICloudClient shared] summarize:text
                                  identifier:identifier
-                               instructions:instructions
+                               instructions:cloudInstructions
                       maximumResponseTokens:cloudResponseTokens
                                   onPartial:onPartial
                                  onComplete:^(NSString *final, NSError *error) {

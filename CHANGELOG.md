@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.4.1] - 2026-07-06
+
+### Fixes
+
+- Fix **AI Summaries** answering in the thread's language instead of yours — cloud-generated summaries now always respond in your device's language (script-aware, e.g. Simplified vs Traditional Chinese), matching how on-device summaries always behaved (#5)
+  - Also fixes rare corrupted output on non-English threads where some cloud models mixed in characters from other writing systems
+  - Changing the device language now regenerates cached summaries in the new language
+
 ## [v3.4.0] - 2026-07-05
 
 ### Features
@@ -623,6 +631,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.4.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.4.0...v1.15.11_3.4.1
 [v3.4.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.3.0...v1.15.11_3.4.0
 [v3.3.0]: https://github.com/Apollo-Reborn/Apollo-Reborn/compare/v1.15.11_3.2.0...v1.15.11_3.3.0
 [v3.2.0]: https://github.com/Apollo-Reborn/Apollo-Reborn/compare/v1.15.11_3.1.1...v1.15.11_3.2.0

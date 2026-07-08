@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.5.0] - 2026-07-08
+
+### Features
+
+- Add **Bark notification delivery** so free-Apple-ID sideloads finally get push notifications — Apple never grants those builds the push entitlement, so replies, PMs, and watcher alerts are relayed through the free [Bark](https://apps.apple.com/app/id1403753865) app instead ([#578](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/578): @nickclyde)
+  - Turn on **Bark Delivery** and paste your Bark push URL in **Settings > Apollo Reborn > Notification Backend**, then send a test notification from the same screen; tapping a notification deep-links back to the right thread or your inbox
+  - Notifications carry your selected Apollo app icon and match Apollo's in-app notification sound, and paid-certificate installs can switch between native push and Bark freely
+- Improve **Translation** with per-item language markers, tap-to-toggle, and an opt-in **Tap to Translate** mode, on all providers (Google / LibreTranslate / Apple) ([#564](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/564): @icpryde)
+  - Translated comments get a small *🌐 Translated from Spanish* line and post titles a compact *🌐 PT* marker on the stats row; tapping one flips just that item between translation and original (a post's title, body preview, and link card flip together)
+  - **Tap to Translate** in **Settings > Translation** stops auto-swapping entirely — comments show a tappable *🌐 Translate* line and translate on demand, with background prefetch so taps feel instant
+  - New **Details on Comments & Posts**, **Details on Titles**, and **Match App Colour** toggles control the markers; also fixes genuinely-foreign Title-Case titles being mistaken for proper nouns and left untranslated
+- Show the **Picture-in-Picture button** in the fullscreen player for spoiler- and NSFW-tagged videos — those posts never autoplay inline, so PiP is safe there even with autoplay on ([#584](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/584): @JeffreyCA)
+- Add eight **Helios Liquid Glass icon variants** — Helios, Halo, Cryo, Cryo Halo, Parallax, Parallax Halo, Ultra, and Ultra Halo ([#590](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/590): @IllIIllIllIllII)
+- Add an **Anonymous Install Count** heartbeat with a one-tap opt-out in **Settings > Apollo Reborn > Privacy** ([#589](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/589): @jordanearle)
+  - At most once a day it sends the app version, build variant, iOS version, and a random token that rotates monthly — no IP is logged or stored, no account details or per-feature tracking, and data is auto-deleted after ~13 months, as spelled out in the privacy policy
+
+### Fixes
+
+- Fix **API-Key-Free Mode** sessions going stale a few times a day — rotated Reddit cookies are now captured back into the stored session, an expired-looking session silently re-harvests from the login browser before ever prompting, and rate limits are no longer misread as session expiry ([#562](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/562): @nickclyde)
+  - Also restores keyless image uploads to Reddit's own CDN instead of falling back to Imgur, and fixes composer and chat issues in this mode
+- Fix **native menus** on Liquid Glass builds popping in with a plain fade — they now bloom out of the tapped button as a glass bubble and morph back into it on dismissal, matching native iOS 26 menus ([#600](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/600): @icpryde)
+- Fix **Hide Bars on Scroll** stuttering on non-Liquid-Glass builds — the navigation and tab bars no longer pop back fully visible for a beat before actually hiding ([#598](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/598): @icpryde)
+- Fix **Bluesky and Twitter link cards** whose long post text painted past the card background over the post's info row, and crop tall preview images from the top so faces stay in frame ([#577](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/577): @icpryde)
+- Fix **search result rows** stuck at full hero height with a blank gap below when a link preview resolves to a compact card ([#597](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/597): @icpryde)
+
 ## [v3.4.1] - 2026-07-06
 
 ### Fixes
@@ -631,6 +656,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.5.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.4.1...v1.15.11_3.5.0
 [v3.4.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.4.0...v1.15.11_3.4.1
 [v3.4.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.3.0...v1.15.11_3.4.0
 [v3.3.0]: https://github.com/Apollo-Reborn/Apollo-Reborn/compare/v1.15.11_3.2.0...v1.15.11_3.3.0

@@ -1,5 +1,8 @@
 # Apollo-Reborn
-[![Subreddit](https://img.shields.io/reddit/subreddit-subscribers/ApolloReborn?style=flat&logoColor=purple&label=join%20r%2FApolloReborn&color=%238a02fe)](https://www.reddit.com/r/ApolloReborn/) ![GitHub Release](https://img.shields.io/github/v/release/Apollo-Reborn/Apollo-Reborn)
+[![Subreddit](https://img.shields.io/reddit/subreddit-subscribers/ApolloReborn?style=flat&logoColor=purple&label=join%20r%2FApolloReborn&color=%238a02fe)](https://www.reddit.com/r/ApolloReborn/) ![GitHub Release](https://img.shields.io/github/v/release/Apollo-Reborn/Apollo-Reborn) [![Fork Release](https://img.shields.io/github/v/release/paradoxally/Apollo-Reborn?label=fork%20release&color=orange)](https://github.com/paradoxally/Apollo-Reborn/releases/latest)
+
+> [!WARNING]
+> **This is a custom fork** of [Apollo-Reborn/Apollo-Reborn](https://github.com/Apollo-Reborn/Apollo-Reborn) that is **updated more frequently than the official repo**. The **blue** release badge above shows the official repo's latest version; the **orange** badge shows this fork's latest release.
 
 iOS tweak for [Apollo for Reddit app](https://apolloapp.io/) that lets you continue using Apollo with your own API keys after its shutdown in June 2023. The tweak also unlocks several Ultra features and includes several enhancements and fixes.
 

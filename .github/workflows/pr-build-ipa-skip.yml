@@ -1,0 +1,39 @@
+name: PR build IPA variants (docs-only skip)
+
+# Companion to pr-build-ipa.yml. The protected-main ruleset requires the
+# "Build IPA variants and comment" status check, but pr-build-ipa.yml only
+# runs when a path that determines the produced IPA changes. A docs-only PR
+# would therefore never report the required check and could never merge
+# (previously worked around by toggling ruleset enforcement).
+#
+# This workflow runs on the INVERSE path set — `paths-ignore` below must
+# mirror pr-build-ipa.yml's `paths` list exactly — and reports success under
+# the same check name, so docs-only PRs satisfy the ruleset without building
+# anything. A PR touching both docs and code triggers both workflows: this
+# one passes immediately and the real build still gates the merge (all check
+# runs sharing the required name must pass).
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths-ignore:
+      - 'src/**'
+      - 'widgets/**'
+      - 'openin-extension/**'
+      - 'scripts/**'
+      - 'patch.sh'
+      - 'build-ipa.sh'
+      - 'Makefile'
+      - 'control'
+      - 'distribution/config.json'
+      - '.github/workflows/pr-build-ipa.yml'
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build IPA variants and comment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Nothing to build
+        run: echo "No IPA-determining paths changed — reporting success for the required check."

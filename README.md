@@ -1,5 +1,5 @@
 # Apollo-Reborn
-[![Subreddit](https://img.shields.io/reddit/subreddit-subscribers/ApolloReborn?style=flat&logoColor=purple&label=join%20r%2FApolloReborn&color=%238a02fe)](https://www.reddit.com/r/ApolloReborn/) ![GitHub Release](https://img.shields.io/github/v/release/Apollo-Reborn/Apollo-Reborn) [![Fork Release](https://img.shields.io/github/v/release/paradoxally/Apollo-Reborn?label=fork%20release&color=orange)](https://github.com/paradoxally/Apollo-Reborn/releases/latest)
+[![Subreddit](https://img.shields.io/reddit/subreddit-subscribers/ApolloReborn?style=flat&logoColor=purple&label=join%20r%2FApolloReborn&color=%238a02fe)](https://www.reddit.com/r/ApolloReborn/) ![Official Release](https://img.shields.io/github/v/release/Apollo-Reborn/Apollo-Reborn?label=official%20release) [![Fork Release](https://img.shields.io/github/v/release/paradoxally/Apollo-Reborn?label=fork%20release&color=orange)](https://github.com/paradoxally/Apollo-Reborn/releases/latest)
 
 > [!WARNING]
 > **This is a custom fork** of [Apollo-Reborn/Apollo-Reborn](https://github.com/Apollo-Reborn/Apollo-Reborn) that is **updated more frequently than the official repo** — as such, these builds may be more unstable than the official stable releases. The **blue** release badge above shows the official repo's latest version; the **orange** badge shows this fork's latest release.

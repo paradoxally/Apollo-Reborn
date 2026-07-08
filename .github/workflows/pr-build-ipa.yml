@@ -13,6 +13,9 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
     # Build only when something that determines the produced IPA changes.
+    # NOTE: pr-build-ipa-skip.yml runs on the INVERSE of this list and reports
+    # the same required check name so docs-only PRs can merge — any change to
+    # this list must be mirrored into that workflow's paths-ignore.
     paths:
       - 'src/**'                              # tweak source
       - 'widgets/**'                          # injected Reborn widget extension

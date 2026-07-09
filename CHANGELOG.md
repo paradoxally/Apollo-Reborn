@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.5.1] - 2026-07-09
+
+### Features
+
+- Add a **Remember Post Sort** option — remember the comment sort you pick per post instead of per subreddit, so switching one thread to e.g. Controversial no longer changes what every other post in that subreddit opens with ([#570](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/570): @icpryde)
+  - Opt-in from **Settings > General > Comments**, right under its sibling **Remember Subreddit Sort**; the two toggles are mutually exclusive (enabling one turns the other off), and a remembered post sort beats everything, suggested sort included
+
+### Fixes
+
+- Fix **Autoplay Inline GIFs** set to Never (or WiFi Only) only stopping some GIFs — GIFs from slow hosts kept animating until their static cover finished downloading, and pausing a GIF wiped its own play-button state ([#602](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/602): @icpryde)
+  - Paused GIFs now show a proper **Tap to Play** overlay instead of opening the media viewer, changing the autoplay setting now applies to GIFs already on screen, and Apollo-native inline animated media respects the same gate
+  - The inline media options now live in their own **Settings > Apollo Reborn > Inline Media Settings** screen, with a live preview and an inline size slider
+- Fix the **Inline Media size slider** getting stuck mid-drag or swiping back to the previous screen when grabbed at its far-left 50% position — a drag that starts on the slider can no longer trigger Apollo's full-width swipe-back ([#611](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/611): @icpryde)
+- Fix **Tag Filters** double-blurring tagged media the Reddit account's **Blur mature (18+) images** setting was already blurring — Apollo's native "tap to view" overlay now wins and the tweak's overlay stands down, including on compact-mode thumbnails ([#585](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/585): @JeffreyCA)
+- Explain the empty **User Flair** screen on API-key-free accounts — Reddit only serves flair over OAuth, so instead of a blank picker those accounts now get a short notice saying an API key is needed for flair ([#606](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/606): @icpryde)
+- Remove the **"Subscribe to r/ApolloApp?" pop-up** that appeared on every fresh sign-in ([#614](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/614): @icpryde)
+
 ## [v3.5.0] - 2026-07-08
 
 ### Features
@@ -656,6 +673,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.5.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.0...v1.15.11_3.5.1
 [v3.5.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.4.1...v1.15.11_3.5.0
 [v3.4.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.4.0...v1.15.11_3.4.1
 [v3.4.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.3.0...v1.15.11_3.4.0

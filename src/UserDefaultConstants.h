@@ -110,6 +110,21 @@ static NSString *const ApolloIPadTabBarBottomChangedNotification = @"ApolloIPadT
 // See ApolloStatsRowTouch.xm.
 static NSString *const UDKeyIconRowMagnifier = @"IconRowMagnifier";
 static NSString *const UDKeyLiveCommentsFollow = @"LiveCommentsFollow";
+// Per-POST comment sort memory (issue #555). When ON, changing a post's comment sort
+// is remembered for that post (capped LRU mapping below) and restored when its
+// comments are reopened; every other post keeps Apollo's native chain (suggested
+// sort > per-subreddit remembered > default). Opt-in; default NO via registerDefaults.
+// See ApolloPerPostCommentSort.xm.
+static NSString *const UDKeyPerPostCommentSort = @"PerPostCommentSort";
+// Backing store for the above: { bare post id : { "s": sort raw, "t": last-use unix time } }.
+static NSString *const UDKeyPerPostCommentSortMapping = @"PerPostCommentSortMapping";
+// APOLLO'S OWN key (not ours) for the native Comments > "Remember Subreddit Sort"
+// toggle. Named here because "Remember Post Sort" and that toggle are mutually
+// exclusive (one sort-change gesture can't both pin a single post and move the
+// subreddit-wide sort, so both-on is a trap state): enabling either turns the other
+// off, and launch/restore normalize a stale both-on to per-post. This toggle key is
+// the ONLY native default the feature ever writes. See ApolloPerPostCommentSort.xm.
+static NSString *const UDKeyApolloRememberSubredditCommentsSort = @"RememberRedditCommentsSort";
 // Render image URLs (i.redd.it, preview.redd.it, i.imgur.com, generic .png/.jpg/.jpeg/.webp)
 // inline within post selftext and comments instead of leaving them as plain text links.
 static NSString *const UDKeyEnableInlineImages = @"EnableInlineImages";
@@ -121,10 +136,15 @@ static NSString *const UDKeyEnableChatMedia = @"EnableChatMedia";
 // Horizontal alignment for inline media that is narrower than the row (e.g. tall portrait images).
 // 0 = Center (default), 1 = Left, 2 = Right.
 static NSString *const UDKeyInlineImageAlignment = @"InlineImageAlignment";
-// Autoplay for inline GIF/animated media previews. 0 = Default (follow Apollo's
-// native "Autoplay GIFs/Videos"), 1 = Never, 2 = WiFi Only, 3 = Always. Only
-// meaningful when Inline Media Previews (UDKeyEnableInlineImages) is on.
+// Autoplay for inline GIF/animated media previews. 0 = legacy Default (follow
+// Apollo's native "Autoplay GIFs/Videos", migrated at load), 1 = Never,
+// 2 = WiFi Only, 3 = Always, 4 = Tap to Play (static cover + play button;
+// tap toggles play/pause inline). Only meaningful when Inline Media Previews
+// (UDKeyEnableInlineImages) is on.
 static NSString *const UDKeyAutoplayInlineGIFs = @"AutoplayInlineGIFs";
+// Display width of inline media (images/GIFs) in comments and selftext as a
+// percentage of the row width: 50, 75, or 100 (default).
+static NSString *const UDKeyInlineMediaSizePercent = @"InlineMediaSizePercent";
 
 // Bulk translation feature
 static NSString *const UDKeyEnableBulkTranslation = @"EnableBulkTranslation";
@@ -313,3 +333,6 @@ static NSString *const UDKeyLinkPreviewCardColor = @"LinkPreviewCardColor";
 // hex paints the whole card that exact color, with auto-contrasted text.
 static NSString *const UDKeyLinkPreviewCardColorHex = @"LinkPreviewCardColorHex";
 static NSString *const ApolloLinkPreviewModeDidChangeNotification = @"ApolloLinkPreviewModeDidChangeNotification";
+// Posted by the Inline Media settings screen when size/alignment changes so
+// visible comments re-measure their inline media immediately.
+static NSString *const ApolloInlineMediaLayoutDidChangeNotification = @"ApolloInlineMediaLayoutDidChangeNotification";

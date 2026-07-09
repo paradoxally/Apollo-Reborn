@@ -65,6 +65,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloInboxCommentScroll.xm \
     $(SRC_DIR)/ApolloStatsRowTouch.xm \
     $(SRC_DIR)/ApolloLiveCommentsFollow.xm \
+    $(SRC_DIR)/ApolloPerPostCommentSort.xm \
     $(SRC_DIR)/ApolloLiquidGlass.xm \
     $(SRC_DIR)/ApolloLiquidGlassIconPicker.xm \
     $(SRC_DIR)/ApolloModmailLayout.xm \
@@ -137,10 +138,12 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloAccountCredentials.m \
     $(SRC_DIR)/ApolloAccountSwitcherViewController.xm \
     $(SRC_DIR)/ApolloSignInSplash.xm \
+    $(SRC_DIR)/ApolloHideSubscribePrompt.xm \
     $(SRC_DIR)/CustomAPIViewController.m \
     $(SRC_DIR)/ApolloAISettingsViewController.m \
     $(SRC_DIR)/ApolloDeletedCommentsSettingsViewController.m \
     $(SRC_DIR)/ApolloLinkPreviewSettingsViewController.m \
+    $(SRC_DIR)/InlineMediaSettingsViewController.m \
     $(SRC_DIR)/ApolloOpenInAppViewController.m \
     $(SRC_DIR)/ApolloHideNativeOpenInAppRows.xm \
     $(SRC_DIR)/TranslationSettingsViewController.m \

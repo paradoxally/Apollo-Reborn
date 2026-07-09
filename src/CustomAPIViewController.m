@@ -13,6 +13,7 @@
 #import "ApolloLinkPreviewCache.h"
 #import "ApolloDeletedCommentsSettingsViewController.h"
 #import "ApolloLinkPreviewSettingsViewController.h"
+#import "InlineMediaSettingsViewController.h"
 #import "ApolloOpenInAppViewController.h"
 #import "ApolloSubredditCustomBannerCache.h"
 #import "ApolloSubredditCustomIconCache.h"
@@ -34,6 +35,7 @@ typedef NS_ENUM(NSInteger, SectionIndex) {
     SectionAPIKeys,
     SectionGeneral,
     SectionApolloAI,
+    SectionInlineMedia,   // single row -> InlineMediaSettingsViewController
     SectionLinkPreviews,
     SectionMedia,
     SectionSubreddits,
@@ -42,28 +44,6 @@ typedef NS_ENUM(NSInteger, SectionIndex) {
     SectionAbout,
     SectionCount
 };
-
-// The Media section hides two adjacent inline-media-dependent rows (Inline Media
-// Alignment + Autoplay Inline GIFs) when Inline Media Previews is off. These helpers
-// centralize the physical<->logical row mapping so the index math stays consistent.
-static const NSInteger kApolloMediaInlineDependentRows = 2;
-static const NSInteger kApolloMediaFirstInlineDependentRow = 6;
-
-// Map a physical (visible) Media row to its logical row.
-static NSInteger ApolloMediaLogicalRow(NSInteger physicalRow) {
-    if (!sEnableInlineImages && physicalRow >= kApolloMediaFirstInlineDependentRow) {
-        return physicalRow + kApolloMediaInlineDependentRows;
-    }
-    return physicalRow;
-}
-
-// Map a logical Media row to its physical (visible) row.
-static NSInteger ApolloMediaPhysicalRow(NSInteger logicalRow) {
-    if (!sEnableInlineImages && logicalRow >= kApolloMediaFirstInlineDependentRow + kApolloMediaInlineDependentRows) {
-        return logicalRow - kApolloMediaInlineDependentRows;
-    }
-    return logicalRow;
-}
 
 // Row indices within SectionNotificationBackend. The Bark rows are always
 // visible: on builds without a push entitlement Bark is the only delivery
@@ -554,6 +534,48 @@ typedef NS_ENUM(NSInteger, Tag) {
     }
 }
 
+- (UITableViewCell *)inlineMediaCellForTableView:(UITableView *)tableView {
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell_InlineMedia"];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"Cell_InlineMedia"];
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        cell.selectionStyle = UITableViewCellSelectionStyleDefault;
+    }
+    cell.textLabel.text = @"Inline Media Settings";
+    NSString *detail;
+    if (!sEnableInlineImages) {
+        detail = @"Off";
+    } else {
+        NSString *autoplay;
+        switch (sAutoplayInlineGIFMode) {
+            case ApolloAutoplayInlineGIFModeTapToPlay: autoplay = @"Tap to Play"; break;
+            case ApolloAutoplayInlineGIFModeWiFiOnly:  autoplay = @"WiFi Only"; break;
+            case ApolloAutoplayInlineGIFModeAlways:    autoplay = @"Always"; break;
+            case ApolloAutoplayInlineGIFModeNever:
+            default:                                   autoplay = @"Never"; break;
+        }
+        detail = [NSString stringWithFormat:@"On \u00b7 Autoplay %@ \u00b7 Size %ld%%",
+                  autoplay, (long)sInlineMediaSizePercent];
+    }
+    cell.detailTextLabel.text = detail;
+    cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+    cell.detailTextLabel.numberOfLines = 0;
+    cell.detailTextLabel.lineBreakMode = NSLineBreakByWordWrapping;
+    return cell;
+}
+
+- (void)openInlineMediaSettings {
+    InlineMediaSettingsViewController *vc =
+        [[InlineMediaSettingsViewController alloc] initWithStyle:UITableViewStyleInsetGrouped];
+    if (self.navigationController) {
+        [self.navigationController pushViewController:vc animated:YES];
+    } else {
+        UINavigationController *navigation =
+            [[UINavigationController alloc] initWithRootViewController:vc];
+        [self presentViewController:navigation animated:YES completion:nil];
+    }
+}
+
 - (UITableViewCell *)deletedCommentsCellForTableView:(UITableView *)tableView {
     UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell_Gen_DeletedComments"];
     if (!cell) {
@@ -624,7 +646,7 @@ typedef NS_ENUM(NSInteger, Tag) {
     }
     // Refresh the Apollo AI and Rich Link Previews status subtitles after returning
     // from their subviews.
-    [self.tableView reloadSections:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(SectionApolloAI, 2)]
+    [self.tableView reloadSections:[NSIndexSet indexSetWithIndexesInRange:NSMakeRange(SectionApolloAI, 3)]
                   withRowAnimation:UITableViewRowAnimationNone];
 }
 
@@ -680,13 +702,13 @@ typedef NS_ENUM(NSInteger, Tag) {
         // toggles. No conditional rows remain, so the count is constant.
         case SectionGeneral: return 14;
         case SectionApolloAI: return 1;
+        case SectionInlineMedia: return 1;
         case SectionLinkPreviews: return 1;
-        // Media base rows (the three "Rich Link Previews" rows moved out to their
-        // own SectionLinkPreviews) plus the "Comment Link Host" picker, the chat
-        // inline-media toggle and the "Hold for Video Speed" toggle, minus the two
-        // inline-dependent rows when off, plus the hold-speed picker (logical row
-        // 14) when that toggle is on.
-        case SectionMedia: return 14 + (sEnableInlineImages ? 0 : -kApolloMediaInlineDependentRows) + (sVideoHoldSpeedEnabled ? 1 : 0);
+        // Media base rows. The inline-media rows (Previews toggle, Alignment,
+        // Autoplay Inline GIFs) moved to the Inline Media sub-screen
+        // (SectionInlineMedia). The hold-speed picker (row 11) shows only while
+        // its toggle is on.
+        case SectionMedia: return 10 + (sVideoHoldSpeedEnabled ? 1 : 0);
         case SectionSubreddits: return 10 - (sSubredditListEnhancements ? 0 : 1) - (sCommunityHighlights ? 0 : 1);
         case SectionNotificationBackend: return kNotifBackendRowCount;
         case SectionPrivacy: return 1; // Anonymous Install Count toggle
@@ -701,6 +723,7 @@ typedef NS_ENUM(NSInteger, Tag) {
         case SectionAPIKeys: return @"API Keys";
         case SectionGeneral: return @"General";
         case SectionApolloAI: return @"Apollo AI";
+        case SectionInlineMedia: return @"Inline Media";
         case SectionLinkPreviews: return @"Rich Link Previews";
         case SectionMedia: return @"Media";
         case SectionSubreddits: return @"Subreddits";
@@ -718,6 +741,7 @@ typedef NS_ENUM(NSInteger, Tag) {
         case SectionAPIKeys: cell = [self apiKeyCellForRow:indexPath.row tableView:tableView]; break;
         case SectionGeneral: cell = [self generalCellForRow:indexPath.row tableView:tableView]; break;
         case SectionApolloAI: cell = [self apolloAICellForTableView:tableView]; break;
+        case SectionInlineMedia: cell = [self inlineMediaCellForTableView:tableView]; break;
         case SectionLinkPreviews: cell = [self linkPreviewsCellForTableView:tableView]; break;
         case SectionMedia: cell = [self mediaCellForRow:indexPath.row tableView:tableView]; break;
         case SectionSubreddits: cell = [self subredditCellForRow:indexPath.row tableView:tableView]; break;
@@ -1210,8 +1234,6 @@ typedef NS_ENUM(NSInteger, Tag) {
 }
 
 - (UITableViewCell *)mediaCellForRow:(NSInteger)row tableView:(UITableView *)tableView {
-    // When the inline-dependent rows are hidden, physical rows map to later logical rows.
-    row = ApolloMediaLogicalRow(row);
     switch (row) {
         case 0: {
             UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell_Media_GIFFallbackFormat"];
@@ -1266,51 +1288,24 @@ typedef NS_ENUM(NSInteger, Tag) {
                                             label:@"Proxy Imgur via DuckDuckGo"
                                                on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyProxyImgurDDG]
                                            action:@selector(proxyImgurDDGSwitchToggled:)];
+        // Inline Media Previews / Alignment / Autoplay Inline GIFs moved to the
+        // Inline Media Settings sub-screen (SectionInlineMedia).
         case 5:
-            return [self switchCellWithIdentifier:@"Cell_Media_InlineImages"
-                                            label:@"Inline Media Previews"
-                                               on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyEnableInlineImages]
-                                           action:@selector(inlineImagesSwitchToggled:)];
-        case 6: {
-            UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell_Media_InlineImageAlignment"];
-            if (!cell) {
-                cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"Cell_Media_InlineImageAlignment"];
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-                cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-            }
-            cell.textLabel.text = @"Inline Media Alignment";
-            cell.detailTextLabel.text = [self inlineImageAlignmentText];
-            cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
-            return cell;
-        }
-        case 7: {
-            UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell_Media_AutoplayInlineGIFs"];
-            if (!cell) {
-                cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"Cell_Media_AutoplayInlineGIFs"];
-                cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
-                cell.selectionStyle = UITableViewCellSelectionStyleDefault;
-            }
-            cell.textLabel.text = @"Autoplay Inline GIFs";
-            cell.detailTextLabel.text = [self autoplayInlineGIFModeText];
-            cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
-            return cell;
-        }
-        case 8:
             return [self switchCellWithIdentifier:@"Cell_Media_TextPostThumbnails"
                                             label:@"Text Post Thumbnails"
                                                on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyFeedTextPostThumbnails]
                                            action:@selector(textPostThumbnailsSwitchToggled:)];
-        case 9:
+        case 6:
             return [self switchCellWithIdentifier:@"Cell_Media_UserAvatars"
                                             label:@"Show User Profile Pictures"
                                                on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyShowUserAvatars]
                                            action:@selector(userAvatarsSwitchToggled:)];
-        case 10:
+        case 7:
             return [self switchCellWithIdentifier:@"Cell_Media_ProfileTabAvatar"
                                             label:@"Profile Picture Tab Icon"
                                                on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyUseProfileAvatarTabIcon]
                                            action:@selector(profileTabAvatarSwitchToggled:)];
-        case 11:
+        case 8:
             // Single toggle for Reborn's detailed profile page: banner, large
             // avatar/snoovatar, display name, bio, and the Social Links band (all of
             // which live in the custom header). Off → Apollo's compact stock profile.
@@ -1318,14 +1313,11 @@ typedef NS_ENUM(NSInteger, Tag) {
                                             label:@"Show Detailed Profiles"
                                                on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyShowDetailedProfiles]
                                            action:@selector(showDetailedProfilesSwitchToggled:)];
-        case 12:
-            return [self switchCellWithIdentifier:@"Cell_Media_ChatMedia"
-                                            label:@"Inline Media in Chat"
-                                               on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyEnableChatMedia]
-                                           action:@selector(chatMediaSwitchToggled:)];
-        case 13:
+        // "Inline Media in Chat" moved to the Inline Media Settings sub-screen
+        // (SectionInlineMedia), alongside Inline Media Previews.
+        case 9:
             // Master toggle for "Hold for Video Speed". When on, the hold-speed
-            // picker (logical row 14) is shown below; when off, the right side of a
+            // picker (row 10) is shown below; when off, the right side of a
             // fullscreen video keeps Apollo's normal long-press menu. The gesture is
             // explained in the section footer, matching the sibling Media toggles
             // (which are plain switches with no inline subtitle).
@@ -1333,7 +1325,7 @@ typedef NS_ENUM(NSInteger, Tag) {
                                             label:@"Hold for Video Speed"
                                                on:sVideoHoldSpeedEnabled
                                            action:@selector(videoHoldSpeedSwitchToggled:)];
-        case 14: {
+        case 10: {
             UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"Cell_Media_HoldSpeedValue"];
             if (!cell) {
                 cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:@"Cell_Media_HoldSpeedValue"];
@@ -1821,6 +1813,11 @@ typedef NS_ENUM(NSInteger, Tag) {
         return;
     }
 
+    if (indexPath.section == SectionInlineMedia) {
+        [self openInlineMediaSettings];
+        return;
+    }
+
     if (indexPath.section == SectionLinkPreviews) {
         [self openLinkPreviewSettings];
         return;
@@ -1880,20 +1877,15 @@ typedef NS_ENUM(NSInteger, Tag) {
         }
     } else if (indexPath.section == SectionMedia) {
         UITableViewCell *cell = [tableView cellForRowAtIndexPath:indexPath];
-        NSInteger row = ApolloMediaLogicalRow(indexPath.row);
-        if (row == 0) {
+        if (indexPath.row == 0) {
             [self presentPreferredGIFFallbackFormatSheetFromSourceView:cell];
-        } else if (row == 1) {
+        } else if (indexPath.row == 1) {
             [self presentUnmuteCommentsVideosModeSheetFromSourceView:cell];
-        } else if (row == 2) {
+        } else if (indexPath.row == 2) {
             [self presentImageUploadProviderSheetFromSourceView:cell];
-        } else if (row == 3) {
+        } else if (indexPath.row == 3) {
             [self presentCommentLinkHostSheetFromSourceView:cell];
-        } else if (row == 6) {
-            [self presentInlineImageAlignmentSheetFromSourceView:cell];
-        } else if (row == 7) {
-            [self presentAutoplayInlineGIFModeSheetFromSourceView:cell];
-        } else if (row == 14) {
+        } else if (indexPath.row == 10) {
             [self presentVideoHoldSpeedSheetFromSourceView:cell];
         }
     } else if (indexPath.section == SectionNotificationBackend) {
@@ -2007,6 +1999,7 @@ typedef NS_ENUM(NSInteger, Tag) {
             row == kAPIKeyRowWebSessionLogin || row == kAPIKeyRowWidgetSetupCode) return YES;
     }
     if (indexPath.section == SectionApolloAI) return YES;
+    if (indexPath.section == SectionInlineMedia) return YES;
     if (indexPath.section == SectionLinkPreviews) return YES;
     if (indexPath.section == SectionGeneral) {
         // Only the "Deleted Comments" (row 3) and "Open in App" (row 7)
@@ -2014,8 +2007,8 @@ typedef NS_ENUM(NSInteger, Tag) {
         return indexPath.row == 3 || indexPath.row == 7;
     }
     if (indexPath.section == SectionMedia) {
-        NSInteger row = ApolloMediaLogicalRow(indexPath.row);
-        return (row == 0 || row == 1 || row == 2 || row == 3 || row == 6 || row == 7 || row == 14);
+        return (indexPath.row == 0 || indexPath.row == 1 || indexPath.row == 2 ||
+                indexPath.row == 3 || indexPath.row == 10);
     }
     if (indexPath.section == SectionAbout && (indexPath.row == 0 || indexPath.row == 1 || indexPath.row == 2 || indexPath.row == 3 || indexPath.row == 4)) return YES;
     if (indexPath.section == SectionNotificationBackend) {
@@ -2586,14 +2579,6 @@ typedef NS_ENUM(NSInteger, Tag) {
     [[NSNotificationCenter defaultCenter] postNotificationName:ApolloSocialLinksToggleChangedNotification object:nil];
 }
 
-- (void)chatMediaSwitchToggled:(UISwitch *)sender {
-    // Master toggle for chat media (inline images/GIFs/emoji/snoomoji + working media sends +
-    // tap-to-fullscreen). Open chats re-render their cells on next display/scroll, so no
-    // immediate-refresh notification is needed. Independent of Show User Profile Pictures.
-    sEnableChatMedia = sender.isOn;
-    [[NSUserDefaults standardUserDefaults] setBool:sEnableChatMedia forKey:UDKeyEnableChatMedia];
-}
-
 - (void)promptClearAllCachesFromSourceView:(UIView *)sourceView {
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"Clear Tweak Caches?"
                                                                    message:@"This removes cached profile pictures, banners, link previews, and remembered banned-profile dismissals."
@@ -2617,118 +2602,8 @@ typedef NS_ENUM(NSInteger, Tag) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 
-- (void)inlineImagesSwitchToggled:(UISwitch *)sender {
-    BOOL wasOn = sEnableInlineImages;
-    sEnableInlineImages = sender.isOn;
-    [[NSUserDefaults standardUserDefaults] setBool:sEnableInlineImages forKey:UDKeyEnableInlineImages];
-    if (sEnableInlineImages == wasOn) return;
-    // Two adjacent rows are gated on this toggle: Inline Media Alignment (logical 6)
-    // and Autoplay Inline GIFs (logical 7). Insert/delete both to keep row counts consistent.
-    NSArray<NSIndexPath *> *paths = @[
-        [NSIndexPath indexPathForRow:6 inSection:SectionMedia],
-        [NSIndexPath indexPathForRow:7 inSection:SectionMedia],
-    ];
-    if (sEnableInlineImages) {
-        [self.tableView insertRowsAtIndexPaths:paths withRowAnimation:UITableViewRowAnimationFade];
-    } else {
-        [self.tableView deleteRowsAtIndexPaths:paths withRowAnimation:UITableViewRowAnimationFade];
-    }
-}
-
-- (NSString *)inlineImageAlignmentText {
-    switch (sInlineImageAlignment) {
-        case ApolloInlineImageAlignmentLeft:  return @"Left";
-        case ApolloInlineImageAlignmentRight: return @"Right";
-        default:                              return @"Center";
-    }
-}
-
-- (void)presentInlineImageAlignmentSheetFromSourceView:(UIView *)sourceView {
-    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Inline Media Alignment"
-                                                                   message:@"Choose how inline media is positioned"
-                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-
-    NSString *centerTitle = (sInlineImageAlignment == ApolloInlineImageAlignmentCenter) ? @"Center (Current)" : @"Center";
-    NSString *leftTitle   = (sInlineImageAlignment == ApolloInlineImageAlignmentLeft)   ? @"Left (Current)"   : @"Left";
-    NSString *rightTitle  = (sInlineImageAlignment == ApolloInlineImageAlignmentRight)  ? @"Right (Current)"  : @"Right";
-
-    [sheet addAction:[UIAlertAction actionWithTitle:centerTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        [self setInlineImageAlignment:ApolloInlineImageAlignmentCenter];
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:leftTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        [self setInlineImageAlignment:ApolloInlineImageAlignmentLeft];
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:rightTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        [self setInlineImageAlignment:ApolloInlineImageAlignmentRight];
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-
-    UIPopoverPresentationController *popover = sheet.popoverPresentationController;
-    if (popover && sourceView) {
-        popover.sourceView = sourceView;
-        popover.sourceRect = sourceView.bounds;
-    }
-
-    [self presentViewController:sheet animated:YES completion:nil];
-}
-
-- (void)setInlineImageAlignment:(ApolloInlineImageAlignment)alignment {
-    sInlineImageAlignment = alignment;
-    [[NSUserDefaults standardUserDefaults] setInteger:sInlineImageAlignment forKey:UDKeyInlineImageAlignment];
-    NSIndexPath *alignmentRow = [NSIndexPath indexPathForRow:6 inSection:SectionMedia];
-    [self.tableView reloadRowsAtIndexPaths:@[alignmentRow] withRowAnimation:UITableViewRowAnimationNone];
-}
-
-- (NSString *)autoplayInlineGIFModeText {
-    switch (sAutoplayInlineGIFMode) {
-        case ApolloAutoplayInlineGIFModeNever:    return @"Never";
-        case ApolloAutoplayInlineGIFModeWiFiOnly: return @"WiFi Only";
-        case ApolloAutoplayInlineGIFModeAlways:   return @"Always";
-        case ApolloAutoplayInlineGIFModeDefault:
-        default:                                  return @"Default";
-    }
-}
-
-- (void)presentAutoplayInlineGIFModeSheetFromSourceView:(UIView *)sourceView {
-    UIAlertController *sheet = [UIAlertController alertControllerWithTitle:@"Autoplay Inline GIFs"
-                                                                   message:@"Default follows Apollo's Autoplay GIFs/Videos setting in General."
-                                                            preferredStyle:UIAlertControllerStyleActionSheet];
-
-    NSString *defaultTitle = (sAutoplayInlineGIFMode == ApolloAutoplayInlineGIFModeDefault)  ? @"Default (Current)"   : @"Default";
-    NSString *alwaysTitle  = (sAutoplayInlineGIFMode == ApolloAutoplayInlineGIFModeAlways)   ? @"Always (Current)"    : @"Always";
-    NSString *wifiTitle    = (sAutoplayInlineGIFMode == ApolloAutoplayInlineGIFModeWiFiOnly) ? @"WiFi Only (Current)" : @"WiFi Only";
-    NSString *neverTitle   = (sAutoplayInlineGIFMode == ApolloAutoplayInlineGIFModeNever)    ? @"Never (Current)"     : @"Never";
-
-    [sheet addAction:[UIAlertAction actionWithTitle:defaultTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        [self setAutoplayInlineGIFMode:ApolloAutoplayInlineGIFModeDefault];
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:alwaysTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        [self setAutoplayInlineGIFMode:ApolloAutoplayInlineGIFModeAlways];
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:wifiTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        [self setAutoplayInlineGIFMode:ApolloAutoplayInlineGIFModeWiFiOnly];
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:neverTitle style:UIAlertActionStyleDefault handler:^(__unused UIAlertAction *action) {
-        [self setAutoplayInlineGIFMode:ApolloAutoplayInlineGIFModeNever];
-    }]];
-    [sheet addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];
-
-    UIPopoverPresentationController *popover = sheet.popoverPresentationController;
-    if (popover && sourceView) {
-        popover.sourceView = sourceView;
-        popover.sourceRect = sourceView.bounds;
-    }
-
-    [self presentViewController:sheet animated:YES completion:nil];
-}
-
-- (void)setAutoplayInlineGIFMode:(ApolloAutoplayInlineGIFMode)mode {
-    sAutoplayInlineGIFMode = mode;
-    // The autoplay module observes this key via KVO and re-evaluates visible inline GIFs.
-    [[NSUserDefaults standardUserDefaults] setInteger:sAutoplayInlineGIFMode forKey:UDKeyAutoplayInlineGIFs];
-    NSIndexPath *autoplayRow = [NSIndexPath indexPathForRow:ApolloMediaPhysicalRow(7) inSection:SectionMedia];
-    [self.tableView reloadRowsAtIndexPaths:@[autoplayRow] withRowAnimation:UITableViewRowAnimationNone];
-}
+// Inline Media Previews / Alignment / Autoplay Inline GIFs UI moved to
+// InlineMediaSettingsViewController (SectionInlineMedia row).
 
 #pragma mark - Hold for Video Speed
 
@@ -2737,10 +2612,10 @@ typedef NS_ENUM(NSInteger, Tag) {
     sVideoHoldSpeedEnabled = sender.isOn;
     [[NSUserDefaults standardUserDefaults] setBool:sVideoHoldSpeedEnabled forKey:UDKeyVideoHoldSpeedEnabled];
     if (sVideoHoldSpeedEnabled == wasOn) return;
-    // The "Hold Speed" picker (logical row 14) is the last Media row and is shown
+    // The "Hold Speed" picker (row 10) is the last Media row and is shown
     // only while this toggle is on. Insert/delete it so the row counts stay
-    // consistent. ApolloMediaPhysicalRow(14) accounts for the inline-dependent gap.
-    NSIndexPath *pickerPath = [NSIndexPath indexPathForRow:ApolloMediaPhysicalRow(14) inSection:SectionMedia];
+    // consistent.
+    NSIndexPath *pickerPath = [NSIndexPath indexPathForRow:10 inSection:SectionMedia];
     if (sVideoHoldSpeedEnabled) {
         [self.tableView insertRowsAtIndexPaths:@[pickerPath] withRowAnimation:UITableViewRowAnimationFade];
     } else {
@@ -2755,7 +2630,7 @@ typedef NS_ENUM(NSInteger, Tag) {
 - (void)setVideoHoldSpeed:(float)speed {
     sVideoHoldSpeed = ApolloSanitizedHoldSpeed(speed);
     [[NSUserDefaults standardUserDefaults] setFloat:sVideoHoldSpeed forKey:UDKeyVideoHoldSpeed];
-    NSIndexPath *pickerPath = [NSIndexPath indexPathForRow:ApolloMediaPhysicalRow(14) inSection:SectionMedia];
+    NSIndexPath *pickerPath = [NSIndexPath indexPathForRow:10 inSection:SectionMedia];
     if ([[self.tableView indexPathsForVisibleRows] containsObject:pickerPath]) {
         [self.tableView reloadRowsAtIndexPaths:@[pickerPath] withRowAnimation:UITableViewRowAnimationNone];
     }
@@ -3075,6 +2950,12 @@ static void ApolloReplayValetKeychainItems(NSArray<NSDictionary *> *items) {
     sShowDeletedComments = [defaults boolForKey:UDKeyShowDeletedComments];
     sTapToRevealDeletedComments = [defaults boolForKey:UDKeyTapToRevealDeletedComments];
     sPassiveDeletedComments = [defaults boolForKey:UDKeyPassiveDeletedComments];
+    sPerPostCommentSort = [defaults boolForKey:UDKeyPerPostCommentSort];
+    // A restored backup can carry both sort memories on (older build); they are
+    // mutually exclusive (see ApolloPerPostCommentSort.xm) and per-post wins.
+    if (sPerPostCommentSort && [defaults boolForKey:UDKeyApolloRememberSubredditCommentsSort]) {
+        [defaults setBool:NO forKey:UDKeyApolloRememberSubredditCommentsSort];
+    }
     sShowRecentlyReadThumbnails = [defaults boolForKey:UDKeyShowRecentlyReadThumbnails];
     sEnableFlairColors = [defaults boolForKey:UDKeyEnableFlairColors];
     sPreferredGIFFallbackFormat = ([defaults integerForKey:UDKeyPreferredGIFFallbackFormat] == 0) ? 0 : 1;

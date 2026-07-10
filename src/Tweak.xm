@@ -1506,6 +1506,46 @@ static void ApolloInstallNotificationsUnavailableOverlay(UIViewController *contr
 }
 %end
 
+// Busy "match thread" megathreads (e.g. r/leagueoflegends t3_1usjxmp) deterministically
+// crash stock Apollo with NSRangeException from
+// -[ASDisplayNode _insertSubnode:atSubnodeIndex:sublayerIndex:andRemoveSubnode:]
+// while ASLayoutTransition applies a comment-cell layout (ASTableView requeryNodeHeights
+// -> _completePendingLayoutTransition). The transition computes insertion positions
+// against a pending subnode set that no longer matches the node's actual subnodes array
+// (async comment content keeps landing while heights are re-queried), so the insert
+// index arrives past the end and the NSMutableArray insert throws. Reproduced with every
+// tweak feature disabled — it's a base-app Texture bug, so guard the observed entry point.
+//
+// A bounds pre-check on entry is NOT sufficient: Texture's internal _insertSubnode:...
+// shrinks _subnodes again AFTER the entry point (it _removeFromSupernode's the moved
+// subnode and the replaced subnode before the array insert), so a stale index that
+// passes the entry check can still overshoot the live array and throw (verified: the
+// crash fired with a pre-check in place, index in-range at entry). So recover at the
+// throw instead: catch the NSRangeException and retry as an append — by then the
+// subnode is detached, so inserting at the live count is in-bounds and keeps the node
+// in the tree (possibly a slot or two off its intended order) instead of aborting the
+// app. Strict pass-through for every insert that doesn't throw.
+@interface ASDisplayNode : NSObject
+- (NSArray *)subnodes;
+@end
+
+%hook ASDisplayNode
+- (void)insertSubnode:(id)subnode atIndex:(NSInteger)idx {
+    @try {
+        %orig(subnode, idx);
+    } @catch (NSException *e) {
+        NSInteger count = (NSInteger)[self subnodes].count;
+        ApolloLog(@"[LayoutGuard] subnode insert at %ld threw %@ (live count %ld) on %@ — retrying as append",
+                  (long)idx, e.name, (long)count, NSStringFromClass([self class]));
+        @try {
+            %orig(subnode, count);
+        } @catch (NSException *e2) {
+            ApolloLog(@"[LayoutGuard] append retry also threw %@ — dropping this subnode", e2.name);
+        }
+    }
+}
+%end
+
 // Pre-fetches random subreddit lists in background
 static void initializeRandomSources() {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{

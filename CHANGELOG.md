@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.5.2] - 2026-07-11
+
+### Fixes
+
+- Fix **Color Flairs** losing their color after backgrounding the app — a flair's colored pill snapped back to Apollo's default grey (with the wrong text color) after you switched away and reopened Apollo, only recovering once you scrolled it off-screen and back; the color now holds across background/foreground and light/dark changes without a scroll ([#624](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/624): @icpryde)
+- Fix **X/Twitter links** always opening in the system browser instead of honoring your **Open Links in** setting — tweet links now open the X app when it's installed, and otherwise respect your In-App Safari choice like every other link ([#625](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/625): @icpryde)
+
 ## [v3.5.1] - 2026-07-09
 
 ### Features
@@ -673,6 +680,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.5.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.1...v1.15.11_3.5.2
 [v3.5.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.0...v1.15.11_3.5.1
 [v3.5.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.4.1...v1.15.11_3.5.0
 [v3.4.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.4.0...v1.15.11_3.4.1

@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.6.0] - 2026-07-13
+
+### Features
+
+- Add separate **Light & Dark theme assignments** to the Theme Manager — pair a different custom or gallery theme with each appearance instead of one theme for both ([#651](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/651): @jordanearle)
+  - Opt-in from **Settings > Apollo Reborn > Theme Manager**; once enabled, applying a theme asks for Light Mode, Dark Mode, or Both, sun/moon indicators show each theme's assignment, and assignments survive copying a gallery theme into My Themes
+- Add an **Info Row** settings screen to customize the post stats strip (score / % upvoted / comments / time / edited / 🌐) ([#613](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/613): @icpryde)
+  - Pick which icons respond to a tap (**Upvote**, **Comments**, **Translation**) and how the detail icons reveal their info: a dismissable **Popup** — which finally makes the tap-for-full-date-and-time behavior optional ([#599](https://github.com/Apollo-Reborn/Apollo-Reborn/issues/599)) — or a self-fading **Overlay** card
+  - The press-and-hold **Magnifier** toggle moves here from General, and the magnifier no longer renders blank on very long posts
+- Add **more inline video hosts** — goal and highlight clips from the hosts big sports subreddits use (streamin, streamain, streamff, bangr, dubz, dropr, MLB produced clips) now play as real inline videos exactly like Streamable, with autoplay rules, fullscreen, mute handling, hold-for-speed, and PiP ([#596](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/596): @icpryde)
+  - Toggle it under **Settings > Media > Sports Clip Links Play Inline** (on by default); copy and share still use the original link
+
+### Fixes
+
+- Fix **Inline Media crashes and scroll lag** — a post linking the same imgur album twice crashed the app, leaving a post mid-resolve could crash it a moment later, and busy media-heavy threads (like game megathreads) could crash during layout; the same rework removes several scroll-performance hotspots so album-heavy posts scroll noticeably smoother ([#638](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/638): @JeffreyCA)
+  - Also brings the fullscreen **PiP button** to inline videos, and the mature-content blur no longer mispredicts when multiple signed-in accounts disagree on the setting
+- Fix the **signed-in Reddit account getting wiped** seconds after signing in — an iCloud-Keychain-synced credentials item made Apollo's keychain read miss it and delete the account on the spot ([#579](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/579): @ostechgit)
+- Fix the app **freezing when composing a Media post** on iOS 26 — tapping **"Text (optional)"** pegged the main thread in an endless nav-bar layout loop until the watchdog killed the app ([#623](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/623): @icpryde)
+- Fix **AI Summaries**' "Discussion so far" card getting stuck on *Summarizing…* forever in **Tap to Summarize** mode (and not reacting to taps); post summaries are also offered on shorter posts now (200+ words, down from 300) ([#610](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/610): @icpryde)
+- Fix **custom theme fonts** breaking markdown — code blocks stay monospaced under every theme font, and italics render actually slanted under SF Pro Rounded ([#640](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/640): @DeltAndy123)
+- Fix **theme colors** on separators and search — table separators and comment/post-header dividers now follow the theme's Separators color, and search fields keep the neutral input background ([#648](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/648): @jordanearle)
+- Fix the **Helios Cryo Halo icon** artwork and sort the Helios variants alphabetically in the icon picker ([#617](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/617): @IllIIllIllIllII)
+- Fix the **Anonymous Install Count** heartbeat forgetting its monthly token and opt-out choice on reinstall — both now live in durable storage, with existing opt-outs migrated ([#612](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/612): @jordanearle)
+
 ## [v3.5.2] - 2026-07-11
 
 ### Fixes
@@ -680,6 +704,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.6.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.2...v1.15.11_3.6.0
 [v3.5.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.1...v1.15.11_3.5.2
 [v3.5.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.0...v1.15.11_3.5.1
 [v3.5.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.4.1...v1.15.11_3.5.0

@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.6.1] - 2026-07-15
+
+### Features
+
+- Add a **tab bar corner picker** for Hide Bars on Scroll on Liquid Glass — the collapsed tab-bar pill no longer has to sit bottom-left; the native **Settings > General > Hide Bars on Scroll** switch is now a small **Left / Right / Off** menu ([#645](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/645): @icpryde)
+  - The pill rides the normal minimize/expand animation on either side; non-Liquid-Glass builds keep the plain switch
+- Improve **feed scrolling performance** — language-detection results are cached, per-row translation scans are coalesced, failing translation providers back off before retrying, and verbose diagnostics are compiled out of the scrolling hot path (a reproducible ~100ms scroll freeze is gone) ([#652](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/652): @icpryde)
+
+### Fixes
+
+- Fix **Recently Read** not bumping revisited posts to the top (or needing two pull-to-refreshes to do it) — marking a post as read is now deterministic instead of racing a 2-second timer, the screen refreshes itself when you return to it, and refreshes happen in place instead of clearing to a spinner; also fixes a data race and several latent bugs in the screen's data flow ([#632](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/632): @JeffreyCA)
+- Fix **bulk hide/unhide silently dropping 50 posts** — hiding more than 50 posts at once miscounted its request batches and one whole batch of 50 never reached Reddit, so those posts kept coming back on the next refresh ([#650](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/650): @icpryde)
+- Fix **Translation** marking languages on your Don't Translate list — comments and titles in a skipped language no longer get a "🌐 Translated from…" marker or a do-nothing Translate affordance, and **Show translation** no longer disappears after collapsing and expanding a comment ([#628](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/628): @icpryde)
+- Fix the compact **🌐 language marker** rendering oversized on media-heavy posts — it now always matches the size of the other info-row stats, and an oversized marker snaps back in place once the row is on screen ([#616](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/616): @icpryde)
+- Fix the **comment-count jump** opening the post at the top and then lurching down — tapping a post's comment count now slides in already anchored on the action bar, with the discussion right below ([#626](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/626): @icpryde)
+- Fix **notification account registration** failing with "missing required credentials" against self-hosted backends — Reddit API credentials now ride request headers on account upserts, where Apollo's upload tasks can't drop them ([#642](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/642): @nickclyde)
+
 ## [v3.6.0] - 2026-07-13
 
 ### Features
@@ -704,6 +721,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.6.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.6.0...v1.15.11_3.6.1
 [v3.6.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.2...v1.15.11_3.6.0
 [v3.5.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.1...v1.15.11_3.5.2
 [v3.5.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.0...v1.15.11_3.5.1

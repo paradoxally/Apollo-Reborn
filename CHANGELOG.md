@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.7.0] - 2026-07-16
+
+### Features
+
+- Add **Hidden, Removed & Deleted content recovery** to profiles — a new eye-slash button on any profile screen (yours or another user's) surfaces posts and comments that are hidden from the account's own listing, removed by mods/AutoMod/Reddit, or deleted by the author, using Reddit's own API and the Arctic Shift archive rather than scraping ([#633](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/633): @ostechgit)
+  - Tapping it opens a Posts vs Comments picker, then a results screen where each item is labeled **Hidden** (still live — opens natively in-app), **Removed** (archived title/body shown, with a Moderator / AutoMod / Reddit Admins qualifier when known), or **Deleted** (archived title/body shown); the archived view has Share and Open in Arctic Shift buttons
+  - Results are cached per user for an hour, transient network failures never poison the cache or close the sheet, and posts with non-ASCII permalinks now open correctly
+- Add **per-account sign-in mode** — the account switcher and the Custom API screen now tell the truth about each account instead of showing one global state ([#603](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/603): @icpryde)
+  - Switcher rows read **API key · default**, **API key · custom**, **API-key-free**, or **No API key set** instead of a blanket "Web session"
+  - **Settings > Apollo Reborn > Custom API** now follows the active account: the API-Key-Free switch, Redirect URI, and key fields reflect (and edit) the account you're actually looking at, while a keyless account dims its unused key fields
+  - Interactive OAuth sign-in clears any leftover web session for that username, and a keyless row's ⋯ menu gains **Use API Key Instead…** to un-stick an account that was silently migrated to keyless
+- Enable **user flair without a Reddit API key** — picking, saving, and hiding your flair now works in API-key-free mode through Reddit's cookie-authenticated selector, with your current flair recovered from the subreddit sidebar and marked with Apollo's native checkmark ([#653](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/653): @icpryde)
+- Add the **Apollo Classic** Liquid Glass app icon, inspired by the original Apollo icon, to the Community section of the icon picker ([#660](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/660): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix **missing inline images in API-key-free feeds** — direct Reddit images whose keyless listing item omitted its media metadata fell back to a link card; the missing fields are now hydrated from the post's old-Reddit comments response (up to six per response, fetched in parallel) so the image renders inline with the correct aspect ratio ([#654](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/654): @icpryde)
+- Fix **Auto Hide Read Posts** not hiding read posts on **Popular** and **All** when "Disable in Subreddits" is also on — Apollo models those aggregate feeds as the r/popular and r/all subreddits, so the subreddit gate wrongly skipped them; they now auto-hide like Home while real subreddits still honor the toggle ([#649](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/649): @icpryde)
+- Fix **Deleted Comments** recovery reliability — failed or throttled Arctic Shift fetches no longer poison the cache (so the same threads stop staying broken), more comments recover on popular posts, recovered bodies render full markdown instead of raw `[text](url)`, and the row re-measure no longer animates the wrong way during a collapse ([#630](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/630): @icpryde)
+- Fix **posts that wouldn't translate** — long bodies are now split into sentence-bounded chunks so they no longer blow past the provider's URL limit and fail wholesale, and the Apple provider's language pre-detection is length-adaptive so clearly-foreign short bodies stop getting dropped ([#629](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/629): @icpryde)
+- Fix comments **flashing blank on every up/down-vote** — voting (and returning from the app switcher) forced visible cells to re-display before their backing store was ready; translated comments additionally flashed their original language, bounced in height, and showed raw `![gif](…)` tokens, all now committed in the same frame ([#627](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/627): @icpryde)
+
 ## [v3.6.1] - 2026-07-15
 
 ### Features
@@ -721,6 +743,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.7.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.6.1...v1.15.11_3.7.0
 [v3.6.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.6.0...v1.15.11_3.6.1
 [v3.6.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.2...v1.15.11_3.6.0
 [v3.5.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.1...v1.15.11_3.5.2

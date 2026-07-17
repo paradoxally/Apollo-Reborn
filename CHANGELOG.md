@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.7.1] - 2026-07-17
+
+### Features
+
+- Add the **Synthwave** Liquid Glass app icon to the Community section of the icon picker ([#663](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/663): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix **login not persisting on sideloads** — signed-in accounts silently vanished on sideloaded builds because the account was split across keychain access groups and Apollo's scoped read missed it; the account is now recovered by reading across every access group, the underlying protection-class mismatch is healed so later writes land where the read looks, and API-key-free sign-in no longer creates an unreadable account keychain item in the first place ([#677](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/677): @jordanearle, [#681](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/681): @DeltAndy123, [#682](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/682): @DeltAndy123, [#683](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/683): @jordanearle)
+- Fix **hold-for-speed staying stuck** after scrubbing a video — the fast-forward speed no longer sticks on once you've dragged the video scrubber ([#667](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/667): @icpryde)
+- Speed up **full Community Highlights loading** ([#661](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/661): @icpryde)
+- Fix the **Mod Queue filter menu** anchoring on Liquid Glass — the filter menu now attaches to its button instead of drifting away ([#679](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/679): @JeffreyCA)
+- Fix **Search tab** suggestions padding and the **Random Subreddit** icon's stroke weight ([#680](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/680): @icpryde)
+- Recognize more **inline sports clips** — streama.in and streamff.link are now handled, and moved dubz/streamff CDNs are followed so their goal/highlight clips keep playing inline ([#665](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/665): @icpryde)
+- Fix the **Apollo Classic** app icon assets on iOS 27 ([#666](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/666): @IllIIllIllIllII)
+
 ## [v3.7.0] - 2026-07-16
 
 ### Features
@@ -743,6 +759,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.7.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.0...v1.15.11_3.7.1
 [v3.7.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.6.1...v1.15.11_3.7.0
 [v3.6.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.6.0...v1.15.11_3.6.1
 [v3.6.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.5.2...v1.15.11_3.6.0

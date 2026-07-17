@@ -123,4 +123,20 @@ void ApolloInjectPublicStickyAsSubredditIfNeeded(NSMutableArray *children, NSStr
 // ActionController is tagged on first build so re-builds re-inject and other
 // menus can't claim the item.
 void ApolloInjectDeletedCommentsMenuItemIfNeeded(NSMutableArray *children, NSString *menuTitle, id actionController);
+
+// Container keychain mirror (Tweak.xm): the Valet items the real keychain could not persist
+// on a keychain-broken sideload, so a backup taken there still carries the signed-in account.
+// Returns an array of { "service", "account", "data" } dicts (empty when the mirror is dormant).
+NSArray<NSDictionary *> *ApolloKeychainMirrorItemsForBackup(void);
+
+// Append a login-persistence diagnostic line to the cross-launch buffer in the app container.
+// Mirrors the line into a file that survives force-quit, so Export Debug Logs carries the
+// session that actually signed the user out. Safe to call from any thread; never logs secrets.
+void ApolloAppendLoginDiag(NSString *line);
+
+// Dev-only login-persistence debug (see Tweak.xm). A report of where the account keychain item
+// lives (access group/size/protection per copy), and a best-effort attempt to create a real
+// cross-access-group duplicate to reproduce the root cause. Both also write to the diag log.
+NSString *ApolloDebugAccountKeychainReport(void);
+NSString *ApolloDebugCreateCrossGroupAccountDuplicate(void);
 __END_DECLS

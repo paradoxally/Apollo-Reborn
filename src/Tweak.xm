@@ -186,6 +186,25 @@ static OSStatus ApolloRealSecItemDelete(NSDictionary *q) {
     return ((OSStatus (*)(CFDictionaryRef))SecItemDelete_orig)((__bridge CFDictionaryRef)q);
 }
 
+// One enumeration of every generic-password keychain item (all access groups, synced included),
+// returned as attribute+data dicts (nil on failure; the status is reported via outStatus). Shared
+// by the recovery cache, the destructive-write guard, and the account diagnostics so they don't
+// each re-declare the same MatchLimitAll query.
+static NSArray<NSDictionary *> *ApolloCopyAllGenericPasswords(OSStatus *outStatus) {
+    NSDictionary *q = @{
+        (__bridge id)kSecClass:              (__bridge id)kSecClassGenericPassword,
+        (__bridge id)kSecMatchLimit:         (__bridge id)kSecMatchLimitAll,
+        (__bridge id)kSecReturnAttributes:   @YES,
+        (__bridge id)kSecReturnData:         @YES,
+        (__bridge id)kSecAttrSynchronizable: (__bridge id)kSecAttrSynchronizableAny,
+    };
+    CFTypeRef result = NULL;
+    OSStatus st = ApolloRealSecItemCopyMatching(q, &result);
+    if (outStatus) *outStatus = st;
+    if (st != errSecSuccess || !result) { if (result) CFRelease(result); return nil; }
+    return (__bridge_transfer NSArray *)result;
+}
+
 // A login-persistence diagnostic line: into os_log (current-session export) AND the cross-launch
 // buffer in the container (survives force-quit, so the session that signed the user out is still
 // in Export Debug Logs). Used by every [KeychainTrace]/[AccountSnapshot]/[KeychainSelfHeal]/
@@ -366,48 +385,43 @@ static BOOL ApolloIsSingleItemValetQuery(NSDictionary *query) {
 static os_unfair_lock sRecoverLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableDictionary<NSString *, NSData *> *sRecoverCache;      // "service\naccount" -> newest data
 static NSMutableDictionary<NSString *, NSString *> *sRecoverGroupCache; // "service\naccount" -> its access group
+static NSMutableDictionary<NSString *, NSDictionary *> *sRecoverAttrCache; // "service\naccount" -> its attributes (never the value)
 static CFAbsoluteTime sRecoverCacheBuiltAt = 0;
 static const CFTimeInterval kRecoverCacheTTL = 1.5;
 
 static void ApolloRebuildRecoverCacheLocked(void) {
-    NSDictionary *q = @{
-        (__bridge id)kSecClass:              (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecMatchLimit:         (__bridge id)kSecMatchLimitAll,
-        (__bridge id)kSecReturnAttributes:   @YES,
-        (__bridge id)kSecReturnData:         @YES,
-        (__bridge id)kSecAttrSynchronizable: (__bridge id)kSecAttrSynchronizableAny,
-    };
     NSMutableDictionary<NSString *, NSData *> *cache = [NSMutableDictionary dictionary];
     NSMutableDictionary<NSString *, NSString *> *groups = [NSMutableDictionary dictionary];
+    NSMutableDictionary<NSString *, NSDictionary *> *attrs = [NSMutableDictionary dictionary];
     NSMutableDictionary<NSString *, NSDate *> *newest = [NSMutableDictionary dictionary];
-    CFTypeRef result = NULL;
-    OSStatus st = ApolloRealSecItemCopyMatching(q, &result);
-    if (st == errSecSuccess && result) {
-        NSArray *found = (__bridge_transfer NSArray *)result;
-        for (NSDictionary *item in found) {
-            NSString *service = item[(__bridge id)kSecAttrService];
-            NSString *account = item[(__bridge id)kSecAttrAccount];
-            NSData *data = item[(__bridge id)kSecValueData];
-            if (![service isKindOfClass:[NSString class]] || ![account isKindOfClass:[NSString class]]) continue;
-            if (![data isKindOfClass:[NSData class]]) continue;
-            NSString *key = [NSString stringWithFormat:@"%@\n%@", service, account];
-            id modAttr = item[(__bridge id)kSecAttrModificationDate];
-            NSDate *mod = [modAttr isKindOfClass:[NSDate class]] ? modAttr : [NSDate distantPast];
-            NSDate *prev = newest[key];
-            // Keep the newest by modification date so a genuine later write (incl. an empty
-            // sign-out blob) wins over an older duplicate.
-            if (!prev || [mod compare:prev] != NSOrderedAscending) {
-                cache[key] = data;
-                id grp = item[(__bridge id)kSecAttrAccessGroup];
-                groups[key] = [grp isKindOfClass:[NSString class]] ? grp : @"?";
-                newest[key] = mod;
-            }
+    for (NSDictionary *item in ApolloCopyAllGenericPasswords(NULL)) {
+        NSString *service = item[(__bridge id)kSecAttrService];
+        NSString *account = item[(__bridge id)kSecAttrAccount];
+        NSData *data = item[(__bridge id)kSecValueData];
+        if (![service isKindOfClass:[NSString class]] || ![account isKindOfClass:[NSString class]]) continue;
+        if (![data isKindOfClass:[NSData class]]) continue;
+        NSString *key = [NSString stringWithFormat:@"%@\n%@", service, account];
+        id modAttr = item[(__bridge id)kSecAttrModificationDate];
+        NSDate *mod = [modAttr isKindOfClass:[NSDate class]] ? modAttr : [NSDate distantPast];
+        NSDate *prev = newest[key];
+        // Keep the newest by modification date so a genuine later write (incl. an empty
+        // sign-out blob) wins over an older duplicate.
+        if (!prev || [mod compare:prev] != NSOrderedAscending) {
+            cache[key] = data;
+            id grp = item[(__bridge id)kSecAttrAccessGroup];
+            groups[key] = [grp isKindOfClass:[NSString class]] ? grp : @"?";
+            // Keep the item's attributes (never its value) so [KeychainAttrDiff] can print
+            // what the item actually is beside what Valet asked for. The enumeration already
+            // fetched these; we were throwing them away.
+            NSMutableDictionary *itemAttrs = [item mutableCopy];
+            [itemAttrs removeObjectForKey:(__bridge id)kSecValueData];
+            attrs[key] = itemAttrs;
+            newest[key] = mod;
         }
-    } else if (result) {
-        CFRelease(result);
     }
     sRecoverCache = cache;
     sRecoverGroupCache = groups;
+    sRecoverAttrCache = attrs;
     sRecoverCacheBuiltAt = CFAbsoluteTimeGetCurrent();
 }
 
@@ -420,7 +434,10 @@ static void ApolloInvalidateRecoverCache(void) {
 // outGroup (optional) receives the access group the recovered item actually lives in, so a
 // [KeychainRecover] log can compare it against the group Valet's scoped query targeted — the
 // direct confirmation of the "account split across access groups" root cause.
-static OSStatus ApolloValetRecoverRead(NSDictionary *query, CFTypeRef *result, NSString **outGroup) {
+// outAttrs (optional) receives the item's full attribute set (no value data), so [KeychainAttrDiff]
+// can name *which* attribute made the scoped read miss — the access group is only one candidate,
+// and nothing so far has measured the others on a real affected device.
+static OSStatus ApolloValetRecoverRead(NSDictionary *query, CFTypeRef *result, NSString **outGroup, NSDictionary **outAttrs) {
     NSString *service = query[(__bridge id)kSecAttrService];
     NSString *account = query[(__bridge id)kSecAttrAccount];
     if (![service isKindOfClass:[NSString class]] || ![account isKindOfClass:[NSString class]]) return errSecItemNotFound;
@@ -431,6 +448,7 @@ static OSStatus ApolloValetRecoverRead(NSDictionary *query, CFTypeRef *result, N
     }
     NSData *data = sRecoverCache[key];
     if (outGroup) *outGroup = sRecoverGroupCache[key];
+    if (outAttrs) *outAttrs = sRecoverAttrCache[key];
     os_unfair_lock_unlock(&sRecoverLock);
     if (!data) return errSecItemNotFound;
     return ApolloMirrorServe(query, data, result);
@@ -486,19 +504,8 @@ static BOOL ApolloWasAccountServed(NSString *account) {
 
 // Largest existing copy of this account item across all access groups (via enumeration), or -1.
 static long ApolloExistingAccountBlobMaxLen(NSString *service, NSString *account) {
-    NSDictionary *q = @{
-        (__bridge id)kSecClass:              (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecMatchLimit:         (__bridge id)kSecMatchLimitAll,
-        (__bridge id)kSecReturnAttributes:   @YES,
-        (__bridge id)kSecReturnData:         @YES,
-        (__bridge id)kSecAttrSynchronizable: (__bridge id)kSecAttrSynchronizableAny,
-    };
-    CFTypeRef result = NULL;
-    OSStatus st = ApolloRealSecItemCopyMatching(q, &result);
-    if (st != errSecSuccess || !result) { if (result) CFRelease(result); return -1; }
-    NSArray *found = (__bridge_transfer NSArray *)result;
     long maxLen = -1;
-    for (NSDictionary *item in found) {
+    for (NSDictionary *item in ApolloCopyAllGenericPasswords(NULL)) {
         if (![item[(__bridge id)kSecAttrService] isEqual:service]) continue;
         if (![item[(__bridge id)kSecAttrAccount] isEqual:account]) continue;
         NSData *data = item[(__bridge id)kSecValueData];
@@ -577,12 +584,113 @@ static long ApolloValueDataLength(NSDictionary *dict) {
     return [value isKindOfClass:[NSData class]] ? (long)[(NSData *)value length] : -1;
 }
 
+// kSecAttrAccessible values are opaque short codes ("ak", "ck", …). Name the ones we know and
+// pass anything newer through raw, so a log stays readable without lying about what it saw.
+static NSString *ApolloAccessibleName(id v) {
+    if (![v isKindOfClass:[NSString class]]) return @"(unset)";
+    if ([v isEqual:(__bridge id)kSecAttrAccessibleWhenUnlocked])                   return @"WhenUnlocked";
+    if ([v isEqual:(__bridge id)kSecAttrAccessibleAfterFirstUnlock])               return @"AfterFirstUnlock";
+    if ([v isEqual:(__bridge id)kSecAttrAccessibleWhenUnlockedThisDeviceOnly])     return @"WhenUnlockedThisDeviceOnly";
+    if ([v isEqual:(__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]) return @"AfterFirstUnlockThisDeviceOnly";
+    if ([v isEqual:(__bridge id)kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly])  return @"WhenPasscodeSetThisDeviceOnly";
+    return (NSString *)v;
+}
+
+// Every attribute that can make a scoped read miss an item an unfiltered enumeration can see.
+// Printed for the query and for the found item; whichever field differs is why the read missed,
+// and therefore what wrote the item wrong in the first place — the one thing about this bug that
+// has never been measured, only inferred. Deliberately excludes kSecValueData: the existing
+// diagnostics log statuses, lengths, dispositions and group names, never secrets, and this holds
+// that line.
+static NSString *ApolloKeychainAttrSummary(NSDictionary *d) {
+    if (!d) return @"(none)";
+    static NSDateFormatter *fmt;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        fmt = [[NSDateFormatter alloc] init];
+        fmt.dateFormat = @"yyyy-MM-dd'T'HH:mm:ss'Z'";
+        fmt.timeZone = [NSTimeZone timeZoneWithAbbreviation:@"UTC"];
+        fmt.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
+    });
+    id group    = d[(__bridge id)kSecAttrAccessGroup];
+    id service  = d[(__bridge id)kSecAttrService];
+    id created  = d[(__bridge id)kSecAttrCreationDate];
+    id modified = d[(__bridge id)kSecAttrModificationDate];
+    return [NSString stringWithFormat:@"group=%@ accessible=%@ sync=%@ created=%@ modified=%@ service=%@",
+            [group isKindOfClass:[NSString class]] ? group : @"(unset)",
+            ApolloAccessibleName(d[(__bridge id)kSecAttrAccessible]),
+            ApolloSyncDispositionString(d),
+            [created isKindOfClass:[NSDate class]] ? [fmt stringFromDate:created] : @"?",
+            [modified isKindOfClass:[NSDate class]] ? [fmt stringFromDate:modified] : @"?",
+            [service isKindOfClass:[NSString class]] ? service : @"(unset)"];
+}
+
+// Repair a wrong protection class in place, at the one moment we can prove it is wrong: the
+// enumeration recovery just found an item that Valet's scoped read could not see.
+//
+// Why the item can't fix itself: nothing ever deletes 2RedditAccounts2 (sign-out writes an empty
+// array over it), so it is created once per device+access group and every later write is an
+// update — and the existing writers pass only kSecValueData, so the class it was born with is the
+// class it dies with. Two writers created it without one, leaving it kSecAttrAccessibleWhenUnlocked
+// while Valet reads AfterFirstUnlock. Fixing those writers protects new installs and does nothing
+// for anyone already affected; this is what reaches them.
+//
+// kSecAttrAccessible *is* updatable, and a search query built from the item's OWN attributes —
+// including its wrong class — matches exactly where Valet's cannot. So the repair needs no delete.
+// That is deliberate: a failed heal then leaves the status quo (recovery keeps serving the value)
+// instead of risking a window with no item and an account that can't be put back.
+//
+// Once this succeeds, Valet's scoped read finds the item directly and recovery never fires again
+// on this device — the enumeration path becomes a one-time repair rather than a permanent tax on
+// every read.
+static os_unfair_lock sHealLock = OS_UNFAIR_LOCK_INIT;
+static NSMutableSet<NSString *> *sHealAttempted;
+
+static void ApolloHealAccessibleMismatch(NSDictionary *sentQuery, NSDictionary *foundAttrs) {
+    id wanted = sentQuery[(__bridge id)kSecAttrAccessible];
+    id actual = foundAttrs[(__bridge id)kSecAttrAccessible];
+    // No class pinned by the reader, or nothing to reconcile.
+    if (![wanted isKindOfClass:[NSString class]]) return;
+    if (![actual isKindOfClass:[NSString class]] || [actual isEqual:wanted]) return;
+
+    NSString *service = foundAttrs[(__bridge id)kSecAttrService];
+    NSString *account = foundAttrs[(__bridge id)kSecAttrAccount];
+    if (![service isKindOfClass:[NSString class]] || ![account isKindOfClass:[NSString class]]) return;
+
+    // Once per key per session: a persistent failure must not thrash the web-session read loop.
+    NSString *key = [NSString stringWithFormat:@"%@\n%@", service, account];
+    os_unfair_lock_lock(&sHealLock);
+    if (!sHealAttempted) sHealAttempted = [NSMutableSet set];
+    BOOL firstAttempt = ![sHealAttempted containsObject:key];
+    if (firstAttempt) [sHealAttempted addObject:key];
+    os_unfair_lock_unlock(&sHealLock);
+    if (!firstAttempt) return;
+
+    NSMutableDictionary *search = [NSMutableDictionary dictionary];
+    search[(__bridge id)kSecClass] = (__bridge id)kSecClassGenericPassword;
+    search[(__bridge id)kSecAttrService] = service;
+    search[(__bridge id)kSecAttrAccount] = account;
+    search[(__bridge id)kSecAttrAccessible] = actual;
+    id group = foundAttrs[(__bridge id)kSecAttrAccessGroup];
+    if ([group isKindOfClass:[NSString class]]) search[(__bridge id)kSecAttrAccessGroup] = group;
+    search[(__bridge id)kSecAttrSynchronizable] = (__bridge id)kSecAttrSynchronizableAny;
+
+    OSStatus st = ApolloRealSecItemUpdate(search, @{(__bridge id)kSecAttrAccessible: wanted});
+    ApolloLoginDiag(@"[KeychainHeal] account=%@ %@ -> %@ status=%d — %@",
+                    account, ApolloAccessibleName(actual), ApolloAccessibleName(wanted), (int)st,
+                    st == errSecSuccess ? @"repaired; scoped reads should succeed from here"
+                                        : @"left as-is; recovery still serving the value");
+    // The cache holds the pre-heal attributes; drop it so the next read sees the repaired item.
+    if (st == errSecSuccess) ApolloInvalidateRecoverCache();
+}
+
 // One trace line per Valet keychain operation. `op` is the call name; `extra` is optional
-// trailing context (byte lengths, route taken). ALL Valet traffic is traced — not just the
-// account blob — so the canary Valet.canAccessKeychain() writes/reads (its master gate: a NO
-// there skips the whole account load) and any account-adjacent item are captured too. Valet
-// traffic is low-frequency, so this doesn't flood.
-static BOOL ApolloTraceAllValet(void) { return YES; }
+// trailing context (byte lengths, route taken). Now that the root cause is known and fixed,
+// tracing is scoped to the account blob only: the all-Valet firehose (every websession cookie,
+// canary, and Ultra/Pro read) was for the investigation, and it also put usernames
+// (websession:<user>:cookie) into the cross-launch buffer. Set back to YES only when actively
+// re-investigating a keychain issue.
+static BOOL ApolloTraceAllValet(void) { return NO; }
 
 static void ApolloKeychainTrace(NSString *op, NSDictionary *query, OSStatus status, NSString *extra) {
     BOOL isAccounts = ApolloIsAccountsBlobQuery(query);
@@ -610,18 +718,10 @@ static NSString *const kApolloGroupSuite = @"group.com.christianselig.apollo";
 // after idling". Enumerates generic passwords and filters, so no exact Valet service string
 // is needed. -34018 distinguishes an entitlement rejection from a genuine not-found.
 static long ApolloRealAccountsBlobLength(OSStatus *outStatus, NSString **outAccessible) {
-    NSDictionary *q = @{
-        (__bridge id)kSecClass:            (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecMatchLimit:       (__bridge id)kSecMatchLimitAll,
-        (__bridge id)kSecReturnAttributes: @YES,
-        (__bridge id)kSecReturnData:       @YES,
-        (__bridge id)kSecAttrSynchronizable: (__bridge id)kSecAttrSynchronizableAny,
-    };
-    CFTypeRef result = NULL;
-    OSStatus st = ApolloRealSecItemCopyMatching(q, &result);
+    OSStatus st = errSecSuccess;
+    NSArray *found = ApolloCopyAllGenericPasswords(&st);
     if (outStatus) *outStatus = st;
-    if (st != errSecSuccess || !result) { if (result) CFRelease(result); return (st == errSecItemNotFound) ? -1 : -2; }
-    NSArray *found = (__bridge_transfer NSArray *)result;
+    if (!found) return (st == errSecItemNotFound) ? -1 : -2;
     long len = -1;
     for (NSDictionary *item in found) {
         NSString *service = item[(__bridge id)kSecAttrService];
@@ -665,20 +765,9 @@ static NSString *ApolloProtectedDataString(void) {
 // a copy whose group differs from what Valet's scoped query targets). One enumeration; only runs
 // at snapshot time (lifecycle transitions), so it's low-frequency.
 static NSString *ApolloAccountsBlobGroupBreakdown(void) {
-    NSDictionary *q = @{
-        (__bridge id)kSecClass:              (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecMatchLimit:         (__bridge id)kSecMatchLimitAll,
-        (__bridge id)kSecReturnAttributes:   @YES,
-        (__bridge id)kSecReturnData:         @YES,
-        (__bridge id)kSecAttrSynchronizable: (__bridge id)kSecAttrSynchronizableAny,
-    };
-    CFTypeRef result = NULL;
-    OSStatus st = ApolloRealSecItemCopyMatching(q, &result);
-    if (st != errSecSuccess || !result) {
-        if (result) CFRelease(result);
-        return [NSString stringWithFormat:@"enum-status=%d", (int)st];
-    }
-    NSArray *found = (__bridge_transfer NSArray *)result;
+    OSStatus st = errSecSuccess;
+    NSArray *found = ApolloCopyAllGenericPasswords(&st);
+    if (!found) return [NSString stringWithFormat:@"enum-status=%d", (int)st];
     NSMutableArray<NSString *> *copies = [NSMutableArray array];
     for (NSDictionary *item in found) {
         NSString *service = item[(__bridge id)kSecAttrService];
@@ -706,92 +795,119 @@ NSString *ApolloDebugAccountKeychainReport(void) {
     return breakdown;
 }
 
-// Best-effort: try to create a genuine cross-access-group DUPLICATE of the account item, to
-// reproduce the real root cause (not a mock) on a device whose signing entitles a second
-// keychain group. Reads the current item via enumeration, then writes a copy into candidate
-// groups using the UN-stripped real SecItemAdd (our normal hook strips the group, so this must
-// bypass it). Logs each attempt's status: 0 = duplicate created, -34018 = not entitled to that
-// group (so this device can't exhibit the split via it), -25299 = a copy already there. Returns
-// a summary for display. Only meaningful with an account signed in.
-NSString *ApolloDebugCreateCrossGroupAccountDuplicate(void) {
-    // 1. Find the current account item + its access group + data.
-    NSDictionary *q = @{
-        (__bridge id)kSecClass:              (__bridge id)kSecClassGenericPassword,
-        (__bridge id)kSecMatchLimit:         (__bridge id)kSecMatchLimitAll,
-        (__bridge id)kSecReturnAttributes:   @YES,
-        (__bridge id)kSecReturnData:         @YES,
-        (__bridge id)kSecAttrSynchronizable: (__bridge id)kSecAttrSynchronizableAny,
-    };
-    CFTypeRef result = NULL;
-    OSStatus st = ApolloRealSecItemCopyMatching(q, &result);
-    if (st != errSecSuccess || !result) {
-        if (result) CFRelease(result);
-        return [NSString stringWithFormat:@"No account item to duplicate (enum status=%d). Sign in first.", (int)st];
-    }
-    NSArray *found = (__bridge_transfer NSArray *)result;
-    NSDictionary *acctItem = nil;
+// Locate Apollo's live 2RedditAccounts2 item with its attributes and data, via the real
+// (un-hooked) enumeration. Returns nil if there's no signed-in account to work with.
+static NSDictionary *ApolloDebugFindAccountsItem(OSStatus *outStatus) {
+    OSStatus st = errSecSuccess;
+    NSArray *found = ApolloCopyAllGenericPasswords(&st);
+    if (outStatus) *outStatus = st;
+    if (!found) return nil;
     for (NSDictionary *item in found) {
         NSString *service = item[(__bridge id)kSecAttrService];
         NSString *account = item[(__bridge id)kSecAttrAccount];
         if ([service isKindOfClass:[NSString class]] && [service containsString:kValetServiceSubstring] &&
             [account isKindOfClass:[NSString class]] && [account containsString:@"RedditAccounts2"] &&
             [item[(__bridge id)kSecValueData] isKindOfClass:[NSData class]]) {
-            acctItem = item;
-            break;
+            return item;
         }
     }
-    if (!acctItem) return @"No 2RedditAccounts2 item found in the keychain. Sign in first.";
+    return nil;
+}
+
+// Dev-only: reproduce the suspected Mode A origin on a healthy device by rewriting the accounts
+// item with the WRONG protection class, preserving its data byte-for-byte.
+//
+// Why this is the test worth running: Valet reads the accounts item with
+// kSecAttrAccessibleAfterFirstUnlock (confirmed on-device by the [KeychainAttrDiff] QUERY line),
+// and accessibility is NOT part of a generic password's primary key — service + account + access
+// group are. So an item stored WhenUnlocked is invisible to that scoped read (-25300) while still
+// colliding on add (-25299): exactly the field signature, from one wrong attribute. If this
+// reproduces the wipe, the origin is any write path that omits kSecAttrAccessible — and
+// ApolloReplayValetKeychainItems (settings restore) is one.
+//
+// The blob is preserved exactly, so the live OAuth token stays valid — unlike a sign-out, which
+// revokes it server-side. Only the protection class changes: a genuine single-variable test.
+// Everything here uses the ApolloReal* wrappers so it bypasses our own hooks (which would strip
+// the group and trigger the self-heal, defeating the point).
+NSString *ApolloDebugPoisonAccountAccessibility(void) {
+    OSStatus enumStatus = errSecSuccess;
+    NSDictionary *acctItem = ApolloDebugFindAccountsItem(&enumStatus);
+    if (!acctItem) {
+        return [NSString stringWithFormat:@"No 2RedditAccounts2 item found (enum status=%d). Sign in first.", (int)enumStatus];
+    }
 
     NSString *service = acctItem[(__bridge id)kSecAttrService];
     NSString *account = acctItem[(__bridge id)kSecAttrAccount];
     NSData *data = acctItem[(__bridge id)kSecValueData];
-    NSString *currentGroup = [acctItem[(__bridge id)kSecAttrAccessGroup] isKindOfClass:[NSString class]]
-                                 ? acctItem[(__bridge id)kSecAttrAccessGroup] : nil;
+    NSString *group = [acctItem[(__bridge id)kSecAttrAccessGroup] isKindOfClass:[NSString class]]
+                          ? acctItem[(__bridge id)kSecAttrAccessGroup] : nil;
+    id current = acctItem[(__bridge id)kSecAttrAccessible];
+    NSString *wasAccessible = ApolloAccessibleName(current);
 
-    // 2. Candidate second groups, derived from the current group's team prefix. The app group's
-    //    keychain form and a synthetic sibling both make plausible "second drawer" targets; which
-    //    (if any) the signer entitles varies by install method.
-    NSMutableArray<NSString *> *candidates = [NSMutableArray array];
-    NSString *prefix = nil;
-    if (currentGroup.length) {
-        NSRange dot = [currentGroup rangeOfString:@"."];
-        if (dot.location != NSNotFound) prefix = [currentGroup substringToIndex:dot.location];
-    }
-    if (prefix.length) {
-        [candidates addObject:[NSString stringWithFormat:@"%@.group.com.christianselig.apollo", prefix]];
-        [candidates addObject:[NSString stringWithFormat:@"%@.com.christianselig.Apollo", prefix]];
-        [candidates addObject:[NSString stringWithFormat:@"%@.com.christianselig.Apollo.debugdup", prefix]];
-    }
+    // Toggle: poison a healthy item, restore a poisoned one. Same action either way, so a run that
+    // signs you out is always undoable by running it again.
+    BOOL poisoned = [current isEqual:(__bridge id)kSecAttrAccessibleWhenUnlocked];
+    id target = poisoned ? (__bridge id)kSecAttrAccessibleAfterFirstUnlock
+                         : (__bridge id)kSecAttrAccessibleWhenUnlocked;
 
-    NSMutableString *report = [NSMutableString stringWithFormat:@"Current group: %@\ndata: %lu bytes\n",
-                               currentGroup ?: @"?", (unsigned long)data.length];
-    if (candidates.count == 0) {
-        [report appendString:@"Could not derive a team prefix — cannot attempt a second group."];
-        ApolloLoginDiag(@"[DebugDup] %@", report);
+    NSMutableString *report = [NSMutableString stringWithFormat:
+        @"Found: %lu bytes\ngroup: %@\naccessible: %@\naction: %@\n",
+        (unsigned long)data.length, group ?: @"?", wasAccessible,
+        poisoned ? @"RESTORE -> AfterFirstUnlock" : @"POISON -> WhenUnlocked"];
+
+    if (data.length < 1000) {
+        [report appendString:@"\nBlob looks empty/tiny — sign in before poisoning, or you'll just "
+                             @"poison an empty array and learn nothing."];
         return report;
     }
-    for (NSString *grp in candidates) {
-        if ([grp isEqualToString:currentGroup]) { [report appendFormat:@"\n%@ — skipped (== current)", grp]; continue; }
-        NSDictionary *add = @{
-            (__bridge id)kSecClass:           (__bridge id)kSecClassGenericPassword,
-            (__bridge id)kSecAttrService:     service,
-            (__bridge id)kSecAttrAccount:     account,
-            (__bridge id)kSecAttrAccessGroup: grp,
-            (__bridge id)kSecAttrAccessible:  (__bridge id)kSecAttrAccessibleAfterFirstUnlock,
-            (__bridge id)kSecValueData:       data,
-        };
-        OSStatus as = ApolloRealSecItemAdd(add, NULL); // un-stripped: keep the explicit group
-        NSString *note = as == errSecSuccess ? @"DUPLICATE CREATED"
-                       : as == errSecDuplicateItem ? @"already present here"
-                       : as == -34018 ? @"not entitled to this group"
-                       : @"failed";
-        [report appendFormat:@"\n%@ -> status=%d (%@)", grp, (int)as, note];
+
+    // Delete the real item. Sign-out never does this (it writes a 219-byte empty array via
+    // UPDATE, confirmed in [KeychainTrace]), which is exactly why the restore path could never
+    // recreate — and therefore never re-poison — the item.
+    NSMutableDictionary *del = [NSMutableDictionary dictionary];
+    del[(__bridge id)kSecClass] = (__bridge id)kSecClassGenericPassword;
+    del[(__bridge id)kSecAttrService] = service;
+    del[(__bridge id)kSecAttrAccount] = account;
+    if (group) del[(__bridge id)kSecAttrAccessGroup] = group;
+    del[(__bridge id)kSecAttrSynchronizable] = (__bridge id)kSecAttrSynchronizableAny;
+    OSStatus ds = ApolloRealSecItemDelete(del);
+    [report appendFormat:@"\ndelete -> status=%d", (int)ds];
+
+    if (ds != errSecSuccess) {
+        [report appendString:@"\n\nDelete failed — nothing changed, account intact."];
+        ApolloLoginDiag(@"[DebugPoison] %@", [report stringByReplacingOccurrencesOfString:@"\n" withString:@" | "]);
+        return report;
     }
+
+    // Re-add the identical data under the target protection class.
+    NSMutableDictionary *add = [NSMutableDictionary dictionary];
+    add[(__bridge id)kSecClass] = (__bridge id)kSecClassGenericPassword;
+    add[(__bridge id)kSecAttrService] = service;
+    add[(__bridge id)kSecAttrAccount] = account;
+    if (group) add[(__bridge id)kSecAttrAccessGroup] = group;
+    add[(__bridge id)kSecAttrAccessible] = target;
+    add[(__bridge id)kSecValueData] = data;
+    OSStatus as = ApolloRealSecItemAdd(add, NULL);
+    [report appendFormat:@"\nre-add as %@ -> status=%d", ApolloAccessibleName(target), (int)as];
+
+    if (as != errSecSuccess) {
+        // The item is deleted at this point — put it back as it was rather than leaving the user
+        // signed out with no way to undo from the UI.
+        add[(__bridge id)kSecAttrAccessible] = current ?: (__bridge id)kSecAttrAccessibleAfterFirstUnlock;
+        OSStatus rs = ApolloRealSecItemAdd(add, NULL);
+        [report appendFormat:@"\nre-add FAILED; rolled back to %@ -> status=%d", wasAccessible, (int)rs];
+    } else if (poisoned) {
+        [report appendString:@"\n\nRestored. Force-quit and relaunch; the account should load normally."];
+    } else {
+        [report appendString:@"\n\nPoisoned. Force-quit and relaunch with fault flags OFF.\n"
+                             @"A [KeychainRecover] with no [FaultInjection] above it = a REAL miss "
+                             @"= confirmed. Run this action again to restore."];
+    }
+
     ApolloInvalidateRecoverCache();
-    ApolloLoginDiag(@"[DebugDup] %@", [report stringByReplacingOccurrencesOfString:@"\n" withString:@" | "]);
+    ApolloLoginDiag(@"[DebugPoison] %@", [report stringByReplacingOccurrencesOfString:@"\n" withString:@" | "]);
     return report;
 }
-
 static void ApolloLogAccountSnapshot(NSString *reason) {
     // Defaults mirror (group suite): what Apollo's own loader reads. Length distinguishes a
     // populated archive from an empty/absent one without unarchiving; the account stats separate
@@ -1029,7 +1145,8 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
     // (The dev-only "disable recovery" toggle skips this so the raw wipe can be observed.)
     if (status == errSecItemNotFound && ApolloIsSingleItemValetQuery(strippedQuery) && !ApolloDebugDisableRecovery()) {
         NSString *foundGroup = nil;
-        OSStatus recovered = ApolloValetRecoverRead(strippedQuery, result, &foundGroup);
+        NSDictionary *foundAttrs = nil;
+        OSStatus recovered = ApolloValetRecoverRead(strippedQuery, result, &foundGroup, &foundAttrs);
         if (recovered == errSecSuccess) {
             // The group Valet's original (pre-strip) query targeted vs the group the item
             // actually lives in — a mismatch is the direct proof of the access-group split.
@@ -1038,6 +1155,21 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
                             strippedQuery[(__bridge id)kSecAttrAccount],
                             [queriedGroup isKindOfClass:[NSString class]] ? queriedGroup : @"(stripped/none)",
                             foundGroup ?: @"?");
+            // The decisive pair. QUERY is what Valet issued before the strip; SENT is what actually
+            // missed; FOUND is what the item really is. The field that differs between SENT and
+            // FOUND is the reason for the -25300, and thus the origin of the poisoned item.
+            // The access group is only the leading suspect — kSecAttrAccessible and the exact
+            // service string are equally capable of this and have never been checked, because a
+            // read filters on them while SecItemAdd's duplicate check does not (service + account
+            // + access group are the primary key), which is exactly how one item produces both
+            // -25300 and -25299.
+            ApolloLoginDiag(@"[KeychainAttrDiff] QUERY %@", ApolloKeychainAttrSummary((__bridge NSDictionary *)query));
+            ApolloLoginDiag(@"[KeychainAttrDiff] SENT  %@", ApolloKeychainAttrSummary(strippedQuery));
+            ApolloLoginDiag(@"[KeychainAttrDiff] FOUND %@", ApolloKeychainAttrSummary(foundAttrs));
+            // The value is already served, so this is pure repair: the one moment we can prove the
+            // item's protection class is wrong is the moment a read filtered on it missed while an
+            // unfiltered enumeration didn't. Fixing it here is what retires this whole path.
+            ApolloHealAccessibleMismatch(strippedQuery, foundAttrs);
             if (IsAccountsFamilyQuery(strippedQuery)) ApolloMarkAccountServed(strippedQuery[(__bridge id)kSecAttrAccount]);
             return errSecSuccess;
         }

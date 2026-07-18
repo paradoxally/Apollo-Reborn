@@ -2517,9 +2517,20 @@ static id ApolloLPMeasuredWrapper(id cardSpec, Class insetClass) {
     return cardSpec;
 }
 
+// Long titles used to suppress the description entirely while the title
+// itself stayed capped at 2 lines — the longest headlines rendered the least
+// content. Give them a third title line and keep one description line; when
+// there is no description at all, a long title gets the freed-up line too.
+static NSUInteger ApolloLPCompactTitleLineCount(ApolloLinkPreview *preview) {
+    NSUInteger titleLength = ApolloLPDisplayTitleForPreview(preview).length;
+    BOOL hasDescription = ApolloLPDisplayDescriptionForPreview(preview).length > 0;
+    if (titleLength >= 110) return 3;
+    if (!hasDescription && titleLength >= 70) return 3;
+    return 2;
+}
+
 static NSUInteger ApolloLPCompactDescriptionLineCount(ApolloLinkPreview *preview) {
     NSUInteger titleLength = ApolloLPDisplayTitleForPreview(preview).length;
-    if (titleLength >= 110) return 0;
     if (titleLength >= 70) return 1;
     return 2;
 }
@@ -2544,7 +2555,7 @@ static id ApolloLPBuildCompactCardSpec(ASDisplayNode *hostNode, NSURL *url, Apol
 
     imageNode.cornerRadius = 8.0;
     NSUInteger descriptionLineCount = ApolloLPCompactDescriptionLineCount(preview);
-    titleNode.maximumNumberOfLines = 2;
+    titleNode.maximumNumberOfLines = ApolloLPCompactTitleLineCount(preview);
     descriptionNode.maximumNumberOfLines = descriptionLineCount;
     ApolloLPApplyCardBackgroundColor(hostNode, backgroundNode, url, NO);
     backgroundNode.cornerRadius = 10.0;
@@ -2587,9 +2598,13 @@ static id ApolloLPBuildCompactCardSpec(ASDisplayNode *hostNode, NSURL *url, Apol
     return ApolloLPMeasuredWrapper(card, insetClass);
 }
 
-static NSUInteger ApolloLPHeroDescriptionLineCount(ApolloLinkPreview *preview) {
+static NSUInteger ApolloLPHeroTitleLineCount(ApolloLinkPreview *preview) {
     NSUInteger titleLength = ApolloLPDisplayTitleForPreview(preview).length;
-    if (titleLength >= 120) return 0;
+    BOOL hasDescription = ApolloLPDisplayDescriptionForPreview(preview).length > 0;
+    return (titleLength >= 120 || (!hasDescription && titleLength >= 70)) ? 3 : 2;
+}
+
+static NSUInteger ApolloLPHeroDescriptionLineCount(__unused ApolloLinkPreview *preview) {
     return 1;
 }
 
@@ -2617,7 +2632,7 @@ static id ApolloLPBuildHeroCardSpec(ASDisplayNode *hostNode, NSURL *url, ApolloL
     BOOL isYouTube = ApolloLPIsYouTubeURL(url);
     BOOL isPosterPreview = ApolloLPIsPosterPreviewURL(url, preview);
     NSUInteger descriptionLineCount = ApolloLPHeroDescriptionLineCount(preview);
-    titleNode.maximumNumberOfLines = 2;
+    titleNode.maximumNumberOfLines = ApolloLPHeroTitleLineCount(preview);
     descriptionNode.maximumNumberOfLines = descriptionLineCount;
     UIColor *heroTitleColor = [UIColor labelColor];
     ApolloLPCustomCardTextColors(&heroTitleColor, NULL);
@@ -4193,6 +4208,13 @@ static id ApolloLPNativeLinkSpecWithBannedHintIfNeeded(id linkButtonNode, NSURL 
             }
             cached = nil;
         }
+    }
+    // Mirror the fetcher's weak-preview rule: a bot-wall or slug-fallback
+    // card renders from cache here and would otherwise never refetch —
+    // requestPreviewForURL (which owns the refetch) only runs when nothing
+    // is cached.
+    if (cached && [ApolloLinkPreviewFetcher shouldRetryWeakCachedPreview:cached forURL:url]) {
+        cached = nil;
     }
     if (!cached) {
         BOOL compactPlaceholder = selectedMode == ApolloLinkPreviewModeCompact || ApolloLPShouldUseCompactPlaceholder(url) || ApolloLPIsRedditUserProfileURL(url) || ApolloLPIsRedditSubredditURL(url);

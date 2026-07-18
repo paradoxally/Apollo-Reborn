@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.7.2] - 2026-07-18
+
+### Fixes
+
+- Fix **Link Previews** showing a mangled URL-slug title and the site's favicon for articles on bot-protected news sites (expresso.pt and other DataDome/Cloudflare-fronted sites) — metadata is now fetched the way Safari would and retried when a bot wall answers, so cards get the real headline, photo, and description; previously-broken cards heal themselves on next view, and the fetcher no longer sends your Reddit API user agent to third-party websites (#18)
+  - When a site still can't be fetched, the fallback title is cleaner — leading dates and trailing content-id hashes are stripped from the URL slug
+- Fix **long headlines hiding the card subtitle** — link cards whose title runs long now show a third title line and keep a one-line description, instead of truncating the title at two lines and dropping the description entirely (#18)
+
 ## [v3.7.1] - 2026-07-17
 
 ### Features
@@ -759,6 +767,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.7.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.1...v1.15.11_3.7.2
 [v3.7.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.0...v1.15.11_3.7.1
 [v3.7.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.6.1...v1.15.11_3.7.0
 [v3.6.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.6.0...v1.15.11_3.6.1

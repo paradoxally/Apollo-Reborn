@@ -294,6 +294,10 @@ static BOOL ApolloLinkPreviewIsBlockedPage(NSString *title, NSString *html) {
         if ([lowerHTML containsString:@"verifying you are human"]) return YES;
         if ([lowerHTML containsString:@"cf-challenge"]) return YES;
         if ([lowerHTML containsString:@"cf_chl_opt"]) return YES;
+        // DataDome walls title their challenge page with the bare hostname,
+        // so only the body script reference gives them away.
+        if ([lowerHTML containsString:@"captcha-delivery.com"]) return YES;
+        if ([lowerHTML containsString:@"please enable js and disable any ad blocker"]) return YES;
     }
     return NO;
 }
@@ -518,13 +522,36 @@ static NSDictionary<NSString *, NSString *> *ApolloLinkPreviewJSONLDValuesFromHT
     return values;
 }
 
-static NSString *ApolloLinkPreviewTitleFromURL(NSURL *url) {
+// News slugs often carry a leading publish date and a trailing content-id
+// hash ("2026-07-17-some-title-4eb213d0") that read as noise in a fallback
+// title. The hex check requires a digit so real words made of a-f letters
+// ("efface") survive.
+static NSString *ApolloLinkPreviewStripSlugNoise(NSString *part) {
+    if (part.length == 0) return part;
+    static NSRegularExpression *datePrefix;
+    static NSRegularExpression *hexToken;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        datePrefix = [NSRegularExpression regularExpressionWithPattern:@"^\\d{4} \\d{2} \\d{2}\\b\\s*"
+                                                               options:0
+                                                                 error:nil];
+        hexToken = [NSRegularExpression regularExpressionWithPattern:@"(^|\\s+)(?=[a-f0-9]*\\d)[a-f0-9]{6,}$"
+                                                             options:NSRegularExpressionCaseInsensitive
+                                                               error:nil];
+    });
+    NSString *result = [datePrefix stringByReplacingMatchesInString:part options:0 range:NSMakeRange(0, part.length) withTemplate:@""];
+    result = [hexToken stringByReplacingMatchesInString:result options:0 range:NSMakeRange(0, result.length) withTemplate:@""];
+    return result;
+}
+
+static NSString *ApolloLinkPreviewTitleFromURLStripping(NSURL *url, BOOL stripNoise) {
     NSMutableArray<NSString *> *parts = [NSMutableArray array];
     for (NSString *part in [url.path componentsSeparatedByString:@"/"]) {
         NSString *decoded = part.stringByRemovingPercentEncoding ?: part;
         decoded = [decoded stringByReplacingOccurrencesOfString:@"-" withString:@" "];
         decoded = [decoded stringByReplacingOccurrencesOfString:@"_" withString:@" "];
         decoded = ApolloLinkPreviewCleanString(decoded);
+        if (stripNoise) decoded = ApolloLinkPreviewStripSlugNoise(decoded);
         if (decoded.length == 0) continue;
         if ([decoded.lowercaseString isEqualToString:@"en"] || [decoded.lowercaseString isEqualToString:@"wiki"]) continue;
         if ([decoded.lowercaseString isEqualToString:@"usage"] || [decoded.lowercaseString isEqualToString:@"matches"]) continue;
@@ -534,6 +561,10 @@ static NSString *ApolloLinkPreviewTitleFromURL(NSURL *url) {
     if (parts.count == 0) return ApolloLinkPreviewHost(url);
     NSUInteger start = parts.count > 3 ? parts.count - 3 : 0;
     return [[parts subarrayWithRange:NSMakeRange(start, parts.count - start)] componentsJoinedByString:@" "];
+}
+
+static NSString *ApolloLinkPreviewTitleFromURL(NSURL *url) {
+    return ApolloLinkPreviewTitleFromURLStripping(url, YES);
 }
 
 static NSURL *ApolloLinkPreviewFallbackIconURL(NSURL *url) {
@@ -587,6 +618,16 @@ static BOOL ApolloLinkPreviewIsWeakAcademicPreview(ApolloLinkPreview *preview, N
 static BOOL ApolloLinkPreviewIsCachedBotWall(ApolloLinkPreview *preview) {
     if (!preview) return NO;
     return ApolloLinkPreviewIsBlockedPage(preview.title, nil);
+}
+
+// A fallback card built purely from the URL (slug title + favicon). The raw
+// slug title is checked too so entries cached before the slug-noise cleanup
+// still register as weak.
+static BOOL ApolloLinkPreviewIsWeakGenericPreview(ApolloLinkPreview *cached, NSURL *url) {
+    return cached.imageIsFallbackIcon
+        && cached.desc.length == 0
+        && ([cached.title isEqualToString:ApolloLinkPreviewTitleFromURL(url)]
+            || [cached.title isEqualToString:ApolloLinkPreviewTitleFromURLStripping(url, NO)]);
 }
 
 static NSURL *ApolloTheNumbersPosterURLFromHTML(NSString *html, NSURL *baseURL) {
@@ -737,9 +778,7 @@ static NSString *ApolloLinkPreviewBrowserUserAgent(void) {
     if (cached) {
         BOOL botWall = ApolloLinkPreviewIsCachedBotWall(cached);
         BOOL weakAcademic = ApolloLinkPreviewIsWeakAcademicPreview(cached, url);
-        BOOL weakGeneric = cached.imageIsFallbackIcon
-            && cached.desc.length == 0
-            && [cached.title isEqualToString:ApolloLinkPreviewTitleFromURL(url)];
+        BOOL weakGeneric = ApolloLinkPreviewIsWeakGenericPreview(cached, url);
         BOOL staleBluesky = ApolloBlueskyPostPartsFromURL(url)
             && (![cached.previewKind isEqualToString:@"bluesky-post-v2"] || cached.postText.length == 0);
         BOOL staleRedditUser = ApolloRedditUsernameFromProfileURL(url).length > 0
@@ -786,6 +825,26 @@ static NSString *ApolloLinkPreviewBrowserUserAgent(void) {
     NSString *host = ApolloLinkPreviewHost(url);
     return [host isEqualToString:@"x.com"] || [host hasSuffix:@".x.com"]
         || [host isEqualToString:@"twitter.com"] || [host hasSuffix:@".twitter.com"];
+}
+
++ (BOOL)shouldRetryWeakCachedPreview:(ApolloLinkPreview *)cached forURL:(NSURL *)url {
+    if (!cached || !url) return NO;
+    BOOL weak = ApolloLinkPreviewIsCachedBotWall(cached)
+        || ApolloLinkPreviewIsWeakAcademicPreview(cached, url)
+        || ApolloLinkPreviewIsWeakGenericPreview(cached, url);
+    if (!weak) return NO;
+    // One retry per URL per app session: a hard-blocked site re-caches a
+    // fallback after every attempt, and card layout would otherwise loop
+    // fetch -> fallback -> relayout -> fetch indefinitely.
+    static NSMutableSet<NSString *> *retried;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{ retried = [NSMutableSet set]; });
+    NSString *key = url.absoluteString ?: @"";
+    @synchronized (retried) {
+        if ([retried containsObject:key]) return NO;
+        [retried addObject:key];
+    }
+    return YES;
 }
 
 + (void)fetchPreviewForURL:(NSURL *)url completion:(ApolloLinkPreviewCompletion)completion {
@@ -1449,10 +1508,12 @@ static NSString *ApolloLinkPreviewBrowserUserAgent(void) {
     if (allowRange) {
         [request setValue:@"bytes=0-65535" forHTTPHeaderField:@"Range"];
     }
-    if (browserFallback) {
-        [request setValue:ApolloLinkPreviewBrowserUserAgent() forHTTPHeaderField:@"User-Agent"];
-        [request setValue:@"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" forHTTPHeaderField:@"Accept"];
-    }
+    // Page HTML is always fetched as Safari: bot walls (DataDome, Cloudflare)
+    // key on the User-Agent, and the API-style UA would also leak the user's
+    // configured Reddit UA to arbitrary third-party sites. API fetchers
+    // (YouTube/Wikipedia/Reddit/GitHub/Bluesky) keep the API UA.
+    [request setValue:ApolloLinkPreviewBrowserUserAgent() forHTTPHeaderField:@"User-Agent"];
+    [request setValue:@"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" forHTTPHeaderField:@"Accept"];
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
@@ -1461,7 +1522,10 @@ static NSString *ApolloLinkPreviewBrowserUserAgent(void) {
             ApolloLog(@"[LinkPreviews] HTML fetch failed %@ status=%ld type=%@ bytes=%lu err=%@",
                       url.absoluteString, (long)httpResponse.statusCode, contentType ?: @"",
                       (unsigned long)data.length, error.localizedDescription);
-            if (!browserFallback && (error || httpResponse.statusCode == 0 || data.length == 0)) {
+            // Retry without the Range header on any 4xx/5xx too: bot walls
+            // answer 403 with a challenge body, and some servers reject
+            // ranged requests outright.
+            if (!browserFallback && (error || httpResponse.statusCode == 0 || data.length == 0 || httpResponse.statusCode >= 400)) {
                 ApolloLog(@"[LinkPreviews] HTML retrying full browser fetch host=%@", ApolloLinkPreviewHost(url));
                 [self fetchHTMLPreviewForURL:url allowRange:NO browserFallback:YES completion:completion];
                 return;

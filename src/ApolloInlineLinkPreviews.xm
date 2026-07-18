@@ -4194,6 +4194,13 @@ static id ApolloLPNativeLinkSpecWithBannedHintIfNeeded(id linkButtonNode, NSURL 
             cached = nil;
         }
     }
+    // Mirror the fetcher's weak-preview rule: a bot-wall or slug-fallback
+    // card renders from cache here and would otherwise never refetch —
+    // requestPreviewForURL (which owns the refetch) only runs when nothing
+    // is cached.
+    if (cached && [ApolloLinkPreviewFetcher shouldRetryWeakCachedPreview:cached forURL:url]) {
+        cached = nil;
+    }
     if (!cached) {
         BOOL compactPlaceholder = selectedMode == ApolloLinkPreviewModeCompact || ApolloLPShouldUseCompactPlaceholder(url) || ApolloLPIsRedditUserProfileURL(url) || ApolloLPIsRedditSubredditURL(url);
         ApolloLPContext placeholderContext = compactPlaceholder ? ApolloLPContextCompact : ApolloLPContextSelfText;

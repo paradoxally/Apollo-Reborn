@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.8.0] - 2026-07-19
+
+### Features
+
+- Revamp **Settings** — the Apollo Reborn screen is now a compact, task-oriented hub (Setup, Features, Data, Advanced, Privacy, About) with grouped feature screens, modern icon tiles, and duplicate controls removed ([#637](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/637): @jordanearle)
+  - Add **settings search**: pull down on Apollo's Settings screen to search every Reborn and native setting by name, with breadcrumbs showing where each result lives and `apollo://reborn/settings/…` deep links
+  - Settings that belong with Apollo's own controls now live in their native families — Open in App under **General > Open Links**, Picture-in-Picture under **General > Media**, Translation and Saved Categories under **General > Other**, Color Flairs under **Appearance > Flair**, Tag Filters under **Filters & Blocks**
+  - Replace coupled toggle pairs with clear three-way pickers for AI summary behavior, Translation mode, and Deleted Comments mode, with toast confirmations and a Setup footer that disappears once your Reddit key is configured
+  - Add **Feature Requests** (the Reborn board, with voting) and a privacy-conscious **Bug Reports** form with version prefill and an explicit opt-in Attach Logs step, both under **Settings > Apollo Reborn > About**
+- Add **native poll voting and creation** behind the new off-by-default **Settings > Apollo Reborn > Polls** switch, using a per-account reddit.com web session for the same endpoints Reddit's own web client uses ([#643](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/643): @jordanearle)
+  - Tap a poll option to vote — your choice renders immediately and authoritative totals fill in on their own, with clean rollback if Reddit rejects the vote
+  - Create polls from the post composer's new **Poll** segment (title, 2–6 options, duration)
+  - Poll-only web sessions are isolated from the API-key-free transport, cookie and token material stays out of caches and diagnostics, and every hook stays dormant while the switch is off
+
 ## [v3.7.2] - 2026-07-18
 
 ### Fixes
@@ -767,6 +781,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.8.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.2...v1.15.11_3.8.0
 [v3.7.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.1...v1.15.11_3.7.2
 [v3.7.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.0...v1.15.11_3.7.1
 [v3.7.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.6.1...v1.15.11_3.7.0

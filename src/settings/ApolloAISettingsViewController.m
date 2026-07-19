@@ -139,6 +139,14 @@ typedef NS_ENUM(NSInteger, ApolloAICloudFieldTag) {
                                     title:@"On-Device Model"
                                    detail:^NSString * { return [weakSelf modelAvailabilityText]; }
                                  onSelect:nil];
+    // Same reuse-pool reset as cloudStatus below: a recycled summaryMode cell
+    // arrives with a greyed label when the master switch is off.
+    availability.configure = ^(UITableViewCell *cell) {
+        cell.textLabel.enabled = YES;
+        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+        cell.accessoryType = UITableViewCellAccessoryNone;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    };
 
     ApolloSettingsRow *cloudStatus =
         [ApolloSettingsRow valueRowWithID:@"cloudStatus"
@@ -152,6 +160,14 @@ typedef NS_ENUM(NSInteger, ApolloAICloudFieldTag) {
             return @"Configured";
         }
                                  onSelect:nil];
+    // valueRows share a reuse pool with summaryMode, whose configure block
+    // greys the label while the master switch is off — reset what it sets.
+    cloudStatus.configure = ^(UITableViewCell *cell) {
+        cell.textLabel.enabled = YES;
+        cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
+        cell.accessoryType = UITableViewCellAccessoryNone;
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    };
 
     // Destructive action — the buttonRow kind would accent-tint the label, so
     // this stays a custom cell to keep the systemRed treatment.

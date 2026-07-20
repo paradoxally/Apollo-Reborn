@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.8.1] - 2026-07-20
+
+### Features
+
+- Add an **Icon-Only Tab Bar** toggle under **Settings > Apollo Reborn > Profiles** — hides every tab title while keeping the icons, navigation, and accessibility names, applies immediately, and persists across launches ([#691](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/691): @icpryde)
+  - Coordinates with **Hide Username on Tab Bar**: enabling icon-only supersedes it and fades its row; turning icon-only off re-enables the row without flipping it back on
+- Improve **Settings** organization — **Open Links in** and **Open Videos in YouTube App** now live under **Open in App**, and **Hide Username on Tab Bar** under **Profiles**; the rows write the same native keys (nothing resets) and settings search finds them at their new homes ([#695](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/695): @icpryde)
+  - The Settings search bar now scrolls away with the list and reveals on a pull back to the top, like a native iOS search bar
+
+### Fixes
+
+- Fix **inline comment images rendering tiny** after collapsing and re-expanding a comment — the image bitmap could be captured while the row was momentarily the wrong size — and stop the reload flicker loop when voting on a comment with an inline image ([#675](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/675): @icpryde)
+- Fix the **trailing button pill leaning left** on Liquid Glass — the trophy + ••• group on feeds and sort + ••• in comments now centers with even padding, with or without the translation globe ([#671](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/671): @icpryde)
+
 ## [v3.8.0] - 2026-07-19
 
 ### Features
@@ -781,6 +795,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.8.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.0...v1.15.11_3.8.1
 [v3.8.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.2...v1.15.11_3.8.0
 [v3.7.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.1...v1.15.11_3.7.2
 [v3.7.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.0...v1.15.11_3.7.1

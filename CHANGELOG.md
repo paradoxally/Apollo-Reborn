@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.8.3] - 2026-07-23
+
+### Features
+
+- Add a **Hide Feed Descriptions** toggle under **Settings > Apollo Reborn > Features > Subreddits** — hides the subtitle lines under the built-in feed rows (Home, Popular Posts, All Posts, Moderator Posts) in both the classic and modern list styles, independent of the Subreddit List Enhancements master ([#692](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/692): @icpryde)
+  - The same PR also refines the modern subreddit list: pinned section headers stay transparent instead of becoming a solid band over the rows scrolling beneath them, the A-Z index letters ride above the section-header bands in classic mode, and turning **Subreddit List Enhancements** off now strips the modern chrome live instead of waiting for a relaunch
+
+### Fixes
+
+- Fix a **crash on posts with link previews** — an oversized inline link-preview image could be downscaled synchronously deep inside a table row-layout pass (often triggered by a vote or a comment-sort switch) and overflow the layout stack; the resize now runs off the layout stack with a per-image cache, so previews keep showing their loaded image while the resized bitmap is prepared ([#686](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/686): @icpryde)
+- Fix **translated comments flickering when you vote** — voting no longer flashes the original-language text for a frame, bounces the row height, or shifts the avatar; the settled translated body stays put while the arrow and score update, and the fix holds up through scrolling and long-press context menus ([#676](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/676): @icpryde)
+- Fix **user flair issues on API-key-free accounts and just-posted comments** ([#670](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/670): @icpryde)
+  - The flair editor now shows each community's real per-sub emoji limit instead of a flat 10, and going over it warns you (with Keep Editing / Save Anyway) instead of silently letting Reddit drop the extra emoji
+  - Your own flair pill now appears on a comment the instant you post it, rather than only after a pull-to-refresh
+
 ## [v3.8.2] - 2026-07-23
 
 ### Features
@@ -809,6 +824,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.8.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.2...v1.15.11_3.8.3
 [v3.8.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.1...v1.15.11_3.8.2
 [v3.8.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.0...v1.15.11_3.8.1
 [v3.8.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.2...v1.15.11_3.8.0

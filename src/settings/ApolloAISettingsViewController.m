@@ -214,6 +214,26 @@ static NSInteger ApolloAISettingsHystereticIndex(float raw, NSInteger current,
     [self apollo_applyTouch:touch];
     return YES;
 }
+
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    // A stationary tap on a different detent produces a single touch frame, which
+    // never reaches the >=2 movement streak the drag path uses to confirm a
+    // crossing — so without this the slider silently ignores a tap. Commit the
+    // pending candidate on release so a tap jumps to the tapped stop. A drag that
+    // already confirmed leaves pendingIndex == lastSnappedIndex, so this is a
+    // no-op for it. Only endTracking (normal release) commits; cancelTracking
+    // does not, so a cancelled gesture still snaps back.
+    if (self.apollo_pendingIndex != self.apollo_lastSnappedIndex) {
+        self.apollo_lastSnappedIndex = self.apollo_pendingIndex;
+        self.apollo_pendingStreak = 0;
+        self.apollo_lastFeedbackTime = CACurrentMediaTime();
+        [self setValue:(float)self.apollo_pendingIndex animated:YES];
+        [self.apollo_feedback selectionChanged];
+        [self.apollo_feedback prepare];
+        [self sendActionsForControlEvents:UIControlEventValueChanged];
+    }
+    [super endTrackingWithTouch:touch withEvent:event];
+}
 @end
 
 // UITableView normally delays and may cancel a control's touches once its pan

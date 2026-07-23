@@ -509,6 +509,23 @@ static UIViewController *ApolloIMVCForView(UIView *view) {
     return YES;
 }
 
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    // A stationary tap on a different detent produces one touch frame, which never
+    // reaches the >=2 confirmation streak the drag path uses — so commit the
+    // pending detent on release, letting a tap jump to the tapped stop. A drag
+    // that already confirmed leaves pendingPercent == lastSnappedPercent (no-op).
+    // Kept in sync with ApolloAISettingsSlider (cubic review on #22).
+    if (self.pendingPercent != self.lastSnappedPercent) {
+        self.lastSnappedPercent = self.pendingPercent;
+        self.pendingStreak = 0;
+        self.lastFireTime = CACurrentMediaTime();
+        [self setValue:(float)self.pendingPercent animated:YES];
+        [self.feedback selectionChanged];
+        [self sendActionsForControlEvents:UIControlEventValueChanged];
+    }
+    [super endTrackingWithTouch:touch withEvent:event];
+}
+
 @end
 
 // MARK: - Table view (keeps the slider drag from scrolling the screen)

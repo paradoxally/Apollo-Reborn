@@ -646,19 +646,35 @@ static void ApolloAIPersistSummaries(void) {
         for (NSString *k in timestamps.allKeys) {
             if (![live containsObject:k]) [timestamps removeObjectForKey:k];
         }
+        // Prune the sidecar metadata to the surviving cache keys too. Without
+        // this, every cap-evicted summary leaves its mode / model-label / detail
+        // / profile / source-count / signature entry behind and the cache file
+        // grows unbounded past kApolloAIPersistMaxEntries (post-side dicts are
+        // keyed on post fullNames, comment-side on comment fullNames).
+        NSSet<NSString *> *postKeys = [NSSet setWithArray:post.allKeys];
+        NSSet<NSString *> *commentKeys = [NSSet setWithArray:comment.allKeys];
+        NSDictionary *(^prune)(NSDictionary *, NSSet<NSString *> *) =
+            ^NSDictionary *(NSDictionary *snap, NSSet<NSString *> *keys) {
+                if (snap.count == 0) return @{};
+                NSMutableDictionary *m = [snap mutableCopy];
+                for (NSString *k in snap.allKeys) {
+                    if (![keys containsObject:k]) [m removeObjectForKey:k];
+                }
+                return m;
+            };
         NSDictionary *root = @{
             @"version": ApolloAIEffectiveCacheVersion(),
             @"post": post,
             @"comment": comment,
-            @"commentSourceCounts": sourceCountSnapshot,
-            @"commentSignatures": signatureSnapshot,
-            @"postModes": postModeSnapshot ?: @{},
-            @"postModelLabels": postModelLabelSnapshot ?: @{},
-            @"commentModelLabels": commentModelLabelSnapshot ?: @{},
-            @"postDetails": postDetailSnapshot ?: @{},
-            @"commentDetails": commentDetailSnapshot ?: @{},
-            @"postProfiles": postProfileSnapshot ?: @{},
-            @"commentProfiles": commentProfileSnapshot ?: @{},
+            @"commentSourceCounts": prune(sourceCountSnapshot, commentKeys),
+            @"commentSignatures": prune(signatureSnapshot, commentKeys),
+            @"postModes": prune(postModeSnapshot, postKeys),
+            @"postModelLabels": prune(postModelLabelSnapshot, postKeys),
+            @"commentModelLabels": prune(commentModelLabelSnapshot, commentKeys),
+            @"postDetails": prune(postDetailSnapshot, postKeys),
+            @"commentDetails": prune(commentDetailSnapshot, commentKeys),
+            @"postProfiles": prune(postProfileSnapshot, postKeys),
+            @"commentProfiles": prune(commentProfileSnapshot, commentKeys),
             @"timestamps": timestamps,
         };
         [root writeToFile:ApolloAISummariesCachePath() atomically:YES];

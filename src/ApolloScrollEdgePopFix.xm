@@ -130,7 +130,8 @@ static void ApolloEdgeRedirectGeometry(UIView *outgoingView, UIView *stableView)
     }
 }
 
-static void ApolloEdgeArmSafetyTimeout(UINavigationController *nav, NSUInteger generation);
+static void ApolloEdgeArmSafetyTimeout(UINavigationController *nav, NSUInteger generation,
+                                       NSMutableArray<NSNumber *> *endGuard);
 
 static void ApolloEdgeEndTransition(NSUInteger generation) {
     if (generation != sTransitionGeneration || sTransitionsInFlight == 0) return;
@@ -159,20 +160,35 @@ static void ApolloEdgeEndTransition(NSUInteger generation) {
     [sFrozenScrollViews removeAllObjects];
 }
 
+// Each transition has TWO possible end signals — the coordinator completion and this safety
+// timeout — and BOTH can fire for the same transition (the completion runs while an overlapping
+// transition is still in flight, then this one's watchdog also fires). Since the counter is
+// shared, a second signal for the SAME transition would decrement it again and end an unrelated
+// overlapping transition early, dropping ITS edge-pocket protection mid-swipe. This one-shot
+// box lets whichever end signal arrives first retire this transition exactly once; the other
+// becomes a no-op. (Tracks completion per transition, per cubic review on #22.)
+static void ApolloEdgeEndTransitionOnce(NSUInteger generation, NSMutableArray<NSNumber *> *endGuard) {
+    if (endGuard.firstObject.boolValue) return;   // this transition already ended
+    endGuard[0] = @YES;
+    ApolloEdgeEndTransition(generation);
+}
+
 // Re-arms for as long as the navigation controller still reports a live transition, so a held
 // gesture stays covered while a genuinely finished one is always released. A fixed timeout
 // would expire mid-drag, which is exactly the case this fix exists for.
-static void ApolloEdgeArmSafetyTimeout(UINavigationController *nav, NSUInteger generation) {
+static void ApolloEdgeArmSafetyTimeout(UINavigationController *nav, NSUInteger generation,
+                                       NSMutableArray<NSNumber *> *endGuard) {
     __weak UINavigationController *weakNav = nav;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
+        if (endGuard.firstObject.boolValue) return;   // ended via its own completion already
         if (generation != sTransitionGeneration || sTransitionsInFlight == 0) return;
         UINavigationController *strongNav = weakNav;
         if (strongNav && strongNav.transitionCoordinator) {
-            ApolloEdgeArmSafetyTimeout(strongNav, generation);   // still being dragged
+            ApolloEdgeArmSafetyTimeout(strongNav, generation, endGuard);   // still being dragged
             return;
         }
-        ApolloEdgeEndTransition(generation);
+        ApolloEdgeEndTransitionOnce(generation, endGuard);
     });
 }
 
@@ -187,22 +203,25 @@ static void ApolloEdgeBeginTransition(UINavigationController *nav, UIViewControl
 
     sTransitionsInFlight++;
     NSUInteger generation = sTransitionGeneration;
+    // One-shot guard shared by this transition's two end signals (completion + watchdog), so
+    // this transition can only decrement the shared counter once. See ApolloEdgeEndTransitionOnce.
+    NSMutableArray<NSNumber *> *endGuard = [NSMutableArray arrayWithObject:@NO];
 
     id<UIViewControllerTransitionCoordinator> coordinator = nav.transitionCoordinator;
     if (coordinator) {
         // Fires for completed AND cancelled transitions, which is exactly the lifetime we want.
         [coordinator animateAlongsideTransition:nil
                                      completion:^(id<UIViewControllerTransitionCoordinatorContext> ctx) {
-            ApolloEdgeEndTransition(generation);
+            ApolloEdgeEndTransitionOnce(generation, endGuard);
         }];
     } else {
         // Non-animated navigation: nothing to cover beyond this turn of the runloop.
-        dispatch_async(dispatch_get_main_queue(), ^{ ApolloEdgeEndTransition(generation); });
+        dispatch_async(dispatch_get_main_queue(), ^{ ApolloEdgeEndTransitionOnce(generation, endGuard); });
     }
 
     // A stuck counter would leave the override installed indefinitely, so never let one
     // outlive the transition it was armed for.
-    ApolloEdgeArmSafetyTimeout(nav, generation);
+    ApolloEdgeArmSafetyTimeout(nav, generation, endGuard);
 }
 
 %group ScrollEdgePopFix

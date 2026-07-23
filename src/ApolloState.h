@@ -170,8 +170,8 @@ typedef NS_ENUM(NSInteger, ApolloAISummaryDetail) {
     ApolloAISummaryDetailInDepth = 2,
 };
 extern NSInteger sAIPostWordThreshold;              // 50...300, step 50
-extern ApolloAISummaryDetail sAIPostSummaryDetail;  // post / link / both
-extern ApolloAISummaryDetail sAICommentSummaryDetail;
+extern ApolloAISummaryDetail sAIPostSummaryDetail;  // detail level for post/link summaries
+extern ApolloAISummaryDetail sAICommentSummaryDetail;  // detail level for discussion summaries
 
 // Horizontal alignment for inline media containers narrower than the row width
 // (tall portrait images, height-capped images). Has no effect on full-width media.

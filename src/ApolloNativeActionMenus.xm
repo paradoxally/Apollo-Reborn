@@ -28,6 +28,11 @@ static BOOL sApolloNativeActionMenuNextPresentationModeratorStyle = NO;
 // highlight/dismiss previews target this view so the iOS 26 liquid-glass
 // "magic morph" has a visible source to bloom out of.
 @property (nonatomic, weak) UIView *morphSourceView;
+// The morph source's own hidden/alpha captured BEFORE UIKit's morph hides it,
+// so dismissal restores whatever Apollo had (a hidden or faded control), rather
+// than force-revealing it. Captured at present time (below).
+@property (nonatomic, assign) BOOL morphSourceOriginalHidden;
+@property (nonatomic, assign) CGFloat morphSourceOriginalAlpha;
 @property (nonatomic, strong) UIContextMenuInteraction *interaction;
 @property (nonatomic, assign) BOOL removeSourceViewOnEnd;
 @end
@@ -935,8 +940,21 @@ static id ApolloNativeActionMenuCompactMenuStyle(void) {
             if (resolved) morphView = resolved;
         }
         for (UIView *restore in @[morphView, morphSource]) {
-            if (restore.hidden) restore.hidden = NO;
-            if (restore.alpha < 0.999) restore.alpha = 1.0;
+            if (restore == morphSource) {
+                // Restore exactly what Apollo had before the morph (possibly a
+                // hidden or faded control) instead of forcing it visible/opaque.
+                if (restore.hidden != self.morphSourceOriginalHidden) {
+                    restore.hidden = self.morphSourceOriginalHidden;
+                }
+                if (fabs(restore.alpha - self.morphSourceOriginalAlpha) > 0.001) {
+                    restore.alpha = self.morphSourceOriginalAlpha;
+                }
+            } else {
+                // _morphView is a transient UIKit morph platter, not an
+                // Apollo-owned view — reveal it as before.
+                if (restore.hidden) restore.hidden = NO;
+                if (restore.alpha < 0.999) restore.alpha = 1.0;
+            }
         }
     }
 
@@ -1117,6 +1135,10 @@ static BOOL ApolloNativeActionMenuPresent(id presenter, id actionController, voi
     menuPresenter.menu = menu;
     menuPresenter.sourceView = anchorView;
     menuPresenter.morphSourceView = sourceView;
+    // Snapshot the real control's visibility NOW, before UIKit's morph hides it,
+    // so dismissal can restore Apollo's intended state rather than force-show it.
+    menuPresenter.morphSourceOriginalHidden = sourceView.hidden;
+    menuPresenter.morphSourceOriginalAlpha = sourceView.alpha;
     menuPresenter.removeSourceViewOnEnd = removeAnchorViewOnEnd;
 
     UIContextMenuInteraction *interaction = [[UIContextMenuInteraction alloc] initWithDelegate:menuPresenter];

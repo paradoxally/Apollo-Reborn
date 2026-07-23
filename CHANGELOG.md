@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.8.2] - 2026-07-23
+
+### Features
+
+- Add **configurable AI summary depth** under **Settings > Apollo Reborn > Apollo AI** — a **Minimum Post Length** slider (50–300 words, how long a text post must be before it's worth summarizing) plus independent **Post/Link Detail** and **Discussion Detail** levels of Brief, Balanced, or In-depth ([#687](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/687): @icpryde)
+  - Balanced keeps the summaries you already know; Brief trims them to 1–2 concise sentences; In-depth adds useful context without reproducing the source. The length threshold applies only to Reddit text-post bodies — linked articles stay eligible regardless
+  - A configured **Cloud Model** honors the same detail levels (with a larger input budget on capable models), and cached summaries regenerate when you change a level or switch models
+  - The detail sliders respond to a tap as well as a drag
+
+### Fixes
+
+- Fix the **Liquid Glass scroll-edge fades** going transparent during a swipe-back — the blurred bands behind the floating top pills and the bottom bar now stay put through the whole gesture instead of flicking see-through and exposing crisp text ([#693](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/693): @icpryde)
+  - Hardened against overlapping navigation transitions, so a rapid back-and-forth can't drop another screen's fades mid-swipe
+
 ## [v3.8.1] - 2026-07-20
 
 ### Features
@@ -795,6 +809,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.8.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.1...v1.15.11_3.8.2
 [v3.8.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.0...v1.15.11_3.8.1
 [v3.8.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.2...v1.15.11_3.8.0
 [v3.7.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.7.1...v1.15.11_3.7.2

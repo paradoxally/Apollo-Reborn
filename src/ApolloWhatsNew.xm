@@ -315,8 +315,9 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
 // dynamic provider color, so its .CGColor must be resolved against the view's
 // CURRENT traits — reading it ambiently would bake in whichever appearance
 // happened to be active when the layer was built and leave a light-grey band
-// over a dark sheet (or vice versa) after a light/dark switch. Re-running here
-// covers that, since a trait change triggers a layout pass.
+// over a dark sheet (or vice versa) after a light/dark switch. Called from
+// both the layout pass (for the frame) and traitCollectionDidChange: (for the
+// colors), since neither one implies the other.
 - (void)apollo_updateBottomFade {
     if (!_bottomFadeLayer) return;
     _bottomFadeLayer.frame = _bottomFadeView.bounds;
@@ -408,6 +409,11 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
     [super traitCollectionDidChange:previous];
     if ([self.traitCollection hasDifferentColorAppearanceComparedToTraitCollection:previous]) {
         [self apollo_updateContinueTitleColor];
+        // Explicit, not left to the layout pass: a pure light/dark switch
+        // needn't invalidate any geometry, so viewDidLayoutSubviews isn't
+        // guaranteed to run and the baked CGColors would stay the old
+        // appearance's — a light strip over a dark sheet, or vice versa.
+        [self apollo_updateBottomFade];
     }
 }
 

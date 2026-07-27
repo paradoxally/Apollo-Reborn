@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "version": "3.9.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "bubble.left.and.bubble.right.fill", "title": "Modern Chat & Modmail", "subtitle": "Opt into Reddit's current Chat and Modmail, with requests, group chats, and media." },
+    { "icon": "rosette", "title": "Badge Book", "subtitle": "Reddit achievements and a Trophy Case, right on any profile." },
+    { "icon": "person.crop.rectangle.fill", "title": "Immersive Headers", "subtitle": "Redesigned subreddit and profile headers, with bands you can turn off." },
+    { "icon": "sparkles", "title": "More AI Providers", "subtitle": "Bring your own key for OpenAI, OpenRouter, Gemini, or any compatible service." },
+    { "icon": "app.badge", "title": "Redesigned Icon Picker", "subtitle": "Featured icons up front, with packs, credits, and Liquid Glass previews." },
+    { "icon": "speedometer", "title": "ProMotion", "subtitle": "Scrolling now runs at your display's full refresh rate." },
+    { "icon": "link", "title": "Faster Social Links", "subtitle": "Profile social links resolve in about a second instead of eight." }
+  ]
+}

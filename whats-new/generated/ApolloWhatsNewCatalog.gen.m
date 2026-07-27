@@ -15,6 +15,7 @@ typedef struct {
 
 static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "3.5.0", "What's New in Apollo Reborn" },
+    { "3.9.0", "What's New in Apollo Reborn" },
 };
 
 static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
@@ -26,6 +27,13 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "3.5.0", "bubble.left.and.bubble.right.fill", "Native Chat", "A modern chat experience, built right in." },
     { "3.5.0", "app.badge", "New Icon Picker", "Browse and apply app icons in a redesigned picker." },
     { "3.5.0", "star.circle.fill", "Reddit Awards", "Give and see awards on posts and comments." },
+    { "3.9.0", "bubble.left.and.bubble.right.fill", "Modern Chat & Modmail", "Opt into Reddit's current Chat and Modmail, with requests, group chats, and media." },
+    { "3.9.0", "rosette", "Badge Book", "Reddit achievements and a Trophy Case, right on any profile." },
+    { "3.9.0", "person.crop.rectangle.fill", "Immersive Headers", "Redesigned subreddit and profile headers, with bands you can turn off." },
+    { "3.9.0", "sparkles", "More AI Providers", "Bring your own key for OpenAI, OpenRouter, Gemini, or any compatible service." },
+    { "3.9.0", "app.badge", "Redesigned Icon Picker", "Featured icons up front, with packs, credits, and Liquid Glass previews." },
+    { "3.9.0", "speedometer", "ProMotion", "Scrolling now runs at your display's full refresh rate." },
+    { "3.9.0", "link", "Faster Social Links", "Profile social links resolve in about a second instead of eight." },
 };
 
 static NSString *S(const char *value) { return [NSString stringWithUTF8String:value]; }

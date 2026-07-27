@@ -390,7 +390,12 @@ static NSMutableDictionary<NSString *, NSString *> *sPostSummaryProfiles;
 static NSMutableDictionary<NSString *, NSString *> *sCommentSummaryProfiles;
 
 static NSString *ApolloAICurrentGenerationProfile(void) {
-    if (!ApolloAICloudProviderSelected()) return @"apple";
+    // Must match the BACKEND ROUTER's predicate (ApolloAICloudConfigured), not
+    // merely "a cloud provider is selected": with a provider chosen but no key
+    // yet, generation falls back to on-device, and keying that summary as
+    // "openai|…" would make it survive as a stale cloud entry the moment the
+    // key is added.
+    if (!ApolloAICloudConfigured()) return @"apple";
     // Same effective model the cloud bridge would actually send (stored value or
     // the provider default), so switching models invalidates cached summaries.
     NSString *model = ApolloAICloudEffectiveModel() ?: @"";

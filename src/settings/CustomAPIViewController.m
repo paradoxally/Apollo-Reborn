@@ -1239,7 +1239,8 @@ typedef NS_ENUM(NSInteger, Tag) {
             }
             cell.textLabel.text = @"Apollo AI";
             NSString *activeProviderName = @"On-device AI";
-            if ([sAISummaryProvider isEqualToString:@"openrouter"]) activeProviderName = @"OpenRouter AI";
+            if ([sAISummaryProvider isEqualToString:@"openai"]) activeProviderName = @"OpenAI";
+            else if ([sAISummaryProvider isEqualToString:@"openrouter"]) activeProviderName = @"OpenRouter AI";
             else if ([sAISummaryProvider isEqualToString:@"gemini"]) activeProviderName = @"Gemini AI";
             else if ([sAISummaryProvider isEqualToString:@"custom"]) activeProviderName = @"Custom cloud AI";
             cell.detailTextLabel.text = sEnableAISummaries

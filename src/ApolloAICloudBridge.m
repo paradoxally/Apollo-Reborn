@@ -318,6 +318,15 @@ static NSDictionary *CloudRetryOverridesForError(NSString *param, NSString *mess
 @property (nonatomic, copy) NSString *instructions;
 @property (nonatomic, assign) NSInteger maximumResponseTokens;
 @property (nonatomic, strong) NSDictionary *overrides; // current parameter overrides, nil = primary shape
+// Provider configuration SNAPSHOT, frozen when the request was created. Both
+// retries rebuild the request from this rather than from the sVar globals: a
+// provider/key/model change while a request is in flight must not redirect its
+// retry to a different backend, which would send this post's text to a service
+// the user selected after the original request was already under way.
+@property (nonatomic, copy) NSString *provider;
+@property (nonatomic, copy) NSString *apiKey;
+@property (nonatomic, copy) NSString *model;
+@property (nonatomic, strong) NSURL *endpoint;
 @end
 
 @implementation ApolloAICloudRequest
@@ -403,12 +412,14 @@ static NSDictionary *CloudRetryOverridesForError(NSString *param, NSString *mess
 
 #pragma mark Request building
 
-// Builds the request body for the active provider. overrides=nil is the primary
-// shape; with overrides, only the named parameter is adjusted (see
-// CloudRetryOverridesForError).
-static NSData *CloudRequestBody(NSString *text, NSString *instructions,
+// Builds the request body for `provider`/`model`. Both are passed in rather than
+// read from the globals so a retry reproduces the ORIGINAL request's shaping.
+// overrides=nil is the primary shape; with overrides, only the named parameter
+// is adjusted (see CloudRetryOverridesForError).
+static NSData *CloudRequestBody(NSString *provider, NSString *model,
+                                NSString *text, NSString *instructions,
                                 NSInteger maximumResponseTokens, NSDictionary *overrides) {
-    NSString *model = ApolloAICloudEffectiveModel() ?: @"";
+    model = model ?: @"";
     NSMutableArray *messages = [NSMutableArray array];
     if (instructions.length > 0) {
         [messages addObject:@{@"role": @"system", @"content": instructions}];
@@ -423,8 +434,8 @@ static NSData *CloudRequestBody(NSString *text, NSString *instructions,
     // generous headroom. Custom gets a smaller one: local servers (Ollama /
     // llama.cpp / vLLM) reject prompt+cap beyond the loaded model's context
     // window, and 2k stays inside even a 4k-context model.
-    BOOL isCustom = [sAISummaryProvider isEqualToString:@"custom"];
-    BOOL isOpenAI = [sAISummaryProvider isEqualToString:@"openai"];
+    BOOL isCustom = [provider isEqualToString:@"custom"];
+    BOOL isOpenAI = [provider isEqualToString:@"openai"];
     NSInteger tokenBudget = MAX(isCustom ? 2048 : 4096, maximumResponseTokens * 8);
 
     NSMutableDictionary *payload = [NSMutableDictionary dictionaryWithDictionary:@{
@@ -458,7 +469,7 @@ static NSData *CloudRequestBody(NSString *text, NSString *instructions,
         }
     } else {
         payload[@"max_tokens"] = @(tokenBudget);
-        if ([sAISummaryProvider isEqualToString:@"openrouter"]) {
+        if ([provider isEqualToString:@"openrouter"]) {
             // Keep reasoning out of the response entirely: some hosts (notably
             // free tiers) otherwise stream chain-of-thought as ordinary content
             // deltas. "exclude" is the one universally-supported reasoning
@@ -466,7 +477,7 @@ static NSData *CloudRequestBody(NSString *text, NSString *instructions,
             // "effort", whose presence implies enabled:true) and, unlike
             // effort:"none", is not rejected by mandatory-reasoning models.
             payload[@"reasoning"] = @{@"exclude": @YES};
-        } else if ([sAISummaryProvider isEqualToString:@"gemini"]) {
+        } else if ([provider isEqualToString:@"gemini"]) {
             // Turn thinking off where Gemini permits it — only the 2.5 Flash
             // family does; 2.5 Pro and Gemini 3 reject "none" outright, so gate
             // on the model and let those think inside the enlarged cap (their
@@ -482,23 +493,23 @@ static NSData *CloudRequestBody(NSString *text, NSString *instructions,
     return [NSJSONSerialization dataWithJSONObject:payload options:0 error:NULL];
 }
 
-// nil when the active provider can't produce a usable request right now.
+// Builds a request purely from the state's frozen provider snapshot — never from
+// the sVar globals — so a retry always targets the backend the request started
+// against. nil when the snapshot can't produce a usable request.
 static NSURLRequest *CloudURLRequestForState(ApolloAICloudRequest *state) {
-    NSString *apiKey = CloudAPIKey();
-    NSURL *endpoint = CloudEndpointURL();
-    if (apiKey.length == 0 || !endpoint) return nil;
+    if (state.apiKey.length == 0 || !state.endpoint) return nil;
 
-    NSData *body = CloudRequestBody(state.text, state.instructions,
+    NSData *body = CloudRequestBody(state.provider, state.model, state.text, state.instructions,
                                     state.maximumResponseTokens, state.overrides);
     if (!body) return nil;
 
-    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:endpoint];
+    NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:state.endpoint];
     request.HTTPMethod = @"POST";
     request.HTTPBody = body;
-    [request setValue:[@"Bearer " stringByAppendingString:apiKey] forHTTPHeaderField:@"Authorization"];
+    [request setValue:[@"Bearer " stringByAppendingString:state.apiKey] forHTTPHeaderField:@"Authorization"];
     [request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     [request setValue:@"text/event-stream, application/json" forHTTPHeaderField:@"Accept"];
-    if ([sAISummaryProvider isEqualToString:@"openrouter"]) {
+    if ([state.provider isEqualToString:@"openrouter"]) {
         // OpenRouter's recommended attribution headers (used for their rankings).
         [request setValue:@"https://github.com/Apollo-Reborn/Apollo-Reborn" forHTTPHeaderField:@"HTTP-Referer"];
         [request setValue:@"Apollo Reborn" forHTTPHeaderField:@"X-Title"];
@@ -521,6 +532,12 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     state.text = text;
     state.instructions = instructions;
     state.maximumResponseTokens = maximumResponseTokens;
+    // Freeze the provider configuration for the whole life of this request,
+    // retries included (see the snapshot properties on ApolloAICloudRequest).
+    state.provider = sAISummaryProvider;
+    state.apiKey = CloudAPIKey();
+    state.model = ApolloAICloudEffectiveModel();
+    state.endpoint = CloudEndpointURL();
     state.accumulated = [NSMutableString string];
     state.lineBuffer = [NSMutableData data];
     state.rawBody = [NSMutableData data];
@@ -548,6 +565,12 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
         // (mirrors the FoundationModels bridge, which cancels the prior task).
         ApolloAICloudRequest *previous = self->_requestsByIdentifier[state.identifier];
         if (previous) {
+            // Drop the task->state entry BEFORE marking finished: the cancelled
+            // task's didCompleteWithError: bails at the `finished` guard without
+            // reaching finishState:, so nothing else would ever remove it and
+            // the old state (task, callbacks, buffers) would be retained for the
+            // process lifetime, once per superseded request.
+            [self->_requestsByTask removeObjectForKey:@(previous.task.taskIdentifier)];
             [previous.task cancel];
             previous.finished = YES;
         }
@@ -845,6 +868,17 @@ static NSString *CloudVisibleTextFromRaw(NSString *raw) {
     // Note: delta.reasoning / delta.reasoning_details / delta.reasoning_content
     // are deliberately ignored — chain-of-thought is never user-visible.
     if (![content isKindOfClass:[NSString class]] || [(NSString *)content length] == 0) return; // role-only chunk
+    // The raw-body and line-buffer caps don't bound this: a provider streaming
+    // well-formed, individually-small deltas grows the accumulated text without
+    // limit until the 180s resource timeout. A summary is a few hundred chars,
+    // so anything near the buffer cap is a runaway, not a long answer.
+    if (state.accumulated.length + [(NSString *)content length] > kCloudMaxBufferedBody) {
+        ApolloLog(@"[AICloud] request %@ exceeded the response cap (%lu chars accumulated)",
+                  state.identifier, (unsigned long)state.accumulated.length);
+        [self finishState:state final:nil errorCode:kCloudErrorService
+                  message:@"the provider sent an oversized response"];
+        return;
+    }
     [state.accumulated appendString:content];
 
     if (state.onPartial) {

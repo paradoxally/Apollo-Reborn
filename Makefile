@@ -25,7 +25,7 @@ SSZIPARCHIVE_FILES = $(wildcard $(SSZIPARCHIVE_DIR)/*.m) \
 ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloFoundationModels.swift \
     $(SRC_DIR)/ApolloAISummary.xm \
-    $(SRC_DIR)/ApolloAICloudClient.m \
+    $(SRC_DIR)/ApolloAICloudBridge.m \
     $(SRC_DIR)/ApolloAutoHideMetaFeeds.xm \
     $(SRC_DIR)/Tweak.xm \
     $(SRC_DIR)/ApolloCommon.m \

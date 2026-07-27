@@ -10,6 +10,7 @@
 
 #import "fishhook.h"
 #import "ApolloCommon.h"
+#import "ApolloAICloudBridge.h"
 #import "ApolloRedditMediaUpload.h"
 #import "ApolloDeletedCommentsData.h"
 #import "ApolloImageUploadHost.h"
@@ -2714,9 +2715,7 @@ static void initializeRandomSources() {
                                     UDKeyAICommentSummaryDetail: @(ApolloAISummaryDetailBalanced),
                                     UDKeyEnableTapToSummarize: @NO,
                                     UDKeyEnableAIAutoExpandSummaries: @NO,
-                                    UDKeyAICloudAPIKey: @"",
-                                    UDKeyAICloudBaseURL: @"https://api.openai.com/v1",
-                                    UDKeyAICloudModel: @"gpt-5.4-mini",
+                                    UDKeyAISummaryProvider: @"apple",
                                     UDKeyPictureInPictureEnabled: @NO,
                                     UDKeyPictureInPictureActivation: @(ApolloPiPActivationModeUnmutedOnly),
                                     UDKeyPictureInPictureStartPosition: @(ApolloPiPStartPositionTopRight),
@@ -2799,14 +2798,34 @@ static void initializeRandomSources() {
         sEnableAIAutoExpandSummaries = NO;
         [[NSUserDefaults standardUserDefaults] setBool:NO forKey:UDKeyEnableAIAutoExpandSummaries];
     }
-    // Cloud model backend for AI summaries: key empty -> nil (feature off); URL and
-    // model always resolve to a usable value even if the user blanks the field.
-    NSString *cloudAIKey = (NSString *)[[NSUserDefaults standardUserDefaults] objectForKey:UDKeyAICloudAPIKey];
-    sCloudAIAPIKey = cloudAIKey.length > 0 ? [cloudAIKey copy] : nil;
-    NSString *cloudAIBaseURL = (NSString *)[[NSUserDefaults standardUserDefaults] objectForKey:UDKeyAICloudBaseURL];
-    sCloudAIBaseURL = cloudAIBaseURL.length > 0 ? [cloudAIBaseURL copy] : @"https://api.openai.com/v1";
-    NSString *cloudAIModel = (NSString *)[[NSUserDefaults standardUserDefaults] objectForKey:UDKeyAICloudModel];
-    sCloudAIModel = cloudAIModel.length > 0 ? [cloudAIModel copy] : @"gpt-5.4-mini";
+    // Carry a pre-#674 single-endpoint cloud configuration onto the per-provider
+    // keys before reading them, so an existing Cloud AI user keeps working.
+    ApolloAIMigrateLegacyCloudKeys();
+    // AI summary backend: sanitize to a known provider (unrecognized/unset → apple,
+    // the on-device default), mirroring the translation-provider handling below.
+    {
+        NSString *aiProvider = (NSString *)[[NSUserDefaults standardUserDefaults] objectForKey:UDKeyAISummaryProvider];
+        if (ApolloAIProviderIsKnown(aiProvider)) {
+            sAISummaryProvider = [aiProvider copy];
+        } else {
+            sAISummaryProvider = @"apple";
+        }
+        NSString *(^loadKey)(NSString *) = ^NSString *(NSString *udKey) {
+            NSString *v = (NSString *)[[NSUserDefaults standardUserDefaults] objectForKey:udKey];
+            if (![v isKindOfClass:[NSString class]]) return nil;
+            v = [v stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+            return v.length > 0 ? [v copy] : nil;
+        };
+        sOpenAIAPIKey = loadKey(UDKeyOpenAIAPIKey);
+        sOpenAIAIModel = loadKey(UDKeyOpenAIAIModel);
+        sOpenRouterAPIKey = loadKey(UDKeyOpenRouterAPIKey);
+        sOpenRouterAIModel = loadKey(UDKeyOpenRouterAIModel);
+        sGeminiAPIKey = loadKey(UDKeyGeminiAPIKey);
+        sGeminiAIModel = loadKey(UDKeyGeminiAIModel);
+        sCustomAIAPIKey = loadKey(UDKeyCustomAIAPIKey);
+        sCustomAIModel = loadKey(UDKeyCustomAIModel);
+        sCustomAIBaseURL = loadKey(UDKeyCustomAIBaseURL);
+    }
     sInlineImageAlignment = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyInlineImageAlignment];
     if (sInlineImageAlignment < ApolloInlineImageAlignmentCenter || sInlineImageAlignment > ApolloInlineImageAlignmentRight) {
         sInlineImageAlignment = ApolloInlineImageAlignmentCenter;

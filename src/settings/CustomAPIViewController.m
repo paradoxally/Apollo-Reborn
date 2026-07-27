@@ -1238,9 +1238,13 @@ typedef NS_ENUM(NSInteger, Tag) {
                 cell.selectionStyle = UITableViewCellSelectionStyleDefault;
             }
             cell.textLabel.text = @"Apollo AI";
+            NSString *activeProviderName = @"On-device AI";
+            if ([sAISummaryProvider isEqualToString:@"openrouter"]) activeProviderName = @"OpenRouter AI";
+            else if ([sAISummaryProvider isEqualToString:@"gemini"]) activeProviderName = @"Gemini AI";
+            else if ([sAISummaryProvider isEqualToString:@"custom"]) activeProviderName = @"Custom cloud AI";
             cell.detailTextLabel.text = sEnableAISummaries
-                ? @"On-device AI enabled"
-                : @"On-device summaries and generation settings";
+                ? [NSString stringWithFormat:@"%@ enabled", activeProviderName]
+                : @"On-device or cloud summaries and generation settings";
             cell.detailTextLabel.textColor = [UIColor secondaryLabelColor];
             cell.detailTextLabel.numberOfLines = 0;
             cell.detailTextLabel.lineBreakMode = NSLineBreakByWordWrapping;

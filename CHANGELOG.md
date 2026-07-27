@@ -4,6 +4,38 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.9.0] - 2026-07-27
+
+### Features
+
+- Add selectable **modern Reddit Chat and Modmail** under **Settings > Apollo Reborn > Accounts & API Keys** — opt in to Reddit's current Chat, with chat requests, group chats, and media, or keep Apollo's legacy Direct Chat ([#658](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/658): @icpryde)
+  - **Use Modern Moderator Mail** does the same for Modmail, using the active web-session account
+  - Both are forced on for API-key-free accounts, because Reddit no longer exposes Direct Chat through the legacy message API and native Modmail needs API credentials those accounts deliberately don't have
+- Add **Badge Book** to profiles — Reddit achievements and a Trophy Case, reached from a badge strip under the user's bio ([#689](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/689): @jordanearle)
+  - Achievements are grouped by category with earned and locked states; the Trophy Case lists every trophy with the ones you've earned checked off
+- Redesign the **subreddit header** with a new immersive style, plus a **Subreddit Layout** screen under **Settings > Apollo Reborn > Features > Subreddits** ([#696](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/696): @jordanearle)
+  - **New (Immersive)** adds a melt backdrop that bleeds the banner's colors behind the navigation chrome; **Classic** keeps the same content flat
+  - Turn off the **Banner**, **Join Button**, or **Subreddit Name** bands individually to shorten the header
+- Redesign the **profile header** to match, with a **Profiles** layout screen of its own ([#697](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/697): @jordanearle)
+  - Full-bleed banner, avatar style options, karma and account-age stat cards, social links, and action buttons, each individually toggleable
+- Add a **What's New splash** that appears once per version, listing the release's highlights ([#690](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/690): @jordanearle)
+  - The bottom fade now dissolves into the sheet instead of laying a grey blur over the last row, so a partially-scrolled item trails off cleanly rather than looking cut mid-line (#26)
+- Redesign the **Liquid Glass icon picker** with a **Featured** section of hand-picked icons up front, above the icon packs ([#668](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/668): @DeltAndy123)
+  - Every icon shows its Liquid Glass appearance variants and credits its designer
+- Enable **ProMotion** — scrolling now runs at the display's full refresh rate instead of being capped at 60Hz, alongside scrolling performance work ([#724](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/724): @jordanearle)
+- Expand the **Cloud Model** backend for AI summaries into a provider picker under **Settings > Apollo Reborn > Apollo AI** — **OpenAI**, **OpenRouter**, **Google Gemini**, or any OpenAI-compatible **Custom** endpoint, each keeping its own API key and model (#25: @paradoxally, building on [#674](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/674): @nickclyde)
+  - Existing Cloud Model settings migrate automatically — your key carries over to OpenAI, or to Custom if you had pointed it elsewhere, so summaries keep working with no setup
+  - Leave **Model** empty to use each provider's suggested default; chain-of-thought is stripped from models that leak it, and a cloud failure still falls back to on-device Apple Intelligence where available
+  - Custom endpoints must use HTTPS — plain HTTP is accepted only for local network addresses, since the request carries your key and the post text
+- Update the **Synthwave** Liquid Glass icon ([#736](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/736): @IllIIllIllIllII)
+
+### Fixes
+
+- Improve **social link loading** on profiles — links now resolve in about a second instead of the previous 7-8 seconds ([#722](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/722): @jordanearle)
+- Fix **Post Flair opening nothing** in the composer on API-key-free accounts ([#669](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/669): @icpryde)
+- Fix the **info row firing the comment tap** when the touch was actually a scroll ([#739](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/739): @icpryde)
+- Clarify what **Inline Media in Chat** covers now that modern Chat and Modmail exist ([#740](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/740): @icpryde)
+
 ## [v3.8.3] - 2026-07-23
 
 ### Features
@@ -824,6 +856,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.9.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.3...v1.15.11_3.9.0
 [v3.8.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.2...v1.15.11_3.8.3
 [v3.8.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.1...v1.15.11_3.8.2
 [v3.8.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.0...v1.15.11_3.8.1

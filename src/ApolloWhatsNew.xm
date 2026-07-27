@@ -75,7 +75,8 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
     NSLayoutConstraint *_headerTopConstraint;
     NSArray<UIView *> *_rowViews;
     UIButton *_continueButton;
-    UIVisualEffectView *_bottomFadeView;
+    UIView *_bottomFadeView;
+    CAGradientLayer *_bottomFadeLayer;
 
     BOOL _hasAnimatedIn;
 }
@@ -116,21 +117,32 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
         [_scrollView.bottomAnchor constraintEqualToAnchor:_continueButton.topAnchor constant:-12],
     ]];
 
-    // A gradient-masked blur strip pinned above the button, independent of
-    // scroll position — a cheap, version-safe stand-in for a true variable
-    // blur (which is private API) that reads the same way: the bottom edge
-    // "progressively blurs" whatever's still scrolled underneath it,
-    // signaling there's more content below the fold. Hidden when content
-    // fits without scrolling (see apollo_updateBottomFadeVisibility).
-    _bottomFadeView = [[UIVisualEffectView alloc] initWithEffect:[UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemMaterial]];
+    // A gradient strip pinned above the button, independent of scroll
+    // position: whatever is still scrolled underneath it dissolves into the
+    // sheet, signaling there's more content below the fold. Hidden when the
+    // content fits without scrolling (see apollo_updateBottomFadeVisibility).
+    //
+    // This fades to the sheet's own background rather than blurring. A
+    // gradient-masked UIVisualEffectView was the obvious "progressive blur"
+    // stand-in, but every system material is a translucent LIGHT layer: over
+    // a near-black sheet it lands as a grey veil, so the last row read as
+    // washed-out grey text rather than text fading out, and a linear ramp
+    // left it ~50% visible right where the button clips it — the row looked
+    // broken instead of continuing. Matching systemBackground makes the tail
+    // genuinely vanish.
+    _bottomFadeView = [[UIView alloc] init];
     _bottomFadeView.translatesAutoresizingMaskIntoConstraints = NO;
     _bottomFadeView.userInteractionEnabled = NO;
-    CAGradientLayer *fadeMask = [CAGradientLayer layer];
-    fadeMask.colors = @[(id)[UIColor clearColor].CGColor, (id)[UIColor blackColor].CGColor];
-    fadeMask.locations = @[@0.0, @1.0];
-    fadeMask.startPoint = CGPointMake(0.5, 0.0);
-    fadeMask.endPoint = CGPointMake(0.5, 1.0);
-    _bottomFadeView.layer.mask = fadeMask;
+    _bottomFadeView.backgroundColor = [UIColor clearColor];
+    CAGradientLayer *fade = [CAGradientLayer layer];
+    // Eased rather than linear: mostly transparent through the first third so
+    // a fully-legible line isn't dimmed, then committing hard so the text is
+    // gone well before the button edge instead of being cut off mid-stroke.
+    fade.locations = @[@0.0, @0.45, @0.78, @1.0];
+    fade.startPoint = CGPointMake(0.5, 0.0);
+    fade.endPoint = CGPointMake(0.5, 1.0);
+    [_bottomFadeView.layer addSublayer:fade];
+    _bottomFadeLayer = fade;
     [self.view insertSubview:_bottomFadeView aboveSubview:_scrollView];
     [NSLayoutConstraint activateConstraints:@[
         [_bottomFadeView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
@@ -141,7 +153,8 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
         // background, so the gradient's smooth ramp hit a hard, visibly
         // seamed cutoff right before the button instead of blending into it.
         [_bottomFadeView.bottomAnchor constraintEqualToAnchor:_continueButton.topAnchor],
-        [_bottomFadeView.heightAnchor constraintEqualToConstant:68],
+        // Taller than the old 68pt strip so the eased ramp has room to finish.
+        [_bottomFadeView.heightAnchor constraintEqualToConstant:104],
     ]];
 
     UIView *content = [[UIView alloc] init];
@@ -221,7 +234,7 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
 
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
-    _bottomFadeView.layer.mask.frame = _bottomFadeView.bounds;
+    [self apollo_updateBottomFade];
     [self apollo_updateBottomFadeVisibility];
     if (!_hasAnimatedIn) {
         [self apollo_positionHeaderForEntranceState];
@@ -296,6 +309,25 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
         self->_continueButton.alpha = 1.0;
         self->_continueButton.transform = CGAffineTransformIdentity;
     } completion:nil];
+}
+
+// Resizes the fade and re-resolves its colors. systemBackgroundColor is a
+// dynamic provider color, so its .CGColor must be resolved against the view's
+// CURRENT traits — reading it ambiently would bake in whichever appearance
+// happened to be active when the layer was built and leave a light-grey band
+// over a dark sheet (or vice versa) after a light/dark switch. Called from
+// both the layout pass (for the frame) and traitCollectionDidChange: (for the
+// colors), since neither one implies the other.
+- (void)apollo_updateBottomFade {
+    if (!_bottomFadeLayer) return;
+    _bottomFadeLayer.frame = _bottomFadeView.bounds;
+    UIColor *base = [[UIColor systemBackgroundColor] resolvedColorWithTraitCollection:self.view.traitCollection];
+    _bottomFadeLayer.colors = @[
+        (id)[base colorWithAlphaComponent:0.0].CGColor,
+        (id)[base colorWithAlphaComponent:0.35].CGColor,
+        (id)[base colorWithAlphaComponent:0.92].CGColor,
+        (id)base.CGColor,
+    ];
 }
 
 - (void)apollo_updateBottomFadeVisibility {
@@ -377,6 +409,11 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
     [super traitCollectionDidChange:previous];
     if ([self.traitCollection hasDifferentColorAppearanceComparedToTraitCollection:previous]) {
         [self apollo_updateContinueTitleColor];
+        // Explicit, not left to the layout pass: a pure light/dark switch
+        // needn't invalidate any geometry, so viewDidLayoutSubviews isn't
+        // guaranteed to run and the baked CGColors would stay the old
+        // appearance's — a light strip over a dark sheet, or vice versa.
+        [self apollo_updateBottomFade];
     }
 }
 
@@ -485,10 +522,15 @@ static void ApolloWhatsNewAttemptPresentation(NSString *headline, NSArray<NSDict
     if (ApolloWhatsNewTopViewControllerReadyToPresent(top)) {
         ApolloWhatsNewViewController *whatsNewVC = [[ApolloWhatsNewViewController alloc] initWithHeadline:headline items:items];
         whatsNewVC.modalPresentationStyle = UIModalPresentationPageSheet;
+        // Continue is the only way out: the sheet shows once per version, and a
+        // stray swipe on a scrollable sheet dismissing it would silently burn
+        // that one showing (the seen marker is written at presentation time).
+        // No grabber either — it advertises a drag-to-dismiss that isn't there.
+        whatsNewVC.modalInPresentation = YES;
         if (@available(iOS 15.0, *)) {
             UISheetPresentationController *sheet = whatsNewVC.sheetPresentationController;
             sheet.detents = @[UISheetPresentationControllerDetent.largeDetent];
-            sheet.prefersGrabberVisible = YES;
+            sheet.prefersGrabberVisible = NO;
         }
         [top presentViewController:whatsNewVC animated:YES completion:nil];
         if (markSeen) markSeen();

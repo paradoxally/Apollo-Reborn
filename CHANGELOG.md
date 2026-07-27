@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - Redesign the **profile header** to match, with a **Profiles** layout screen of its own ([#697](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/697): @jordanearle)
   - Full-bleed banner, avatar style options, karma and account-age stat cards, social links, and action buttons, each individually toggleable
 - Add a **What's New splash** that appears once per version, listing the release's highlights ([#690](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/690): @jordanearle)
+  - The bottom fade now dissolves into the sheet instead of laying a grey blur over the last row, so a partially-scrolled item trails off cleanly rather than looking cut mid-line (#26)
 - Redesign the **Liquid Glass icon picker** with a **Featured** section of hand-picked icons up front, above the icon packs ([#668](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/668): @DeltAndy123)
   - Every icon shows its Liquid Glass appearance variants and credits its designer
 - Enable **ProMotion** — scrolling now runs at the display's full refresh rate instead of being capped at 60Hz, alongside scrolling performance work ([#724](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/724): @jordanearle)

@@ -1,6 +1,7 @@
 #import "settings/ApolloBackupRestore.h"
 
 #import "ApolloCommon.h"
+#import "ApolloAICloudBridge.h"
 #import "ApolloState.h"
 #import "UserDefaultConstants.h"
 #import "SSZipArchive.h"
@@ -364,12 +365,30 @@ BOOL ApolloBackupRestoreRestoreFromZipURL(NSURL *zipURL, NSString **outErrorTitl
     NSString *libreAPIKey = [defaults stringForKey:UDKeyLibreTranslateAPIKey];
     sLibreTranslateAPIKey = libreAPIKey.length > 0 ? libreAPIKey : nil;
 
-    NSString *cloudAIKey = [defaults stringForKey:UDKeyAICloudAPIKey];
-    sCloudAIAPIKey = cloudAIKey.length > 0 ? cloudAIKey : nil;
-    NSString *cloudAIBaseURL = [defaults stringForKey:UDKeyAICloudBaseURL];
-    sCloudAIBaseURL = cloudAIBaseURL.length > 0 ? cloudAIBaseURL : @"https://api.openai.com/v1";
-    NSString *cloudAIModel = [defaults stringForKey:UDKeyAICloudModel];
-    sCloudAIModel = cloudAIModel.length > 0 ? cloudAIModel : @"gpt-5.4-mini";
+    // A backup exported by a pre-#674 build carries the legacy single-endpoint
+    // cloud keys. The domain was wiped before replay, so the migration marker is
+    // gone too and this re-migrates them onto the per-provider keys — matching
+    // what %ctor would do on the post-restore relaunch, so the statics below
+    // are correct either way.
+    ApolloAIMigrateLegacyCloudKeys();
+    // AI summary backend + per-provider cloud credentials (same sanitize rules
+    // as the launch-time load in Tweak.xm: unknown provider → apple, empty → nil).
+    NSString *aiProvider = [defaults stringForKey:UDKeyAISummaryProvider];
+    sAISummaryProvider = ApolloAIProviderIsKnown(aiProvider) ? aiProvider : @"apple";
+    NSString *(^aiKey)(NSString *) = ^NSString *(NSString *udKey) {
+        NSString *v = [[defaults stringForKey:udKey] stringByTrimmingCharactersInSet:
+                       [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        return v.length > 0 ? v : nil;
+    };
+    sOpenAIAPIKey = aiKey(UDKeyOpenAIAPIKey);
+    sOpenAIAIModel = aiKey(UDKeyOpenAIAIModel);
+    sOpenRouterAPIKey = aiKey(UDKeyOpenRouterAPIKey);
+    sOpenRouterAIModel = aiKey(UDKeyOpenRouterAIModel);
+    sGeminiAPIKey = aiKey(UDKeyGeminiAPIKey);
+    sGeminiAIModel = aiKey(UDKeyGeminiAIModel);
+    sCustomAIAPIKey = aiKey(UDKeyCustomAIAPIKey);
+    sCustomAIModel = aiKey(UDKeyCustomAIModel);
+    sCustomAIBaseURL = aiKey(UDKeyCustomAIBaseURL);
 
     // Restore group preferences, including the NSUserDefaults account state
     // (LoggedInAccountDetails, CurrentRedditAccountIndex, and the RedditAccounts2 /

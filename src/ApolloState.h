@@ -157,12 +157,20 @@ extern BOOL sEnableAIPostSummaries;     // post / link / both summaries
 extern BOOL sEnableAICommentSummaries;  // the "Discussion so far" summary
 extern BOOL sEnableTapToSummarize;      // generate only on tap (off = automatic)
 extern BOOL sEnableAIAutoExpandSummaries; // auto-open a summary card once it's ready (off = stay collapsed)
-// Cloud model backend for AI summaries (OpenAI-compatible, bring-your-own-key).
-// sCloudAIAPIKey nil when unset (feature off); URL/model always resolve to a
-// non-empty value (defaults: https://api.openai.com/v1 / gpt-5.4-mini).
-extern NSString *sCloudAIAPIKey;
-extern NSString *sCloudAIBaseURL;
-extern NSString *sCloudAIModel;
+// AI summary backend selection + per-provider cloud credentials (see
+// UserDefaultConstants.h). sAISummaryProvider is always one of
+// apple|openai|openrouter|gemini|custom (sanitized on load); the rest are nil
+// when unset.
+extern NSString *sAISummaryProvider;
+extern NSString *sOpenAIAPIKey;
+extern NSString *sOpenAIAIModel;
+extern NSString *sOpenRouterAPIKey;
+extern NSString *sOpenRouterAIModel;
+extern NSString *sGeminiAPIKey;
+extern NSString *sGeminiAIModel;
+extern NSString *sCustomAIAPIKey;
+extern NSString *sCustomAIModel;
+extern NSString *sCustomAIBaseURL;
 
 // AI summary tuning shared by the settings UI and generation pipeline.
 // The threshold applies only to a Reddit self-post body; external article

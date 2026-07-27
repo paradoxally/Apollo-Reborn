@@ -24,8 +24,9 @@
 #import <objc/message.h>
 
 #import "ApolloCommon.h"
-#import "ApolloAICloudClient.h"
+#import "ApolloAICloudBridge.h"
 #import "ApolloAISummary.h"
+#import "ApolloAICloudBridge.h"
 #import "ApolloThemeRuntime.h"
 #import "ApolloState.h"
 #import "Tweak.h"
@@ -124,10 +125,25 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
        onComplete:(void (^)(NSString *final, NSError *error))onComplete;
 @end
 
-static ApolloFoundationModels *ApolloAIBridge(void) {
+// The on-device FoundationModels bridge, or nil pre-iOS 26. Always the FM
+// backend regardless of the selected provider: the cloud→on-device fallback leg
+// (ApolloAISummarizeWithBackends) needs it while a cloud provider is active, so
+// it must not route through ApolloAIBridge().
+static ApolloFoundationModels *ApolloAIFoundationModelsBridge(void) {
     Class cls = NSClassFromString(@"ApolloFoundationModels");
     if (!cls) return nil;
     return [cls shared];
+}
+
+static ApolloFoundationModels *ApolloAIBridge(void) {
+    // Cloud providers (OpenAI/OpenRouter/Gemini/custom) go through
+    // ApolloAICloudBridge, which exposes the identical selector surface — the
+    // cast is safe because every send below is dynamically dispatched against
+    // that shared surface.
+    if (ApolloAICloudProviderSelected()) {
+        return (ApolloFoundationModels *)[ApolloAICloudBridge shared];
+    }
+    return ApolloAIFoundationModelsBridge();
 }
 
 // Defined with the backend router in the Generation section; cancels an
@@ -313,11 +329,16 @@ static const NSTimeInterval kApolloAIArticleFetchTimeout = 15.0;
 // fallback chain, and reasoning-family cloud models can spend several seconds
 // "thinking" before the first streamed token, so give the chain more headroom
 // (timeout cancels BOTH backends and shows the timeout card; no fallback after).
+// Cloud gets a longer leash than on-device: reasoning models that can't disable
+// thinking (Gemini 2.5 Pro, several OpenRouter-hosted models) legitimately take
+// 30s+ before their first visible token. The device value must also sit ABOVE
+// the cloud bridge's 60s inter-chunk timeout so THAT fires first — it produces
+// a specific error card instead of this watchdog's generic "took too long".
 static inline NSTimeInterval ApolloAIGenerationTimeout(void) {
 #if APOLLO_SIM_BUILD
     return ApolloAICloudConfigured() ? 120.0 : 90.0;
 #else
-    return ApolloAICloudConfigured() ? 60.0 : 30.0;
+    return ApolloAICloudConfigured() ? 75.0 : 30.0;
 #endif
 }
 
@@ -363,17 +384,23 @@ static NSMutableDictionary<NSString *, NSString *> *sCommentSummaryCache;
 static NSMutableDictionary<NSString *, NSNumber *> *sPostSummaryDetails;
 static NSMutableDictionary<NSString *, NSNumber *> *sCommentSummaryDetails;
 // fullName -> stable backend/model identity used to generate the cached text.
-// Upstream #687 keyed this off a hypothetical cloud-provider PR's defaults; this
-// fork's actual Cloud Model uses sCloudAIBaseURL / sCloudAIModel, so the profile
-// is derived from those instead. This invalidates a cached summary when the user
-// switches between on-device and cloud, or changes the cloud endpoint/model.
+// Invalidates a cached summary when the user switches between on-device and
+// cloud, changes cloud provider, or changes the model/endpoint within one.
 static NSMutableDictionary<NSString *, NSString *> *sPostSummaryProfiles;
 static NSMutableDictionary<NSString *, NSString *> *sCommentSummaryProfiles;
 
 static NSString *ApolloAICurrentGenerationProfile(void) {
+    // Must match the BACKEND ROUTER's predicate (ApolloAICloudConfigured), not
+    // merely "a cloud provider is selected": with a provider chosen but no key
+    // yet, generation falls back to on-device, and keying that summary as
+    // "openai|…" would make it survive as a stale cloud entry the moment the
+    // key is added.
     if (!ApolloAICloudConfigured()) return @"apple";
-    return [NSString stringWithFormat:@"cloud|%@|%@",
-            sCloudAIBaseURL ?: @"", sCloudAIModel ?: @""];
+    // Same effective model the cloud bridge would actually send (stored value or
+    // the provider default), so switching models invalidates cached summaries.
+    NSString *model = ApolloAICloudEffectiveModel() ?: @"";
+    NSString *endpoint = [sAISummaryProvider isEqualToString:@"custom"] ? (sCustomAIBaseURL ?: @"") : @"";
+    return [NSString stringWithFormat:@"%@|%@|%@", sAISummaryProvider, model, endpoint];
 }
 
 static BOOL ApolloAIPostCacheMatchesCurrentDetail(NSString *fullName) {
@@ -447,6 +474,29 @@ static NSMutableSet<NSString *> *sCommentGenerationScheduled;
 // loading<->error as the retry schedule and comment captures re-fire.
 static NSMutableSet<NSString *> *sPostFailed;
 static NSMutableSet<NSString *> *sCommentFailed;
+// "post|<fullName>" / "comment|<fullName>" -> the friendly error message shown
+// when the generation failed. Kept alongside sPostFailed/sCommentFailed so a
+// recycled header re-applies the SPECIFIC message (e.g. the cloud "check your
+// API key" hint) instead of degrading to the generic error body.
+static NSMutableDictionary<NSString *, NSString *> *sFailedErrorMessages;
+
+static NSString *ApolloAIFailedMessageKey(NSString *fullName, BOOL isPost) {
+    return [NSString stringWithFormat:@"%@|%@", isPost ? @"post" : @"comment", fullName];
+}
+
+static void ApolloAIRecordFailure(NSString *fullName, BOOL isPost, NSString *message) {
+    NSMutableSet *failed = isPost ? sPostFailed : sCommentFailed;
+    [failed addObject:fullName];
+    if (message.length > 0) {
+        sFailedErrorMessages[ApolloAIFailedMessageKey(fullName, isPost)] = message;
+    }
+}
+
+static void ApolloAIClearFailure(NSString *fullName, BOOL isPost) {
+    NSMutableSet *failed = isPost ? sPostFailed : sCommentFailed;
+    [failed removeObject:fullName];
+    [sFailedErrorMessages removeObjectForKey:ApolloAIFailedMessageKey(fullName, isPost)];
+}
 // fullNames whose link/article post box is currently HIDDEN — the page had no
 // usable prose to summarize (score-card / SPA / paywall stub), or the model
 // couldn't summarize the little there was. Distinct from sPostFailed: a
@@ -712,6 +762,7 @@ static void ApolloAIEnsureState(void) {
         sCommentGenerationScheduled = [NSMutableSet set];
         sPostFailed = [NSMutableSet set];
         sCommentFailed = [NSMutableSet set];
+        sFailedErrorMessages = [NSMutableDictionary dictionary];
         sPostSuppressed = [NSMutableSet set];
         sPostEmpty = [NSMutableSet set];
         sTimedOutRequests = [NSMutableSet set];
@@ -755,6 +806,7 @@ NSUInteger ApolloAIClearSummaryCache(void) {
     [sCommentGenerationScheduled removeAllObjects];
     [sPostFailed removeAllObjects];
     [sCommentFailed removeAllObjects];
+    [sFailedErrorMessages removeAllObjects];
     [sPostSuppressed removeAllObjects];
     [sPostEmpty removeAllObjects];
     [sTimedOutRequests removeAllObjects];
@@ -2255,14 +2307,16 @@ static void ApolloAIApplyRestoredState(id headerNode, NSString *fullName) {
     } else if (ApolloAIPostCacheMatchesCurrentDetail(fullName)) {
         if (ApolloAISetBoxState(headerNode, YES, ApolloAIBoxStateReady, sPostSummaryCache[fullName])) changed = YES;
     } else if ([sPostFailed containsObject:fullName]) {
-        if (ApolloAISetBoxState(headerNode, YES, ApolloAIBoxStateError, nil)) changed = YES;
+        if (ApolloAISetBoxState(headerNode, YES, ApolloAIBoxStateError,
+                                sFailedErrorMessages[ApolloAIFailedMessageKey(fullName, YES)])) changed = YES;
     } else if ([sPostInFlight containsObject:fullName]) {
         if (ApolloAISetBoxState(headerNode, YES, ApolloAIBoxStateLoading, nil)) changed = YES;
     }
     if (ApolloAICommentCacheMatchesCurrentDetail(fullName)) {
         if (ApolloAISetBoxState(headerNode, NO, ApolloAIBoxStateReady, sCommentSummaryCache[fullName])) changed = YES;
     } else if ([sCommentFailed containsObject:fullName]) {
-        if (ApolloAISetBoxState(headerNode, NO, ApolloAIBoxStateError, nil)) changed = YES;
+        if (ApolloAISetBoxState(headerNode, NO, ApolloAIBoxStateError,
+                                sFailedErrorMessages[ApolloAIFailedMessageKey(fullName, NO)])) changed = YES;
     } else if ([sCommentInFlight containsObject:fullName]) {
         // A generation is genuinely running -> show the loading card.
         if (ApolloAISetBoxState(headerNode, NO, ApolloAIBoxStateLoading, nil)) changed = YES;
@@ -2331,7 +2385,7 @@ static void ApolloAISuppressLinkSummary(NSString *fullName) {
     if (fullName.length == 0) return;
     [sPostInFlight removeObject:fullName];
     [sPostRequestIDs removeObjectForKey:fullName];
-    [sPostFailed removeObject:fullName];        // NOT an error — don't show the triangle
+    ApolloAIClearFailure(fullName, YES);        // NOT an error — don't show the triangle
     [sBothSummaryPosts removeObject:fullName];
     if (sEnableTapToSummarize) {
         // Tap-to-Summarize: the user explicitly tapped this card, so silently
@@ -2363,19 +2417,20 @@ static NSString *ApolloAIFriendlyError(NSError *error) {
         case 7:
             return @"The model declined to summarize this content.";
         case 8:
-            return @"This thread is too long to summarize.";
+            return @"This thread is too long for the model to summarize.";
         case 10:
             return @"Summaries aren't available for this language yet.";
-        // Cloud backend errors (ApolloAICloudErrorDomain). Only ever user-visible
-        // when there is no on-device fallback (pre-iOS 26 or FM unavailable) —
-        // otherwise the router already fell back and discarded the cloud error.
-        case 11:
-            return @"The AI service rejected your API key. Check it in Apollo AI settings.";
-        case 12:
-            return @"Couldn't reach the AI service. Check the base URL and your connection.";
-        case 13:
-            return @"The AI service returned an error. Try again shortly.";
-        case 14:
+        // Cloud backend errors (ApolloAICloudBridgeErrorDomain). Only ever
+        // user-visible when there is no on-device fallback (pre-iOS 26 or FM
+        // unavailable) — otherwise the router already fell back and discarded
+        // the cloud error.
+        case 11: // HTTP 401/402/403
+            return @"The AI provider rejected the request. Check your API key (and account credits) in Apollo AI settings.";
+        case 12: // unreachable / bad request / bad model
+            return @"Couldn't reach the AI service. Check your connection and provider settings, then try again.";
+        case 13: // reasoning consumed the whole response
+            return @"The model spent its entire response thinking instead of answering. Try a different model in Apollo AI settings.";
+        case 14: // HTTP 429, after the bridge's one internal retry
             return @"The AI service is rate limiting requests. Try again shortly.";
         default:
             break;
@@ -2571,8 +2626,7 @@ static void ApolloAIScheduleGenerationTimeout(NSString *fullName, BOOL isPost, N
             ApolloAISuppressLinkSummary(fullName);
             return;
         }
-        NSMutableSet *failed = isPost ? sPostFailed : sCommentFailed;
-        [failed addObject:fullName];
+        ApolloAIRecordFailure(fullName, isPost, @"This summary took too long. Reopen the post to try again.");
         ApolloAISetBoxStateOnMatchingHeaders(
             fullName, isPost, ApolloAIBoxStateError,
             @"This summary took too long. Reopen the post to try again.");
@@ -2801,8 +2855,11 @@ static NSString *ApolloAIProvisionalCommentRequestIdentifier(UIViewController *v
 // resolves (it's compiled into the tweak; only the FoundationModels framework
 // is weak-linked), so the real availability signal is status != 4 (4 = the
 // framework is absent, i.e. pre-iOS 26).
+// Can on-device generation run right now? Asks the FM backend specifically —
+// this gates the cloud→on-device fallback, so it must not answer "yes" just
+// because a cloud provider happens to be configured.
 static BOOL ApolloAIFMUsable(void) {
-    ApolloFoundationModels *bridge = ApolloAIBridge();
+    ApolloFoundationModels *bridge = ApolloAIFoundationModelsBridge();
     return bridge && [bridge availabilityStatus] != 4;
 }
 
@@ -2834,37 +2891,46 @@ static NSString *ApolloAICloudLanguageDirective(void) {
             @"characters from other writing systems. ", ApolloAIDirectiveLanguageName()];
 }
 
-// The single seam every summary generation goes through. With no cloud key this
-// is byte-for-byte the old direct bridge call. With a cloud key the cloud model
-// is tried FIRST; on any cloud failure except cancellation (code 6 — covers both
-// user navigation and the generation watchdog, which cancel us deliberately) it
-// falls back to on-device FoundationModels. The caller's onComplete keeps all of
+// The single seam every summary generation goes through. With the on-device
+// provider selected this is byte-for-byte the old direct bridge call. With a
+// cloud provider the cloud model is tried FIRST; on any cloud failure except
+// cancellation (code 6 — covers both user navigation and the generation
+// watchdog, which cancel us deliberately) it falls back to on-device
+// FoundationModels when that is usable. The caller's onComplete keeps all of
 // its existing FM semantics (sTimedOutRequests swallow, code-6 early return,
 // code-9 transient retry, cache write) — cloud never emits code 9, so the
 // transient-retry loop can only engage for an FM result.
 //
-// `modelLabel` names the backend that produced `final` ("gpt-5-mini",
+// The fallback leg is this fork's addition: upstream #674 treats the provider
+// choice as absolute, so a bad key or a network blip there produces an error
+// card. Falling back keeps a summary on screen, and the trust caption's model
+// label ("Apple Intelligence") is what tells the user the cloud leg didn't run.
+//
+// `modelLabel` names the backend that produced `final` ("gpt-5.4-mini",
 // "Apple Intelligence", ...) so callers can record it next to the cached
 // summary for the card's trust caption; nil on error.
 static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, NSString *instructions,
                                           NSInteger cloudResponseTokens, NSInteger fmResponseTokens,
                                           void (^onPartial)(NSString *partial),
                                           void (^onComplete)(NSString *final, NSError *error, NSString *modelLabel)) {
-    ApolloFoundationModels *bridge = ApolloAIBridge();
+    // Explicitly the FM backend, not ApolloAIBridge() — while a cloud provider
+    // is selected that would hand back the cloud bridge and the "fallback"
+    // would re-run the request that just failed.
+    ApolloFoundationModels *fmBridge = ApolloAIFoundationModelsBridge();
 
     void (^runFM)(NSString *) = ^(NSString *fmText) {
         // prepareSession is a cheap no-op when the identifier was already
         // prewarmed with the same instructions (viewWillAppear), and stages a
         // correct session otherwise (e.g. a fallback whose prewarm was consumed).
-        [bridge prepareSession:identifier instructions:instructions];
-        [bridge summarize:fmText
-               identifier:identifier
-             instructions:instructions
-    maximumResponseTokens:fmResponseTokens
-                onPartial:onPartial
-               onComplete:^(NSString *final, NSError *error) {
-                    onComplete(final, error, error ? nil : kApolloAIOnDeviceModelLabel);
-               }];
+        [fmBridge prepareSession:identifier instructions:instructions];
+        [fmBridge summarize:fmText
+                 identifier:identifier
+               instructions:instructions
+      maximumResponseTokens:fmResponseTokens
+                  onPartial:onPartial
+                 onComplete:^(NSString *final, NSError *error) {
+                      onComplete(final, error, error ? nil : kApolloAIOnDeviceModelLabel);
+                 }];
     };
 
     if (!ApolloAICloudConfigured()) {
@@ -2874,10 +2940,10 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
 
     // Capture the model the request will actually be sent with, in case the
     // user edits the setting while the request is in flight.
-    NSString *cloudModelLabel = [sCloudAIModel copy] ?: @"cloud model";
+    NSString *cloudModelLabel = [ApolloAICloudEffectiveModel() copy] ?: @"cloud model";
     NSString *cloudInstructions = [ApolloAICloudLanguageDirective()
                                    stringByAppendingString:instructions ?: @""];
-    [[ApolloAICloudClient shared] summarize:text
+    [[ApolloAICloudBridge shared] summarize:text
                                  identifier:identifier
                                instructions:cloudInstructions
                       maximumResponseTokens:cloudResponseTokens
@@ -2891,8 +2957,8 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
             runFM(ApolloAITruncateForFM(text));
             return;
         }
-        onComplete(nil, error ?: [NSError errorWithDomain:ApolloAICloudErrorDomain
-                                                     code:ApolloAICloudErrorProvider
+        onComplete(nil, error ?: [NSError errorWithDomain:ApolloAICloudBridgeErrorDomain
+                                                     code:12
                                                  userInfo:@{NSLocalizedDescriptionKey: @"Cloud generation failed"}], nil);
     }];
 }
@@ -2901,8 +2967,8 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
 // doesn't own). Used by the watchdog, navigation teardown, and cache clearing.
 static void ApolloAICancelWithBackends(NSString *identifier) {
     if (identifier.length == 0) return;
-    [ApolloAIBridge() cancelRequest:identifier];
-    [[ApolloAICloudClient shared] cancelRequest:identifier];
+    [ApolloAIFoundationModelsBridge() cancelRequest:identifier];
+    [[ApolloAICloudBridge shared] cancelRequest:identifier];
 }
 
 // Called in viewWillAppear, before the header is on screen and before comments
@@ -2911,13 +2977,17 @@ static void ApolloAICancelWithBackends(NSString *identifier) {
 // session instead.
 static void ApolloAIPrepareForController(UIViewController *vc) {
     if (!vc || !sEnableAISummaries) return;
-    ApolloFoundationModels *bridge = ApolloAIBridge();
+    // Explicitly the FM backend: it is the only one with anything to prewarm
+    // (the cloud bridge's prepareSession is a documented no-op over HTTP), and
+    // it stays worth warming even while a cloud provider is active because it
+    // is the fallback leg.
+    ApolloFoundationModels *bridge = ApolloAIFoundationModelsBridge();
     id link = ApolloAILinkFromController(vc);
     NSString *fullName = ApolloAILinkFullName(link);
-    // With a cloud key configured this keeps running even without the bridge
-    // (pre-iOS 26): the provisional request identifiers still need assigning,
-    // and the [bridge prepareSession:...] prewarm sends below are nil-safe
-    // no-ops there. When FM exists it is still prewarmed as the fallback.
+    // With a cloud provider configured this keeps running even without the FM
+    // bridge (pre-iOS 26): the provisional request identifiers still need
+    // assigning, and the [bridge prepareSession:...] sends below are nil-safe
+    // no-ops there.
     if (!bridge && !ApolloAICloudConfigured()) return;
     ApolloAISummaryDetail postDetail = ApolloAISanitizedDetail(sAIPostSummaryDetail);
     ApolloAISummaryDetail commentDetail = ApolloAISanitizedDetail(sAICommentSummaryDetail);
@@ -3003,8 +3073,8 @@ static void ApolloAISummarizeArticleText(NSString *fullName, NSString *requestID
                         ApolloAISuppressLinkSummary(fullName);
                         return;
                     }
-                    [sPostFailed addObject:fullName];
                     NSString *msg = error ? ApolloAIFriendlyError(error) : @"The model returned an empty summary.";
+                    ApolloAIRecordFailure(fullName, YES, msg);
                     ApolloLog(@"[AISummary] link summary error: %@", error ? error.localizedDescription : @"(empty)");
                     ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateError, msg);
                     if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -3113,16 +3183,18 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
     if (!sEnableAISummaries) return;
 
     ApolloFoundationModels *bridge = ApolloAIBridge();
-    // status 4 = FoundationModels framework absent (pre-iOS 26). With a cloud
-    // key configured that is no longer terminal — the cloud backend generates
-    // and there is simply no on-device fallback. Bail only when NEITHER backend
-    // can run. For every other "unavailable" reason we DO NOT bail: on iOS 27,
+    // status 4 = this backend cannot run: on-device means the FoundationModels
+    // framework is absent (pre-iOS 26); cloud means the provider is selected but
+    // not configured yet (no API key / base URL / model). Either way it is only
+    // terminal when the OTHER backend can't step in — a configured cloud
+    // provider covers a missing FM, and FM covers an unconfigured cloud
+    // provider. For every other "unavailable" reason we DO NOT bail: on iOS 27
     // `availabilityStatus` returns 1 (appleIntelligenceNotEnabled) even when
     // generation works fine (other clients summarize on the same device), so we
     // attempt anyway and let a real generation error be the gate.
     NSInteger status = bridge ? [bridge availabilityStatus] : 4;
-    if (status == 4 && !ApolloAICloudConfigured()) {
-        ApolloLog(@"[AISummary] no usable backend (FoundationModels absent, no cloud key), skipping");
+    if (status == 4 && !ApolloAICloudConfigured() && !ApolloAIFMUsable()) {
+        ApolloLog(@"[AISummary] no usable backend (provider=%@), skipping", sAISummaryProvider);
         return;
     }
     if (status != 0 && !ApolloAICloudConfigured()) {
@@ -3283,8 +3355,8 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                                 }
                                 return;
                             }
-                            [sPostFailed addObject:fullName];
                             NSString *msg = error ? ApolloAIFriendlyError(error) : @"The model returned an empty summary.";
+                            ApolloAIRecordFailure(fullName, YES, msg);
                             ApolloLog(@"[AISummary] post summary error: %@", error ? error.localizedDescription : @"(empty)");
                             ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateError, msg);
                             if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -3416,8 +3488,8 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                                 }
                                 return;
                             }
-                            [sCommentFailed addObject:fullName];
                             NSString *msg = error ? ApolloAIFriendlyError(error) : @"The model returned an empty summary.";
+                            ApolloAIRecordFailure(fullName, NO, msg);
                             ApolloLog(@"[AISummary] comment summary error: %@", error ? error.localizedDescription : @"(empty)");
                             ApolloAISetBoxStateOnMatchingHeaders(fullName, NO, ApolloAIBoxStateError, msg);
                             if (ApolloAIAnyHeaderExpanded(fullName, NO)) {
@@ -3541,8 +3613,8 @@ static void ApolloAILogTableStructure(UIViewController *vc) {
         [sCommentInFlight removeObject:fullName];
         [sPostRequestIDs removeObjectForKey:fullName];
         [sCommentRequestIDs removeObjectForKey:fullName];
-        [sPostFailed removeObject:fullName];
-        [sCommentFailed removeObject:fullName];
+        ApolloAIClearFailure(fullName, YES);
+        ApolloAIClearFailure(fullName, NO);
         // Suppression is per-view, exactly like sPostFailed above: a link we hid
         // because it had no usable prose (or failed transiently — model still
         // downloading, a flaky network, a slow fetch that timed out) gets a fresh

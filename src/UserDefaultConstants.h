@@ -119,7 +119,24 @@ static NSString *const ApolloTabBarTitlesChangedNotification = @"ApolloTabBarTit
 // (UDKeyShowUserAvatars), which governs the inline avatars next to usernames.
 // See ApolloUserAvatars.xm and ApolloProfileSocialLinks.m. Default YES.
 static NSString *const UDKeyShowDetailedProfiles = @"ShowDetailedProfiles";
+// Master toggle for the profile "Badge Book" — the in-header preview strip and the
+// full Achievements / Trophy Case screen (ApolloBadgeBookStrip.m,
+// ApolloBadgeBookViewController.m). Off → no strip, no scraping, no entry point.
+// Default YES.
+static NSString *const UDKeyBadgeBookEnabled = @"BadgeBookEnabled";
+static NSString *const UDKeyProfileHeaderImmersive = @"ProfileHeaderImmersive";
+static NSString *const UDKeyProfileShowBanner = @"ProfileShowBanner";
+static NSString *const UDKeyProfileShowStatCards = @"ProfileShowStatCards";
+static NSString *const UDKeyProfileShowSocialLinks = @"ProfileShowSocialLinks";
+static NSString *const UDKeyProfileShowActions = @"ProfileShowActions";
+static NSString *const UDKeyProfileAvatarStyle = @"ProfileAvatarStyle";
 static NSString *const UDKeyShowSubredditHeaders = @"ShowSubredditHeaders";
+// New (Immersive, with the melt/ambient backdrop) vs Classic (same content,
+// flat) — mirrors UDKeyProfileHeaderImmersive's semantics for subreddits.
+static NSString *const UDKeySubredditHeaderImmersive = @"SubredditHeaderImmersive";
+static NSString *const UDKeySubredditShowBanner = @"SubredditShowBanner";
+static NSString *const UDKeySubredditShowJoinButton = @"SubredditShowJoinButton";
+static NSString *const UDKeySubredditShowDisplayName = @"SubredditShowDisplayName";
 // Backing values for the single Community Highlights picker. Keeping the old
 // keys maps existing settings naturally: both YES = Full, master only = Partial,
 // master NO = Off.
@@ -194,12 +211,19 @@ static NSString *const UDKeyPerPostCommentSortMapping = @"PerPostCommentSortMapp
 // off, and launch/restore normalize a stale both-on to per-post. This toggle key is
 // the ONLY native default the feature ever writes. See ApolloPerPostCommentSort.xm.
 static NSString *const UDKeyApolloRememberSubredditCommentsSort = @"RememberRedditCommentsSort";
+// Override for UIScrollView top/bottom scroll edge effects (Liquid Glass, iOS 26+).
+// 0 = Automatic (default), 1 = Soft, 2 = Hard, 3 = Hidden.
+static NSString *const UDKeyScrollEdgeEffectStyle = @"ScrollEdgeEffectStyle";
 // Render image URLs (i.redd.it, preview.redd.it, i.imgur.com, generic .png/.jpg/.jpeg/.webp)
 // inline within post selftext and comments instead of leaving them as plain text links.
 static NSString *const UDKeyEnableInlineImages = @"EnableInlineImages";
-// Master toggle for the chat media enhancements: render inbound images/GIFs/emoji/snoomoji
-// inline in DM/chat bubbles, rewrite outgoing media embeds so image/GIF sends work, and tap an
-// image/GIF to open it full screen. OFF = stock Apollo chat (media shown as plain text links).
+// Master toggle for the message media enhancements: render inbound images/GIFs/emoji/snoomoji
+// inline in message bubbles, rewrite outgoing media embeds so image/GIF sends work, and tap an
+// image/GIF to open it full screen. OFF = stock Apollo threads (media shown as plain text links).
+// Scoped to the threads Apollo draws itself with PrivateMessageViewController — legacy Direct
+// Chat, private messages, and native Moderator Mail — so turning on modern Chat/Modmail (which
+// are web surfaces rendering their own media) narrows what this reaches without ever emptying
+// it: private messages are always native.
 // Independent of "Show User Profile Pictures" (avatars have their own toggle). See ApolloChat*.xm.
 static NSString *const UDKeyEnableChatMedia = @"EnableChatMedia";
 // Horizontal alignment for inline media that is narrower than the row (e.g. tall portrait images).
@@ -351,6 +375,25 @@ static NSString *const UDKeyPostFilterNameSubstrings = @"PostFilterNameSubstring
 // Web JSON spike (see ApolloWebJSON.m). Master switch for re-pointing
 // whitelisted listing reads at cookie-authenticated www.reddit.com JSON.
 static NSString *const UDKeyWebJSONEnabled = @"WebJSONEnabled";
+// API-key accounts may opt into Reddit's modern web Chat; API-key-free
+// accounts always use it because legacy /message no longer contains Chat.
+static NSString *const UDKeyUseModernRedditChat = @"UseModernRedditChat";
+// API-key accounts may independently opt into Reddit's current web Modmail;
+// API-key-free accounts always use it because Apollo's native new-Modmail
+// endpoints require OAuth credentials they deliberately do not have.
+static NSString *const UDKeyUseModernRedditModmail = @"UseModernRedditModmail";
+// Modern Chat unread poller (ApolloChatUnreadPoller.m). Per-account high-water
+// marks of the unread/requests counts already announced through Bark, so a
+// relaunch doesn't re-push the same unread messages. Not user-facing.
+static NSString *const UDKeyChatUnreadNotifiedWatermarks = @"ChatUnreadNotifiedWatermarks";
+// Debug-only overrides for the poller (never surfaced in settings): point the
+// Matrix homeserver at a local mock, and shorten the poll cadence, so the
+// whole badge/notification pipeline can be exercised in the simulator.
+static NSString *const UDKeyChatPollerHomeserverOverride = @"ChatPollerHomeserverOverride";
+static NSString *const UDKeyChatPollerIntervalOverride = @"ChatPollerIntervalOverride";
+// Debug-only override (seconds, >= 5) for how long the modern Chat surface
+// must be hidden/inactive before returning to it auto-refreshes the list.
+static NSString *const UDKeyChatStaleRefreshOverride = @"ChatStaleRefreshOverride";
 // Native Polls (ApolloPollVoting.xm / ApolloPollCompose.xm). Off by default —
 // an experimental feature that lets you vote in and create polls via a
 // per-account reddit.com web session (harvested once, then silent). Independent
@@ -442,3 +485,12 @@ static NSString *const ApolloLinkPreviewModeDidChangeNotification = @"ApolloLink
 // Posted by the Inline Media settings screen when size/alignment changes so
 // visible comments re-measure their inline media immediately.
 static NSString *const ApolloInlineMediaLayoutDidChangeNotification = @"ApolloInlineMediaLayoutDidChangeNotification";
+
+// The last TWEAK_VERSION (without the leading "v") the What's New sheet was
+// shown for (or silently advanced past, when a version has no catalog entry).
+// Deliberately never registered with a default value, and an absent value is
+// deliberately NOT treated as "fresh install, skip": it is indistinguishable
+// from an upgrade off a build that predates this feature — the actual target
+// audience for the release this ships in. See the gating doc in
+// ApolloWhatsNew.xm.
+static NSString *const UDKeyLastSeenWhatsNewVersion = @"LastSeenWhatsNewVersion";

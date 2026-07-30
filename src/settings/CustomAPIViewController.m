@@ -16,6 +16,7 @@
 #import "ApolloBadgeBookScraper.h"   // ApolloBadgeBookInvalidate() — Clear Tweak Caches
 #import "ApolloUserProfileCache.h"
 #import "ApolloLinkPreviewCache.h"
+#import "ApolloLinkPreviewShapeMemory.h"
 #import "settings/ApolloDeletedCommentsSettingsViewController.h"
 #import "settings/ApolloLinkPreviewSettingsViewController.h"
 #import "settings/ApolloProfileLayoutViewController.h"
@@ -479,8 +480,8 @@ typedef NS_ENUM(NSInteger, Tag) {
     // flow (signed-in user / write-token availability may have just changed).
     // No-ops while the row is hidden (API-Key-Free Mode off).
     [self reloadRowWithID:@"api.webSessionLogin"];
-    // The active account can change while this screen is off-screen, flipping
-    // modern Chat/Modmail between optional and mandatory — re-derive both.
+    // Modern Chat/Modmail can be switched from other surfaces (and the one-time
+    // migration writes them on first launch) — re-read both.
     [self reloadRowWithID:@"api.modernChat"];
     [self reloadRowWithID:@"api.modernModmail"];
     // Refresh the Apollo AI and Rich Link Previews status subtitles after returning
@@ -1032,41 +1033,34 @@ typedef NS_ENUM(NSInteger, Tag) {
     // Only exists while API-Key-Free Mode is on (see -_applyWebJSONEnabled:).
     webSessionLogin.visible = ^BOOL { return sWebJSONEnabled; };
 
-    // Modern Reddit Chat. API-key accounts may opt in; API-key-free accounts are
-    // forced on (and the switch disabled) because Reddit no longer exposes Direct
-    // Chat through the legacy message API. Uses the harvested web session.
+    // Modern Reddit Chat / Moderator Mail. Both work for API-key and
+    // API-key-free accounts alike, so both are a plain choice that stays
+    // switchable for everyone. These preferences are app-wide, like the rest of
+    // Apollo's settings, which is the other reason not to derive their state
+    // from whichever account happens to be active: they used to lock as soon as
+    // ONE signed-in account looked API-key-free, taking the choice away from the
+    // keyed accounts sharing the same device.
     ApolloSettingsRow *modernChat =
         [ApolloSettingsRow customRowWithID:@"api.modernChat"
                                       cell:^UITableViewCell *(__unused UITableView *tableView, __unused ApolloSettingsRow *row) {
-            BOOL required = ApolloModernChatIsRequiredForActiveAccount();
-            BOOL selected = required || [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyUseModernRedditChat];
             return [weakSelf switchCellWithIdentifier:@"Cell_API_ModernChat"
                                                 label:@"Use Modern Reddit Chat"
-                                               detail:required
-                                                      ? @"Required for the active API-key-free account because Reddit no longer exposes Direct Chat through the legacy message API."
-                                                      : @"Off keeps Apollo's legacy Direct Chat. On uses Reddit's current Chat with requests, group chats, and media. Requires a web-session sign-in."
-                                                   on:selected
-                                              enabled:!required
+                                               detail:@"On uses Reddit's current Chat — requests, group chats and media — for every account, and needs a web-session sign-in. Off keeps Apollo's own Direct Chat, which only works for accounts signed in with an API key."
+                                                   on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyUseModernRedditChat]
+                                              enabled:YES
                                                action:@selector(modernRedditChatSwitchToggled:)]
                 ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
         }
                                   onSelect:nil];
 
-    // Modern Moderator Mail. Same shape as Chat: opt-in for API-key accounts,
-    // forced on for API-key-free ones (Apollo's native Modmail needs OAuth creds
-    // they deliberately don't have).
     ApolloSettingsRow *modernModmail =
         [ApolloSettingsRow customRowWithID:@"api.modernModmail"
                                       cell:^UITableViewCell *(__unused UITableView *tableView, __unused ApolloSettingsRow *row) {
-            BOOL required = ApolloModernChatIsRequiredForActiveAccount();
-            BOOL selected = required || [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyUseModernRedditModmail];
             return [weakSelf switchCellWithIdentifier:@"Cell_API_ModernModmail"
                                                 label:@"Use Modern Moderator Mail"
-                                               detail:required
-                                                      ? @"Required for the active API-key-free account because Apollo's native Moderator Mail requires Reddit API credentials."
-                                                      : @"Off keeps Apollo's native Moderator Mail. On uses Reddit's current Modmail with the active web-session account."
-                                                   on:selected
-                                              enabled:!required
+                                               detail:@"On uses Reddit's current Modmail with the active web-session account. Off keeps Apollo's native Moderator Mail, which only works for accounts signed in with an API key."
+                                                   on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyUseModernRedditModmail]
+                                              enabled:YES
                                                action:@selector(modernRedditModmailSwitchToggled:)]
                 ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
         }
@@ -1264,6 +1258,20 @@ typedef NS_ENUM(NSInteger, Tag) {
         }
                                   onSelect:nil];
 
+    ApolloSettingsRow *titleGapCentering =
+        [ApolloSettingsRow customRowWithID:@"gen.titleGapCentering"
+                                      cell:^UITableViewCell *(__unused UITableView *tableView, __unused ApolloSettingsRow *row) {
+            BOOL lgSupported = IsLiquidGlass();
+            UITableViewCell *cell = [weakSelf switchCellWithIdentifier:@"Cell_Gen_TitleGapCentering"
+                                                                 label:@"Balance Title Between Buttons"
+                                                                detail:@"Requires Liquid Glass. Centers the nav bar title between the back button and the top-right buttons; off centers it on the screen instead."
+                                                                    on:lgSupported && sLGTitleGapCentering
+                                                               enabled:lgSupported
+                                                                action:@selector(lgTitleGapCenteringSwitchToggled:)];
+            return cell ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        }
+                                  onSelect:nil];
+
     // Temporary iPad stopgap (#387): dock the floating tab bar at the
     // bottom instead of the top-center pill that overlaps the search bar.
     ApolloSettingsRow *iPadTabBarBottom =
@@ -1295,7 +1303,7 @@ typedef NS_ENUM(NSInteger, Tag) {
 
     return [ApolloSettingsSection sectionWithTitle:nil
                                             footer:@"Liquid Glass chrome behaviors."
-                                              rows:@[ tabBarIdle, keepSearchInPlace, iPadTabBarBottom, scrollEdgeEffect ]];
+                                              rows:@[ tabBarIdle, keepSearchInPlace, titleGapCentering, iPadTabBarBottom, scrollEdgeEffect ]];
 }
 
 - (NSString *)scrollEdgeEffectStyleText {
@@ -3078,9 +3086,7 @@ typedef NS_ENUM(NSInteger, Tag) {
     [self visibilityDidChange];
 }
 
-// Modern Chat / Modmail opt-in for API-key accounts. API-key-free accounts are
-// forced on (the switch is disabled via -buildAPIKeysExperimentalSection), so
-// these only ever fire for a keyed account choosing to opt in or out.
+// Modern Chat / Modmail are a plain app-wide choice for every account.
 - (void)modernRedditChatSwitchToggled:(UISwitch *)sender {
     [[NSUserDefaults standardUserDefaults] setBool:sender.isOn forKey:UDKeyUseModernRedditChat];
     // The combined Inbox tab badge gates its chat contribution on this key —
@@ -3222,6 +3228,12 @@ typedef NS_ENUM(NSInteger, Tag) {
     [[NSUserDefaults standardUserDefaults] setBool:sKeepSearchBarInPlace forKey:UDKeyKeepSearchBarInPlace];
 }
 
+- (void)lgTitleGapCenteringSwitchToggled:(UISwitch *)sender {
+    sLGTitleGapCentering = sender.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:sLGTitleGapCentering forKey:UDKeyLGTitleGapCentering];
+    ApolloLGTitleCenteringModeChanged();
+}
+
 - (void)liveCommentsFollowSwitchToggled:(UISwitch *)sender {
     sLiveCommentsFollow = sender.isOn;
     [[NSUserDefaults standardUserDefaults] setBool:sLiveCommentsFollow forKey:UDKeyLiveCommentsFollow];
@@ -3262,6 +3274,9 @@ typedef NS_ENUM(NSInteger, Tag) {
     [alert addAction:[UIAlertAction actionWithTitle:@"Clear" style:UIAlertActionStyleDestructive handler:^(__unused UIAlertAction *action) {
         [[ApolloUserProfileCache sharedCache] clearAllCaches];
         [[ApolloLinkPreviewCache sharedCache] flushCache];
+        // The learned per-host card-shape verdicts are derived from those same
+        // previews, so they go with them.
+        [[ApolloLinkPreviewShapeMemory sharedMemory] reset];
         [[ApolloSubredditInfoCache sharedCache] clearAllCaches];
         ApolloBadgeBookInvalidate(nil);   // per-user earned/trophy state, memory + disk
         ApolloBannedProfileClearDismissedOverlays();

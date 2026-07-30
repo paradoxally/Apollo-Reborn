@@ -96,6 +96,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloScrollEdgePopFix.xm \
     $(SRC_DIR)/ApolloLiquidGlassIconPicker.xm \
     $(SRC_DIR)/ApolloModmailLayout.xm \
+    $(SRC_DIR)/ApolloModmailSubjectCounter.xm \
     $(SRC_DIR)/ApolloAutoHideTabBar.xm \
     $(SRC_DIR)/ApolloTabBarCollapseSide.xm \
     $(SRC_DIR)/ApolloIPadTabBarBottom.xm \
@@ -157,6 +158,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloImgChestUpload.m \
     $(SRC_DIR)/ApolloLinkPreviewModel.m \
     $(SRC_DIR)/ApolloLinkPreviewCache.m \
+    $(SRC_DIR)/ApolloLinkPreviewShapeMemory.m \
     $(SRC_DIR)/ApolloLinkPreviewFetcher.m \
     $(SRC_DIR)/ApolloInlineImages.xm \
     $(SRC_DIR)/ApolloInlineLinkPreviews.xm \

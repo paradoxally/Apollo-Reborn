@@ -52,6 +52,7 @@ BOOL sAutoHideTabBarShowOnIdle = NO;
 NSInteger sTabBarCollapseSide = 0;   // 0 = Left (system default), 1 = Right (UDKeyTabBarCollapseSide)
 BOOL sIPadTabBarBottom = NO;   // opt-in (default OFF via registerDefaults, UDKeyIPadTabBarBottom); iPad-gated in the module
 BOOL sKeepSearchBarInPlace = NO;
+BOOL sLGTitleGapCentering = YES;   // effective default ON via registerDefaults (UDKeyLGTitleGapCentering)
 BOOL sIconRowMagnifier = YES;   // effective default ON via registerDefaults (UDKeyIconRowMagnifier)
 BOOL sInfoRowTapUpvote = YES;      // effective default ON via registerDefaults (UDKeyInfoRowTapUpvote)
 BOOL sInfoRowTapComments = YES;    // effective default ON via registerDefaults (UDKeyInfoRowTapComments)
@@ -113,6 +114,7 @@ NSArray<NSString *> *sTranslationSkipLanguages = nil;
 
 BOOL sWebJSONEnabled = NO;
 BOOL sPollsFeatureEnabled = NO;
+NSInteger sPollOptionAlignment = ApolloPollOptionAlignmentCenter;
 NSString *sWebSessionCookieHeader = nil;
 NSString *sWebSessionModhash = nil;
 NSString *sWebSessionUsername = nil;

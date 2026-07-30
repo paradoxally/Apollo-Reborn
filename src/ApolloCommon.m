@@ -1,5 +1,6 @@
 #import "ApolloCommon.h"
 #import "ApolloState.h"
+#import "ApolloThemeRuntime.h"
 #import <QuartzCore/QuartzCore.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
@@ -366,10 +367,13 @@ void ApolloApplyInheritedSettingsTableTheme(UITableViewController *controller) {
     if (!controller) return;
 
     UITableView *source = ApolloInheritedSettingsThemeSourceTableView(controller);
-    UIColor *backgroundColor = source.backgroundColor ?: controller.tableView.backgroundColor;
+    BOOL stale = ApolloThemeSourceTableIsStale(source);
+    UIColor *backgroundColor = (stale ? nil : source.backgroundColor)
+        ?: ApolloThemePageBackgroundColor() ?: controller.tableView.backgroundColor;
     controller.view.backgroundColor = backgroundColor;
     controller.tableView.backgroundColor = backgroundColor;
-    controller.tableView.separatorColor = source.separatorColor ?: [UIColor separatorColor];
+    controller.tableView.separatorColor = (stale ? nil : source.separatorColor)
+        ?: ApolloThemeSeparatorColor() ?: [UIColor separatorColor];
 }
 
 #pragma mark - LinkButtonNode URL extraction
@@ -550,6 +554,23 @@ UIImage *ApolloEmojiSettingsIcon(NSString *emoji, UIColor *backgroundColor, CGFl
         CGPoint origin = CGPointMake((size - textSize.width) / 2.0, (size - textSize.height) / 2.0 - 0.5);
         [emoji drawAtPoint:origin withAttributes:attrs];
     }];
+}
+
+NSAttributedString *ApolloSymbolAttachment(NSString *symbolName, UIFont *font, UIColor *tint) {
+    if (@available(iOS 13.0, *)) {
+        UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithFont:font];
+        UIImage *image = [UIImage systemImageNamed:symbolName withConfiguration:config];
+        if (!image) return nil;
+        image = [image imageWithTintColor:tint renderingMode:UIImageRenderingModeAlwaysOriginal];
+        NSTextAttachment *attachment = [NSTextAttachment new];
+        attachment.image = image;
+        // Center the glyph on the font's cap height so it sits on the text
+        // baseline rather than floating above it.
+        CGFloat y = (font.capHeight - image.size.height) / 2.0;
+        attachment.bounds = CGRectMake(0, y, image.size.width, image.size.height);
+        return [NSAttributedString attributedStringWithAttachment:attachment];
+    }
+    return nil;
 }
 
 static NSString *ApolloBundledResourcePNGPath(NSString *resourceName) {

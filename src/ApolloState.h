@@ -121,6 +121,10 @@ extern BOOL sIPadTabBarBottom;
 // dock/grow); the field stays put and results populate the feed in place. Liquid Glass only;
 // mutually exclusive with the default nav-hide mode. See ApolloSearchInPlace.xm.
 extern BOOL sKeepSearchBarInPlace;
+// Liquid Glass title placement: ON (default) = centered in the gap between the
+// back pill and the trailing pill; OFF = centered on the screen, nudged only to
+// clear a pill. See ApolloRecenterTitleControl in ApolloLiquidGlass.xm.
+extern BOOL sLGTitleGapCentering;
 // When ON (default), press-and-hold on a post info row shows the glass-slider
 // magnifier loupe: slide to pick an icon, release to activate it (upvote /
 // comments / posted / % upvoted / translation). See ApolloStatsRowTouch.xm.
@@ -386,6 +390,14 @@ extern BOOL sWebJSONEnabled;
 // hook checks it; loaded at launch and updated live by the Polls settings
 // toggle. Read through ApolloPollsFeatureEnabled() (ApolloCommon.h).
 extern BOOL sPollsFeatureEnabled;
+// Horizontal alignment of the option text next to its radio glyph in a native
+// poll (ApolloPollVoting.xm, PollOptionNode layoutSpecThatFits: hook). Default
+// Center — matches Apollo's own pre-radio-glyph poll option layout.
+typedef NS_ENUM(NSInteger, ApolloPollOptionAlignment) {
+    ApolloPollOptionAlignmentCenter = 0,
+    ApolloPollOptionAlignmentLeft   = 1,
+};
+extern NSInteger sPollOptionAlignment;
 // Serialized "name=value; name=value" Cookie header harvested from a
 // www.reddit.com web login (must include reddit_session). nil until the user
 // completes the Web Session Login flow. Persisted in the keychain (it's a full

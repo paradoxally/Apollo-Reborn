@@ -159,6 +159,12 @@ static NSString *const UDKeyTabBarCollapseSide = @"TabBarCollapseSide";
 // "search takeover" (nav slides away + fades, field docks to the top and grows). Mutually
 // exclusive with the default nav-hide mode. Liquid Glass only. Default NO. See ApolloSearchInPlace.xm.
 static NSString *const UDKeyKeepSearchBarInPlace = @"KeepSearchBarInPlace";
+// Liquid Glass nav bar title placement. ON (default): center the title in the
+// gap between the back pill and the trailing pill so it reads balanced whatever
+// the trailing cluster holds (translation globe on or off). OFF: center it on
+// the screen itself, nudged just enough to clear a pill it would overlap.
+// See ApolloRecenterTitleControl in ApolloLiquidGlass.xm.
+static NSString *const UDKeyLGTitleGapCentering = @"LGTitleGapCentering";
 // iPad only, Liquid Glass only. When ON, forces the iOS 26 floating tab bar to
 // dock at the BOTTOM (classic tab bar) instead of the top-center pill, which on
 // iPad overlaps Apollo's search bar. Temporary stopgap for issue #387 until the
@@ -379,13 +385,17 @@ static NSString *const UDKeyPostFilterNameSubstrings = @"PostFilterNameSubstring
 // Web JSON spike (see ApolloWebJSON.m). Master switch for re-pointing
 // whitelisted listing reads at cookie-authenticated www.reddit.com JSON.
 static NSString *const UDKeyWebJSONEnabled = @"WebJSONEnabled";
-// API-key accounts may opt into Reddit's modern web Chat; API-key-free
-// accounts always use it because legacy /message no longer contains Chat.
+// Reddit's modern web Chat, for API-key and API-key-free accounts alike. Off
+// means Apollo's own Direct Chat, which needs Reddit API credentials.
 static NSString *const UDKeyUseModernRedditChat = @"UseModernRedditChat";
-// API-key accounts may independently opt into Reddit's current web Modmail;
-// API-key-free accounts always use it because Apollo's native new-Modmail
-// endpoints require OAuth credentials they deliberately do not have.
+// Independently, Reddit's current web Modmail. Off means Apollo's native
+// Moderator Mail, whose new-Modmail endpoints require OAuth credentials.
 static NSString *const UDKeyUseModernRedditModmail = @"UseModernRedditModmail";
+// One-shot marker: the two keys above became a plain user preference (they
+// used to be force-enabled for web-session accounts by a derived gate). Set
+// once ApolloMigrateModernMailboxPreferences has recorded the previously
+// implied value, so that never runs twice and re-flips a deliberate choice.
+static NSString *const UDKeyModernMailboxChoiceMigrated = @"ModernMailboxChoiceMigrated";
 // Modern Chat unread poller (ApolloChatUnreadPoller.m). Per-account high-water
 // marks of the unread/requests counts already announced through Bark, so a
 // relaunch doesn't re-push the same unread messages. Not user-facing.
@@ -404,6 +414,9 @@ static NSString *const UDKeyChatStaleRefreshOverride = @"ChatStaleRefreshOverrid
 // of UDKeyWebJSONEnabled: turning polls on does NOT reroute the request
 // pipeline; it only unlocks the poll tap handler and the compose "Poll" type.
 static NSString *const UDKeyPollsEnabled = @"PollsEnabled";
+// Horizontal alignment of poll option text (ApolloPollOptionAlignment).
+// Default Center (0).
+static NSString *const UDKeyPollOptionAlignment = @"PollOptionAlignment";
 // Legacy NSUserDefaults location of the harvested "name=value; ..." Cookie
 // header. The cookie is now stored in the keychain (ApolloWebJSON.m); this key
 // is retained only so ApolloWebJSONLoadPersistedCredentials can migrate an older

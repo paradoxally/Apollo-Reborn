@@ -27,7 +27,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixes
 
-- Fix a **crash while scrolling comments** — a runaway layout-spec chain could nest hundreds of levels deep and exhaust the main thread's stack; layout now bails out safely when a thread is genuinely close to its limit, and reports what caused it (#27)
+- Fix a **crash while scrolling comments** — a runaway layout-spec chain could nest hundreds of levels deep and exhaust the main thread's stack; layout now bails out safely when a thread is genuinely close to its limit, and reports what caused it (#27: @paradoxally)
 - Improve **scrolling performance** — language detection for translation moved off the main thread (about a quarter of main-thread work during a translated feed scroll), plus caches and cheap gates on six more per-cell paths ([#731](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/731): @icpryde)
 - Fix **link previews reserving a full-size card** for pages that turn out to have no image, which left a tall empty gap under the card until the row scrolled back into view ([#741](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/741): @icpryde)
   - A hero image box is now reserved only for sites whose recent previews all carried one; everything else starts compact and grows, which is the direction the app can actually detect and correct

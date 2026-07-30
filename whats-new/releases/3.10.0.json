@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "version": "3.10.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "square.grid.2x2.fill", "title": "Gallery View", "subtitle": "Browse an image subreddit as a grid, with a fullscreen viewer and media filters." },
+    { "icon": "arrow.up.forward.app.fill", "title": "Open in Apollo", "subtitle": "Reddit links open in Apollo from Safari, however you sideloaded it." },
+    { "icon": "magnifyingglass", "title": "Settings Search", "subtitle": "Search every setting from the top of the screen, or pull down to find it." },
+    { "icon": "rectangle.3.group.fill", "title": "Subreddit Density", "subtitle": "Pick New, Classic, or Apollo's own header — Native brings the old one back." },
+    { "icon": "checklist", "title": "Safer Poll Voting", "subtitle": "Pick an option, then confirm with Vote — Reddit's poll votes can't be undone." },
+    { "icon": "bubble.left.and.bubble.right.fill", "title": "Chat & Modmail Unlocked", "subtitle": "Every account can now choose modern Chat and Modmail instead of being locked in." },
+    { "icon": "speedometer", "title": "Smoother & Steadier", "subtitle": "Faster scrolling with translation on, and a fix for a crash while reading comments." }
+  ]
+}

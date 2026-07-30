@@ -4,6 +4,45 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.0] - 2026-07-30
+
+### Features
+
+- Add **Gallery View** to a subreddit's nav-bar `...` menu — flattens the listing into a grid of just the media, so an image subreddit browses like a photo album instead of a tap in and out of every post ([#746](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/746): @icpryde)
+  - Column-balanced waterfall grid sized from the dimensions Reddit reports, so tiles keep their real proportions and nothing jumps as images load; the column count follows the width, widening on iPad and in landscape
+  - Covers photos, GIFs and videos, with a multi-select filter to show any one, two, or all three, plus its own Hot / New / Rising / Top sort, endless scrolling, and pull to refresh
+  - Fullscreen viewer: swipe between pictures, pinch and double-tap to zoom, swipe up or down to flick it away, and long-press for Save Image, Share Image, Share Post Link, or Open Post — NSFW and spoiler tiles stay blurred in the grid
+- Add a universal **Open in Apollo** flow for sideloaded builds, replacing Safari's custom-scheme redirect with a Universal Link that works no matter how Apollo was sideloaded or rebranded ([#685](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/685): @jordanearle)
+  - **Settings > General > Open in App > Open Reddit Links in Apollo** now opens a **Link Companion** page explaining the flow, with a TestFlight link for the helper app
+  - The Safari extension keeps the full Reddit/`redd.it` source URL and can no longer get stuck in a redirect loop when the opener is missing
+- Add **search to Settings**, visible the moment the screen opens, with pull-to-search restored — threshold affordance, haptics, and cancellation-safe gesture state ([#758](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/758): @jordanearle)
+- Replace the ambiguous subreddit header toggle with a three-way **Density** choice under **Settings > Apollo Reborn > Features > Subreddits** — **New (Immersive)**, **Classic (Compact)**, and **Native (Apollo)** ([#758](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/758): @jordanearle)
+  - Native preserves Apollo's own pre-3.5 header; both Reborn densities keep their configurable bands, and Community Highlights work with all three
+- Change **poll voting** to select-then-confirm — tapping an option now only selects it, and a separate **Vote** button casts it ([#735](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/735): @DeltAndy123)
+  - Reddit poll votes are irreversible, so the extra tap is a deliberate guard against voting by accident; VoiceOver's existing option sheet still votes directly
+- Let **every account choose** Modern Chat and Modern Moderator Mail instead of locking the switches ([#750](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/750): @icpryde)
+  - Both were forced on and greyed out for any account holding a reddit.com web session without an API key — and because the preference is app-wide, one such account took the choice away from every account on the device
+  - A one-time migration records the previously implied "on", so nobody silently loses Chat or Modmail
+- Show a **25-character counter** in the Message Moderators subject field, turning red on the keystroke that disables Continue, so the cap is visible before you hit it ([#751](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/751): @icpryde)
+
+### Fixes
+
+- Fix a **crash while scrolling comments** — a runaway layout-spec chain could nest hundreds of levels deep and exhaust the main thread's stack; layout now bails out safely when a thread is genuinely close to its limit, and reports what caused it (#27)
+- Improve **scrolling performance** — language detection for translation moved off the main thread (about a quarter of main-thread work during a translated feed scroll), plus caches and cheap gates on six more per-cell paths ([#731](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/731): @icpryde)
+- Fix **link previews reserving a full-size card** for pages that turn out to have no image, which left a tall empty gap under the card until the row scrolled back into view ([#741](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/741): @icpryde)
+  - A hero image box is now reserved only for sites whose recent previews all carried one; everything else starts compact and grows, which is the direction the app can actually detect and correct
+- Fix **nav bar titles drifting** on Liquid Glass — titles are now centered in the gap between the leading and trailing pills on every screen, so they can't overlap either one, and the opt-out that disabled centering during bulk translation is gone ([#730](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/730): @icpryde)
+  - Adds a **Balance Title Between Buttons** toggle under Interface settings for the old screen-centered behavior
+- Fix **Imgur albums failing** for anyone without an Imgur API key, now that Imgur has closed API registration — albums fall back to Imgur's public web client, and GIFs and videos play instead of freezing on a static image ([#729](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/729): @jordanearle)
+  - Adds an **Album Fallback Proxies** switch (on by default, disclosed in the footer) for anyone who wants strictly-DuckDuckGo routing
+- Fix **Modmail assembling itself on screen** — opening a conversation or going back now stays covered until it's ready, instead of showing about a third of a second of unstyled layout ([#749](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/749): @icpryde)
+  - Also fixes the subreddit icon flickering on every keystroke while typing a reply
+- Fix **multi-image gallery posts failing to upload** with "All Media assets must be owned by the submitter" on devices with both a keyed and an API-key-free account signed in ([#733](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/733): @icpryde)
+  - Also fixes a crash in the media composer and makes the selected-image strip reliably scrollable
+- Fix **Share as Image** showing a link card instead of the picture for GIF posts ([#752](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/752): @icpryde)
+- Fix the **`...` control going blank** while its Liquid Glass menu is open, then popping back about a second after the menu closed ([#753](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/753): @icpryde)
+- Fix **stale and un-themed backgrounds** in the Apollo Reborn settings screens ([#734](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/734): @DeltAndy123)
+
 ## [v3.9.0] - 2026-07-27
 
 ### Features
@@ -856,6 +895,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.10.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.9.0...v1.15.11_3.10.0
 [v3.9.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.3...v1.15.11_3.9.0
 [v3.8.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.2...v1.15.11_3.8.3
 [v3.8.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.1...v1.15.11_3.8.2

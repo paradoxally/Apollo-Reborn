@@ -14,11 +14,19 @@ typedef struct {
 } ApolloWhatsNewItemEntry;
 
 static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
+    { "3.10.0", "What's New in Apollo Reborn" },
     { "3.5.0", "What's New in Apollo Reborn" },
     { "3.9.0", "What's New in Apollo Reborn" },
 };
 
 static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
+    { "3.10.0", "square.grid.2x2.fill", "Gallery View", "Browse an image subreddit as a grid, with a fullscreen viewer and media filters." },
+    { "3.10.0", "arrow.up.forward.app.fill", "Open in Apollo", "Reddit links open in Apollo from Safari, however you sideloaded it." },
+    { "3.10.0", "magnifyingglass", "Settings Search", "Search every setting from the top of the screen, or pull down to find it." },
+    { "3.10.0", "rectangle.3.group.fill", "Subreddit Density", "Pick New, Classic, or Apollo's own header \342\200\224 Native brings the old one back." },
+    { "3.10.0", "checklist", "Safer Poll Voting", "Pick an option, then confirm with Vote \342\200\224 Reddit's poll votes can't be undone." },
+    { "3.10.0", "bubble.left.and.bubble.right.fill", "Chat & Modmail Unlocked", "Every account can now choose modern Chat and Modmail instead of being locked in." },
+    { "3.10.0", "speedometer", "Smoother & Steadier", "Faster scrolling with translation on, and a fix for a crash while reading comments." },
     { "3.5.0", "gearshape.fill", "Redesigned Settings", "A cleaner layout, plus search across every setting." },
     { "3.5.0", "person.crop.circle.fill", "Redesigned Profiles", "Immersive banners and a fresh look for user and subreddit profiles." },
     { "3.5.0", "rosette", "Badge Book", "See achievements and trophies right on a profile." },

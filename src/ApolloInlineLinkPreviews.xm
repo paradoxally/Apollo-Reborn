@@ -4352,6 +4352,7 @@ static id ApolloLPNativeLinkSpecWithBannedHintIfNeeded(id linkButtonNode, NSURL 
 //    shows up in the user's exported debug log with the guilty frame named,
 //    even if the process dies right after.
 #import <pthread.h>
+#import <os/lock.h>
 #import <dlfcn.h>
 
 // Remaining-stack floor below which a rich-card build is unsafe. The crash
@@ -4462,20 +4463,52 @@ static void ApolloLPStackGuardReport(const char *where, size_t used, size_t size
 // build, its stack frame is 80 bytes against the old probe's 144 — the bail
 // path is deliberately out of line, because inlining it cost every layout a
 // 208-byte frame. Please keep this rather than re-deleting it on the next sync;
-// if it ever shows up in a profile, raise kApolloLPMaxSpecDepth instead.
+// if it ever shows up in a profile, raise kApolloLPSpecDepthWatermark instead.
 //
 // It also answers the open question the crash alone cannot: if the SAME spec
 // instance appears twice in the traced window it is a genuine reference cycle;
 // if not, it is a tree accumulating a level per layout pass. The bail log says
 // which, and names the class chain that got there.
 
+// Depth ALONE must not truncate: this hook is necessarily app-wide (the 430-deep
+// chain is reached from ASTableView.heightForRow through a MarkdownNode, nowhere
+// near the link-preview subtree this file otherwise owns), so a pure depth
+// ceiling would also flatten any legitimately deep Texture tree elsewhere in the
+// app and render it as empty boxes. Depth is therefore only a cheap GATE: past
+// the watermark we additionally measure real remaining stack, and truncate just
+// when this thread is genuinely close to dying. A deep-but-harmless tree keeps
+// its exact %orig layout no matter how deep it goes.
+//
+// Numbers: the observed runaway costs ~2.4KB/cycle, so on main's 1008KB the
+// headroom floor trips near depth ~340 (death was 430) and on a 512KB Texture
+// background thread near ~130 — always before exhaustion, never on the <20
+// levels real content uses.
 enum {
-    kApolloLPMaxSpecDepth   = 64,  // real trees are <20 deep; 430 is pathological
-    kApolloLPSpecTraceSlots = 24,  // levels remembered for the diagnostic chain
+    kApolloLPSpecDepthWatermark = 32,  // real trees are <20 deep; below this, zero extra work
+    kApolloLPSpecTraceSlots     = 24,  // levels remembered for the diagnostic chain
 };
+
+// Must clear the deepest single frame we could still need (CFStringAppendFormatCore
+// alone reserves 5,456 bytes) plus the rest of the layout pass unwinding above us.
+static const size_t kApolloLPSpecBailHeadroom = 192 * 1024;
 
 static __thread int sApolloLPSpecDepth = 0;
 static __thread const void *sApolloLPSpecTrace[kApolloLPSpecTraceSlots];
+
+// Remaining stack for the CURRENT thread — not main-only, because Texture lays
+// out on background threads whose stacks are far smaller than main's 1008KB.
+// Returns SIZE_MAX when the bounds can't be trusted, so an unknown thread never
+// triggers a bail.
+static inline size_t ApolloLPRemainingStackBytes(void) {
+    pthread_t me = pthread_self();
+    uintptr_t top = (uintptr_t)pthread_get_stackaddr_np(me);
+    size_t size = pthread_get_stacksize_np(me);
+    uintptr_t sp = (uintptr_t)__builtin_frame_address(0);
+    if (size == 0 || sp >= top) return SIZE_MAX;
+    uintptr_t bottom = top - size;
+    if (sp <= bottom) return 0;
+    return (size_t)(sp - bottom);
+}
 
 // Decrement on EVERY exit path, including an ObjC exception unwinding out of
 // %orig — a leaked counter would pin this thread past the ceiling and bail every
@@ -4485,11 +4518,19 @@ struct ApolloLPSpecDepthScope {
     ~ApolloLPSpecDepthScope() { sApolloLPSpecDepth--; }
 };
 
-static void ApolloLPReportRunawaySpecNesting(id deepestSpec) {
+static void ApolloLPReportRunawaySpecNesting(id deepestSpec, size_t remaining) {
+    // Texture runs layout on several background threads at once, so the throttle
+    // timestamp is genuinely shared state — an unsynchronised read/write pair
+    // here is a data race, and racing threads could also both pass the 60s check
+    // and double-log. Claim the slot under a lock, then report outside it.
+    static os_unfair_lock sLastReportLock = OS_UNFAIR_LOCK_INIT;
     static CFAbsoluteTime sLastReport = 0;
     CFAbsoluteTime now = CFAbsoluteTimeGetCurrent();
-    if (sLastReport != 0 && now - sLastReport < 60.0) return;
-    sLastReport = now;
+    os_unfair_lock_lock(&sLastReportLock);
+    BOOL suppress = (sLastReport != 0 && now - sLastReport < 60.0);
+    if (!suppress) sLastReport = now;
+    os_unfair_lock_unlock(&sLastReportLock);
+    if (suppress) return;
 
     BOOL repeated = NO;
     for (int i = 0; i < kApolloLPSpecTraceSlots && !repeated; i++) {
@@ -4508,8 +4549,9 @@ static void ApolloLPReportRunawaySpecNesting(id deepestSpec) {
     }
 
     NSString *line = [NSString stringWithFormat:
-        @"[SpecDepthGuard] bailed at depth %d on %@ — %@; first %d levels: %@",
-        (int)kApolloLPMaxSpecDepth,
+        @"[SpecDepthGuard] bailed at depth %d, %luKB stack left, on %@ — %@; first %d levels: %@",
+        sApolloLPSpecDepth,
+        (unsigned long)(remaining / 1024),
         NSStringFromClass([deepestSpec class]),
         repeated ? @"REPEATED SPEC INSTANCE => reference cycle"
                  : @"no repeat in traced window => deep/accumulating tree",
@@ -4524,8 +4566,8 @@ static void ApolloLPReportRunawaySpecNesting(id deepestSpec) {
 // made EVERY stack layout pay a 208-byte frame instead of 80. Returns nil if
 // no ASLayout class is available, in which case the caller falls through to
 // %orig (no safe truncation is possible without it).
-static __attribute__((noinline)) id ApolloLPBailOutOfRunawaySpecNesting(id spec, CGSize size) {
-    ApolloLPReportRunawaySpecNesting(spec);
+static __attribute__((noinline)) id ApolloLPBailOutOfRunawaySpecNesting(id spec, CGSize size, size_t remaining) {
+    ApolloLPReportRunawaySpecNesting(spec, remaining);
     // A sublayout-less ASLayout stops the descent here, so the runaway subtree
     // measures as an empty box instead of exhausting the stack. Degraded
     // rendering beats a guaranteed crash.
@@ -4536,10 +4578,15 @@ static __attribute__((noinline)) id ApolloLPBailOutOfRunawaySpecNesting(id spec,
 
 %hook ASStackLayoutSpec
 - (id)calculateLayoutThatFits:(struct CDStruct_90e057aa)constrainedSize {
-    if (sApolloLPSpecDepth >= kApolloLPMaxSpecDepth) {
-        id bail = ApolloLPBailOutOfRunawaySpecNesting(self, constrainedSize.min);
-        if (bail) return bail;
-        return %orig;
+    if (sApolloLPSpecDepth >= kApolloLPSpecDepthWatermark) {
+        // Only now is the stack math worth doing — and only genuine exhaustion,
+        // not depth by itself, is allowed to truncate a legitimate layout.
+        size_t remaining = ApolloLPRemainingStackBytes();
+        if (remaining < kApolloLPSpecBailHeadroom) {
+            id bail = ApolloLPBailOutOfRunawaySpecNesting(self, constrainedSize.min, remaining);
+            if (bail) return bail;
+            return %orig;
+        }
     }
 
     if (sApolloLPSpecDepth < kApolloLPSpecTraceSlots) {

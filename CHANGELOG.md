@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.1] - 2026-07-31
+
+### Fixes
+
+- Fix a **launch hang and watchdog crash on sideloaded builds** — the login diagnostics rebuilt every archived Reddit account (and read the keychain) from the tweak's constructor, and again on every foreground, blocking Apollo's main thread while iOS was still timing the launch; those snapshots now run on a background queue after the app is up, with the first one held until Apollo has settled ([#761](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/761): @jordanearle)
+- Fix the **splash screen freezing on a slow or offline network** — Random, Random NSFW, and Trending fetched their subreddit lists synchronously and waited on the response; the lists are now prefetched and cached, and a cold or failed fetch falls straight through to the bundled list instead of stalling the launch ([#761](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/761): @jordanearle)
+- Fix the **Show/Hide Deleted Comments** shortcut missing from the comments **⋯** menu on Standard and pre-Liquid-Glass builds, which left **Passive** mode with no way to reveal a thread's deleted comments; the row is now appended to Apollo's classic action sheet too, mirroring its native row styling and height ([#761](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/761): @jordanearle)
+- Fix **AI Summaries** showing a stale summary or a spurious cancellation when you left and reopened a post quickly — a superseded request could deliver its last buffered text over its replacement's, or tear down the replacement's session; each request now owns its slot, so a cancelled predecessor can no longer touch it ([#761](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/761): @jordanearle)
+- Improve **feed, comment, and chat responsiveness** by caching the active account's username instead of unarchiving every stored account each time it is needed; the cache is dropped the moment you switch or add an account, so nothing observes the previous identity ([#761](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/761): @jordanearle)
+
 ## [v3.10.0] - 2026-07-30
 
 ### Features
@@ -895,6 +905,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.10.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.0...v1.15.11_3.10.1
 [v3.10.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.9.0...v1.15.11_3.10.0
 [v3.9.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.3...v1.15.11_3.9.0
 [v3.8.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.2...v1.15.11_3.8.3

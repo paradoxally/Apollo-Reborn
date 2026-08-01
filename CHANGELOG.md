@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.3] - 2026-08-02
+
+### Fixes
+
+- Fix **post flair on polls** — the poll composer ignored the flair options Apollo had already loaded and never sent `flair_id`/`flair_text` with the submission, so a poll could not carry a flair; you can now pick one in the composer and it goes out with the poll ([#780](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/780): @jordanearle)
+- Fix a **crash when acting on a banned user** from the moderation list on Standard (non-Liquid-Glass) builds — the crash-prone legacy action controller is replaced with a scoped action sheet that keeps Apollo's original **View Comment** and **Edit Ban** actions ([#780](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/780): @jordanearle)
+- Fix **immersive subreddit banners** drifting out of alignment whenever the search inset changed ([#780](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/780): @jordanearle)
+- Fix **in-place subreddit search** losing its state when an interactive swipe-back was completed or cancelled ([#780](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/780): @jordanearle)
+- Fix long **subreddit titles overlapping the translation globe** in the navigation bar — the title's cached width is now invalidated after the globe is merged in, so it truncates before the control instead of running underneath it ([#780](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/780): @jordanearle)
+- Improve the **Helios** Liquid Glass icon pack — redesigned Halo assets and higher contrast across the set, for clearer rendering under iOS 27's icon treatment ([#784](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/784): @IllIIllIllIllII)
+
 ## [v3.10.2] - 2026-08-01
 
 ### Fixes
@@ -911,6 +922,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.10.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.2...v1.15.11_3.10.3
 [v3.10.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.1...v1.15.11_3.10.2
 [v3.10.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.0...v1.15.11_3.10.1
 [v3.10.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.9.0...v1.15.11_3.10.0

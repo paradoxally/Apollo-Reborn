@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.2] - 2026-08-01
+
+### Fixes
+
+- Fix repeated **"Enter iPhone Passcode for Apollo"** prompts — the background login-recovery and account-diagnostic keychain sweeps asked for the secret data of *every* generic-password item visible to Apollo, so a single unrelated item protected by Face ID or a passcode could raise a system authentication prompt; because those sweeps run again on each lifecycle event, approving one prompt immediately brought up the next. Both sweeps, and the **Backup Settings** export, now skip protected items silently instead of authenticating — ordinary Apollo account records are unaffected ([#777](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/777): @jordanearle)
+
 ## [v3.10.1] - 2026-07-31
 
 ### Fixes
@@ -905,6 +911,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.10.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.1...v1.15.11_3.10.2
 [v3.10.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.0...v1.15.11_3.10.1
 [v3.10.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.9.0...v1.15.11_3.10.0
 [v3.9.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.8.3...v1.15.11_3.9.0

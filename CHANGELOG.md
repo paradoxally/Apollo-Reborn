@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.10.4] - 2026-08-05
+
+### Features
+
+- Add **pull to refresh** to the Search tab's subreddit discovery — pull down while the search field is empty to fetch and resample the configured trending source, instead of waiting for the list to turn over on its own ([#788](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/788): @JeffreyCA)
+  - Successful source responses are now persisted and served immediately on the next launch while refreshing in the background, so a cold start no longer falls back to Apollo's five-item bundled list
+  - **Random NSFW Subreddit** moves out of the trending section into its own row beneath **Random Subreddit**, still controlled by **Settings > Apollo Reborn > Subreddits > Show RandNSFW in Search**
+- Add two Liquid Glass app icons — **Aloppo** and **Pixels** — selectable from **Settings > Apollo Reborn > Interface > App Icon** ([#804](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/804): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix **hosted Gallery videos playing silently** — Gallery preferred Reddit's re-encoded preview clip, which is stripped of audio, over the host's original file, so Redgifs and Streamable posts had nothing for the mute control to unmute and many were misfiled as silent GIFs; the original combined MP4 is now resolved when a Gallery page becomes current and swapped into the player, with Reddit's preview kept as a fallback when the host can't be reached ([#781](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/781): @jordanearle)
+- Fix **inline videos in search results freezing** or turning grey after opening a post's comments or the fullscreen player and coming back — Apollo moves a single shared player layer between the cell, the comments header, and the fullscreen viewer, and reclaims it on the way back, but the search results controller never ran that reclaim, so the layer never returned to the cell. This is an original Apollo bug that was never fixed ([#789](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/789): @JeffreyCA)
+  - Interactive back swipes defer the reclaim until the gesture commits, so a cancelled swipe no longer steals the layer from the still-visible comments header
+  - Muting a recovered search video no longer pauses playback outright — it continues muted, as it does everywhere else
+- Fix the **post title being cut off past two lines** in the Media tab composer — the title row was pinned to a hardcoded height, so a longer title scrolled under the **Text (optional)** strip and took the caret with it; the row is now measured from the text itself and grows and shrinks as you type, matching the Text and Link tabs ([#795](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/795): @icpryde)
+- Fix the **Text tab's body editor submitting the whole post** — its top-right **Post** button published immediately once a title was set, so you could post before choosing a flair; it is now the same **Done** control the Media tab's editor uses, which saves the text and returns you to the form ([#795](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/795): @icpryde)
+- Fix the **trending subreddit limit** being applied inconsistently — a numeric limit now samples that many entries without duplicates, and an empty limit keeps every entry in source order ([#788](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/788): @JeffreyCA)
+- Improve the **Apollo Classic** and **Helios** Liquid Glass icons for iOS 27's icon treatment ([#800](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/800): @IllIIllIllIllII)
+- Restore the original **Jryng** Liquid Glass icon artwork ([#819](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/819): @IllIIllIllIllII)
+
 ## [v3.10.3] - 2026-08-02
 
 ### Fixes
@@ -922,6 +943,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.10.4]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.3...v1.15.11_3.10.4
 [v3.10.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.2...v1.15.11_3.10.3
 [v3.10.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.1...v1.15.11_3.10.2
 [v3.10.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.0...v1.15.11_3.10.1

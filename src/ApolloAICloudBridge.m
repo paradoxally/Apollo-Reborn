@@ -757,7 +757,17 @@ static BOOL CloudMessageSuggestsUnavailableModel(NSString *message) {
 // and mislabel a spent quota as a bad API key.
 static BOOL CloudMessageSuggestsQuotaExhausted(NSString *message) {
     if (message.length == 0) return NO;
-    for (NSString *needle in @[@"quota", @"rate limit", @"rate-limit",
+    // "quota" alone is too loose to stand on its own here: on the status-less
+    // path this is the last classifier before the generic service error, and
+    // providers use the word for configuration problems too (Google's "quota
+    // project" auth failures). Require an exhaustion signal alongside it.
+    if ([message localizedCaseInsensitiveContainsString:@"quota"]) {
+        for (NSString *signal in @[@"exceeded", @"exhausted", @"insufficient", @"limit"]) {
+            if ([message localizedCaseInsensitiveContainsString:signal]) return YES;
+        }
+    }
+    // These phrases are unambiguous on their own.
+    for (NSString *needle in @[@"rate limit", @"rate-limit",
                                 @"too many requests", @"limit reached"]) {
         if ([message localizedCaseInsensitiveContainsString:needle]) return YES;
     }

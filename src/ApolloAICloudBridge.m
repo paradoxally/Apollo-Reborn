@@ -762,7 +762,8 @@ static BOOL CloudMessageSuggestsQuotaExhausted(NSString *message) {
     // providers use the word for configuration problems too (Google's "quota
     // project" auth failures). Require an exhaustion signal alongside it.
     if ([message localizedCaseInsensitiveContainsString:@"quota"]) {
-        for (NSString *signal in @[@"exceeded", @"exhausted", @"insufficient", @"limit"]) {
+        for (NSString *signal in @[@"exceeded", @"exhausted", @"insufficient", @"limit",
+                                    @"reached", @"out of", @"remaining", @"depleted"]) {
             if ([message localizedCaseInsensitiveContainsString:signal]) return YES;
         }
     }

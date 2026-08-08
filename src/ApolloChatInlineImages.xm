@@ -71,8 +71,11 @@ static BOOL ApolloChatIsRedditUploadedMediaHost(NSString *host) {
 
 static BOOL ApolloChatIsImageURL(NSURL *url) {
     if (![url isKindOfClass:[NSURL class]]) return NO;
+    // HTTPS only. Apollo ships NSAllowsArbitraryLoads, so ATS does NOT stop a
+    // plaintext load — accepting http here would inline-fetch a chat image, and
+    // its URL, in cleartext. Every host below serves https.
     NSString *scheme = url.scheme.lowercaseString ?: @"";
-    if (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"]) return NO;
+    if (![scheme isEqualToString:@"https"]) return NO;
     NSString *host = url.host.lowercaseString ?: @"";
     NSString *path = url.path.lowercaseString ?: @"";
     NSString *ext = path.pathExtension;

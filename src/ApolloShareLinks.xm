@@ -648,7 +648,20 @@ static void ApolloPumpShareURLResolveTasks(void) {
         }
     }
     for (ShareUrlTask *task in tasksToStart) {
-        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:task.originalURL]
+        // ShareLinkRegexPattern accepts a protocol-relative "//reddit.com/..."
+        // form, which parses into a scheme-less NSURL, and a malformed string
+        // parses to nil — neither can produce a usable request, so resolve the
+        // task instead of handing the transport an unusable one.
+        NSURL *shareURL = [NSURL URLWithString:task.originalURL];
+        NSString *shareScheme = shareURL.scheme.lowercaseString;
+        if (!shareURL || shareURL.host.length == 0 ||
+            (![shareScheme isEqualToString:@"https"] && ![shareScheme isEqualToString:@"http"])) {
+            ApolloLog(@"[ShareLinks] skipping unresolvable share URL (scheme=%@ host=%@)",
+                      shareScheme ?: @"(none)", shareURL.host ?: @"(none)");
+            CompleteShareURLResolveTask(task, task.cacheKey, task.originalURL, NO);
+            continue;
+        }
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:shareURL
                                                                cachePolicy:NSURLRequestUseProtocolCachePolicy
                                                            timeoutInterval:10.0];
         NSURLSessionDataTask *getTask = [shareURLResolverSession dataTaskWithRequest:request];

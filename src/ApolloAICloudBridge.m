@@ -761,9 +761,14 @@ static BOOL CloudMessageSuggestsQuotaExhausted(NSString *message) {
     // path this is the last classifier before the generic service error, and
     // providers use the word for configuration problems too (Google's "quota
     // project" auth failures). Require an exhaustion signal alongside it.
+    // "out of" only counts glued to the noun: "out of quota" is exhaustion,
+    // "quota project out of billing scope" is a configuration error.
+    if ([message localizedCaseInsensitiveContainsString:@"out of quota"]) return YES;
     if ([message localizedCaseInsensitiveContainsString:@"quota"]) {
-        for (NSString *signal in @[@"exceeded", @"exhausted", @"insufficient", @"limit",
-                                    @"reached", @"out of", @"remaining", @"depleted"]) {
+        // Deliberately excludes "remaining" — it reports capacity LEFT
+        // ("500 requests remaining in your quota"), the opposite of exhaustion.
+        for (NSString *signal in @[@"exceeded", @"exhausted", @"insufficient",
+                                    @"limit", @"reached", @"depleted"]) {
             if ([message localizedCaseInsensitiveContainsString:signal]) return YES;
         }
     }

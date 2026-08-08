@@ -749,6 +749,21 @@ static BOOL CloudMessageSuggestsUnavailableModel(NSString *message) {
     return [message localizedCaseInsensitiveContainsString:@"no endpoints found"];
 }
 
+// Quota exhaustion carries no HTTP status on the mid-stream SSE error path:
+// the chunk's "code" is a STRING there ("insufficient_quota"), so integerValue
+// hands this function a 0 and none of the status branches below can fire. The
+// message then reaches the auth heuristic, whose "billing"/"credits" needles
+// match OpenAI's quota text verbatim ("check your plan and billing details")
+// and mislabel a spent quota as a bad API key.
+static BOOL CloudMessageSuggestsQuotaExhausted(NSString *message) {
+    if (message.length == 0) return NO;
+    for (NSString *needle in @[@"quota", @"rate limit", @"rate-limit",
+                                @"too many requests", @"limit reached"]) {
+        if ([message localizedCaseInsensitiveContainsString:needle]) return YES;
+    }
+    return NO;
+}
+
 static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSString *provider) {
     // A provider's status is more authoritative than prose in its body.
     // Quota responses commonly mention "billing" or "credits", which the
@@ -764,6 +779,8 @@ static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSStr
     if (CloudMessageSuggestsUnavailableModel(message)) {
         return kCloudErrorModelUnavailable;
     }
+    // Must stay ahead of the auth heuristic — see CloudMessageSuggestsQuotaExhausted.
+    if (CloudMessageSuggestsQuotaExhausted(message)) return kCloudErrorQuota;
     if (CloudMessageSuggestsAuthProblem(message)) return kCloudErrorAuth;
     return kCloudErrorService;
 }

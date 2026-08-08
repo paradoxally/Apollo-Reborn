@@ -4,6 +4,63 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.11.0] - 2026-08-08
+
+### Features
+
+- Add a **feed gallery carousel** — a Reddit gallery in a large feed card is now a horizontally paging carousel with a page control and an "n/N" counter, instead of a fixed two/three-tile mosaic you had to open the post to get past ([#805](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/805): @jordanearle)
+  - The card takes the gallery's median image aspect (clamped to 16:9 … 5:4) rather than hard-cropping every gallery to one ratio, so a 4:3 gallery renders its full composition
+  - Tapping a page opens the fullscreen viewer on **that** image, zooming from the page you touched — previously any page past the first animated from a zero rect, showing a black frame before the image popped in
+  - Gesture arbitration keeps the feed native: a drag is only claimed past a horizontal-velocity floor with clear horizontal dominance, and the interactive-pop edge is carved out (RTL-aware)
+- Add **swipe up for comments** — swipe up on a feed card to open its comments pane directly ([#805](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/805): @jordanearle)
+  - Both browsing features are default-on with toggles under **Settings > Apollo Reborn > Media > Browsing**
+- Add **local-only crash reporting**, so a crash can finally be reported with something actionable attached ([#824](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/824): @jordanearle)
+  - Only KSCrash's **recording** modules are compiled — the binary contains no transmission path, and nothing leaves the device automatically
+  - After a crash, the next launch offers **Review & Report / Not Now / Delete Report**; the review screen shows the exact sanitized JSON before anything is shared, and reports otherwise sit under **Settings > Apollo Reborn > Privacy > Crash Reports**
+  - The outgoing report is built from an **allowlist**, never a blocklist: stacks, binary UUIDs, device/OS/app versions and coarse enumerated actions, with free-form strings redacted. No usernames, subreddit names, content, or persistent identifiers
+  - Apollo's embedded **Bugsnag is now hard-disabled** rather than firewalled — it previously still installed crash handlers and maintained device UUIDs even with its upload domains blocked
+- Add **multireddit editing** from the Subreddits list — rename a multireddit, give it a description, or set a custom icon, none of which Apollo could do before ([#837](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/837): @icpryde)
+  - Saving PUTs Reddit's own model shape, so the multireddit's **URL slug is preserved** — renaming doesn't break links or other clients
+  - A description replaces the comma-joined subreddit list in the row's subtitle; clear it and the list comes back
+  - New **Hide Multireddit Descriptions** toggle under **Settings > Apollo Reborn > Subreddits**
+- Add **vote breakdowns** — tap a post's **% upvoted** value to see estimated upvote and downvote totals, reconstructed from the score and ratio ([#802](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/802): @jordanearle)
+  - The estimate destabilises near 50%, so totals are only shown at 60% or above, and calculated figures are clearly distinguished from Reddit-reported ones
+  - Hold the score on one of your **own** comments to fetch Reddit's author-only Comment Insights, which reports a real upvote count and a more precise ratio
+- Add **Gallery View support for multireddits**, so a multireddit browses as a media grid like a single subreddit already could ([#799](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/799): @icpryde)
+- Add **View Banner** and **View Icon** to the subreddit header's menu, for opening a subreddit's artwork full-size ([#845](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/845): @icpryde)
+- Add a progressive **Blur** mode to Header Style, and rename the setting from Scroll Edge Effect ([#843](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/843): @jordanearle)
+- Add **visionOS gaze hover and multiwindow** support ([#759](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/759): @rebelancap)
+- Add an option to use **Apple's Translate sheet** for the Translate button, under **Settings > Apollo Reborn > General** ([#812](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/812): @DeltAndy123)
+- Add the **Original Apollo** and **Halo** icons plus Liquid Glass variants to the icon picker ([#842](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/842): @IllIIllIllIllII)
+- Surface **reddit.com web sign-in** and the **Theme Manager** in Reborn settings, instead of leaving them unreachable ([#855](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/855): @jordanearle)
+- Improve **cloud AI summaries and model selection** — provider-maintained default models, a live model browser for OpenRouter and Gemini, and a clearer error taxonomy that separates an unavailable model from an exhausted quota ([#778](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/778): @jordanearle)
+- Add a **live model browser for OpenAI** to match the one OpenRouter and Gemini received, filtered to the chat-capable models your account can actually use — the full catalog also lists embeddings, speech and image models that the summariser cannot call (#34: @paradoxally)
+
+### Fixes
+
+- Fix the **out-of-memory crash wave** — inline-video poster memory is now bounded, with memory instrumentation added and a separate Go-to-user crash fixed ([#823](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/823): @jordanearle)
+- Fix a **stack-overflow crash wave** caused by table geometry queries nested inside row-height measurement ([#844](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/844): @icpryde)
+- Fix an **account switcher long-press crash** from a garbage Swift ivar read during the profile walk ([#829](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/829): @icpryde)
+- Fix **native video comment crashes and playback** ([#796](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/796): @icpryde)
+- Fix **just-posted comments rendering blank** — no username or flair, a score of 0, and a 56.6-year timestamp ([#808](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/808): @icpryde)
+- Fix **link preview images not loading in feeds**, and bot-walled sites staying stuck in the compact layout ([#807](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/807): @icpryde)
+- Fix **post bodies never translating** on media-forward thread layouts ([#793](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/793): @icpryde)
+- Fix a **subreddit page staying stuck below the top** after pull-to-refresh ([#846](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/846): @icpryde)
+- Fix **moderator section taps opening the wrong subreddit** when a moderated sub is hidden ([#835](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/835): @icpryde)
+- Fix **avatar and subreddit-header glitches** through stricter identity checks, banner lifecycle handling and fetch scheduling ([#849](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/849): @jordanearle)
+- Fix six **theming and profile bugs** in one pass ([#853](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/853): @jordanearle)
+- Fix **custom theme and profile UI regressions** ([#860](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/860): @JeffreyCA)
+- Fix an **iOS 27 Gallery menu dismissal crash** ([#767](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/767): @jordanearle)
+- Fix **Gallery View ignoring Apollo's NSFW blur preference** ([#769](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/769): @jordanearle)
+- Fix **Safari-to-Apollo link handoff** being unreliable ([#786](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/786): @jordanearle)
+- Fix **iOS 27 lists stuck under the tab bar** on both IPA variants, and a hide-bars stutter ([#821](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/821): @jordanearle)
+- Fix a **spent provider quota being reported as a bad API key** in AI summaries — a mid-stream error carries a text code rather than an HTTP status, so classification fell through to the auth heuristic, whose "billing" match is exactly what a quota message says; the provider's own error slug is now read directly (#34: @paradoxally)
+- Fix a **failed on-device fallback masking the cloud error** — when a cloud summary failed and the on-device model was unavailable, an actionable message like "choose a current model" was replaced by "the on-device model is still downloading", which is a dead end on a device that cannot run it at all (#34: @paradoxally)
+- Fix **inline chat images and share links being fetched over plaintext HTTP** — Apollo permits arbitrary loads, so neither was blocked by the system; both now require HTTPS, with share links upgraded rather than dropped (#34: @paradoxally)
+- Improve **Objective-C networking and media handling** ([#728](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/728): @ryannair05)
+- Move the **Icon-Only Tab Bar** setting under **Interface**, where the rest of the tab-bar options live ([#867](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/867): @JeffreyCA)
+
+
 ## [v3.10.4] - 2026-08-05
 
 ### Features
@@ -943,6 +1000,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.11.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.4...v1.15.11_3.11.0
 [v3.10.4]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.3...v1.15.11_3.10.4
 [v3.10.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.2...v1.15.11_3.10.3
 [v3.10.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.1...v1.15.11_3.10.2

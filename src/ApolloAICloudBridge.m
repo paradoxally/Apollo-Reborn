@@ -1023,12 +1023,18 @@ static NSString *CloudVisibleTextFromRaw(NSString *raw) {
         id rawCode = [chunkError isKindOfClass:[NSDictionary class]]
             ? ((NSDictionary *)chunkError)[@"code"] : nil;
         NSInteger mapped = 0;
+        NSInteger providerCode = 0;
         if ([rawCode isKindOfClass:[NSString class]]) {
+            // A string carries EITHER a slug ("insufficient_quota") or a
+            // stringified status ("429"). Try the slug first, then fall back to
+            // integerValue so the numeric form keeps reaching the status
+            // branches — reading only NSNumber here would strand it on prose.
             mapped = CloudMappedErrorCodeFromSlug(rawCode);
+            if (mapped == 0) providerCode = [(NSString *)rawCode integerValue];
+        } else if ([rawCode isKindOfClass:[NSNumber class]]) {
+            providerCode = [rawCode integerValue];
         }
         if (mapped == 0) {
-            NSInteger providerCode = [rawCode isKindOfClass:[NSNumber class]]
-                ? [rawCode integerValue] : 0;
             mapped = CloudMappedErrorCode(providerCode, [message description], state.provider);
         }
         [self finishState:state final:nil errorCode:mapped message:[message description]];

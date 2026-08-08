@@ -33,6 +33,9 @@
 #import "ApolloWebSessionStore.h"
 #import "ApolloWebSessionLoginViewController.h"
 #import "ApolloAccountCredentials.h"
+#import "crash/ApolloCrashManager.h"
+#import "crash/ApolloCrashContext.h"
+#import "crash/ApolloCrashPromptCoordinator.h"
 
 // MARK: - Sideload Fixes
 
@@ -1018,7 +1021,10 @@ static BOOL ApolloExistingKeychainItemHasSameValue(NSDictionary *strippedQuery) 
 
     CFTypeRef existing = NULL;
     OSStatus status = ApolloCopyExistingKeychainItem(dataQuery, &existing);
-    if (status != errSecSuccess || !existing) return NO;
+    if (status != errSecSuccess || !existing) {
+        if (existing) CFRelease(existing);
+        return NO;
+    }
     // A query with kSecReturnAttributes/Ref would return a dictionary/ref instead of
     // bare data here -- guard so that shape isn't mistaken for a value mismatch crash.
     id existingValue = (__bridge_transfer id)existing;
@@ -1420,10 +1426,24 @@ static int uname_replacement(struct utsname *buf) {
     });
 
     NSString *machine = @(buf->machine);
+#if APOLLO_SIM_BUILD
+    // The simulator's uname reports the host arch ("arm64"), so Apollo's
+    // device mapper sees "unknown" and hides Pixel Pals. Substitute the
+    // simulated device's identifier so the same remap table below applies.
+    if (![machine hasPrefix:@"iPhone"]) {
+        const char *simModel = getenv("SIMULATOR_MODEL_IDENTIFIER");
+        if (simModel) machine = @(simModel);
+    }
+#endif
     NSString *remap = modelRemap[machine];
     if (remap) {
         strlcpy(buf->machine, remap.UTF8String, sizeof(buf->machine));
     }
+#if APOLLO_SIM_BUILD
+    else if (![@(buf->machine) isEqualToString:machine]) {
+        strlcpy(buf->machine, machine.UTF8String, sizeof(buf->machine));
+    }
+#endif
     return ret;
 }
 
@@ -1448,8 +1468,16 @@ static NSArray *const blockedUrls = @[
     @"apollogur.download/api/goodbye_wallpaper"
 ];
 
-// Cache storing subreddit list source URLs -> response body
-static NSCache<NSString *, NSString *> *subredditListCache;
+@interface ApolloSubredditSourceCacheEntry : NSObject
+@property (nonatomic, copy) NSString *content;
+@property (nonatomic, copy) NSArray<NSString *> *subreddits;
+@end
+
+@implementation ApolloSubredditSourceCacheEntry
+@end
+
+// Cache storing subreddit list source URLs -> parsed source data.
+static NSCache<NSString *, ApolloSubredditSourceCacheEntry *> *subredditListCache;
 // Last successful source bodies survive process restarts so Apollo's one-shot
 // SearchViewController load never has to race the launch-time network refresh.
 static NSMutableDictionary<NSString *, NSString *> *subredditListPersistentCache;
@@ -1467,11 +1495,30 @@ static NSMutableDictionary<NSString *, NSMutableArray *> *subredditListForcedFet
 
 typedef void (^ApolloSubredditSourceRefreshCompletion)(NSString *content, NSError *error);
 
+static const NSUInteger kApolloSubredditSourceMaximumBytes = 1024 * 1024;
+
 static NSArray<NSString *> *ApolloSubredditListLines(NSString *content) {
-    if (content.length == 0) return @[];
-    NSArray<NSString *> *lines =
-        [content componentsSeparatedByCharactersInSet:[NSCharacterSet newlineCharacterSet]];
-    return [lines filteredArrayUsingPredicate:[NSPredicate predicateWithFormat:@"length > 0"]];
+    if (![content isKindOfClass:[NSString class]] || content.length == 0) return @[];
+    NSMutableArray<NSString *> *lines = [NSMutableArray array];
+    NSCharacterSet *whitespace = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+    [content enumerateLinesUsingBlock:^(NSString *line, __unused BOOL *stop) {
+        NSString *trimmed = [line stringByTrimmingCharactersInSet:whitespace];
+        if (trimmed.length > 0) [lines addObject:trimmed];
+    }];
+    return lines;
+}
+
+static NSArray<NSString *> *ApolloConfiguredSubredditSources(void) {
+    NSMutableArray<NSString *> *sources = [NSMutableArray arrayWithCapacity:3];
+    for (id candidate in @[sRandNsfwSubredditsSource ?: @"",
+                           sRandomSubredditsSource ?: @"",
+                           sTrendingSubredditsSource ?: @""]) {
+        if ([candidate isKindOfClass:[NSString class]] &&
+            [candidate length] > 0 && ![sources containsObject:candidate]) {
+            [sources addObject:candidate];
+        }
+    }
+    return sources;
 }
 
 static NSString *ApolloSubredditSourceCachePath(void) {
@@ -1483,28 +1530,10 @@ static NSString *ApolloSubredditSourceCachePath(void) {
     return [caches stringByAppendingPathComponent:@"ApolloRebornSubredditSources.plist"];
 }
 
-static void ApolloLoadPersistedSubredditSources(void) {
-    NSDictionary *disk =
-        [NSDictionary dictionaryWithContentsOfFile:ApolloSubredditSourceCachePath()];
-    subredditListPersistentCache = [NSMutableDictionary dictionary];
-    if (![disk isKindOfClass:[NSDictionary class]]) return;
-
-    [disk enumerateKeysAndObjectsUsingBlock:^(id key, id value, __unused BOOL *stop) {
-        if (![key isKindOfClass:[NSString class]] ||
-            ![value isKindOfClass:[NSString class]] ||
-            ApolloSubredditListLines((NSString *)value).count == 0) {
-            return;
-        }
-        subredditListPersistentCache[key] = value;
-        [subredditListCache setObject:value forKey:key];
-    }];
-    ApolloLog(@"[RandomSources] Loaded %lu persisted source(s)",
-              (unsigned long)subredditListPersistentCache.count);
-}
-
 // Called only on ApolloSubredditSourceQueue().
 static void ApolloPersistSubredditSource(NSString *key, NSString *content) {
-    if (key.length == 0 || content.length == 0) return;
+    if (key.length == 0 || content.length == 0 ||
+        ![ApolloConfiguredSubredditSources() containsObject:key]) return;
     subredditListPersistentCache[key] = content;
     if (![subredditListPersistentCache writeToFile:ApolloSubredditSourceCachePath()
                                         atomically:YES]) {
@@ -1557,7 +1586,9 @@ static void ApolloRefreshSubredditListSourceAsync(
 
         NSURL *url = [NSURL URLWithString:capturedSource];
         NSString *key = url.absoluteString;
-        if (!url || key.length == 0 || url.scheme.length == 0 || url.host.length == 0) {
+        NSString *scheme = url.scheme.lowercaseString;
+        if (!url || key.length == 0 || url.host.length == 0 ||
+            (![scheme isEqualToString:@"http"] && ![scheme isEqualToString:@"https"])) {
             if (completion) {
                 completion(nil, ApolloSubredditSourceError(
                     NSURLErrorBadURL, @"The subreddit source URL is invalid."));
@@ -1565,9 +1596,9 @@ static void ApolloRefreshSubredditListSourceAsync(
             return;
         }
 
-        NSString *cached = [subredditListCache objectForKey:key];
-        if (!forceRefresh && cached.length > 0) {
-            if (completion) completion(cached, nil);
+        ApolloSubredditSourceCacheEntry *cached = [subredditListCache objectForKey:key];
+        if (!forceRefresh && cached.content.length > 0) {
+            if (completion) completion(cached.content, nil);
             return;
         }
 
@@ -1599,60 +1630,107 @@ static void ApolloRefreshSubredditListSourceAsync(
         NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url
                                                                cachePolicy:cachePolicy
                                                            timeoutInterval:8.0];
-        [[[NSURLSession sharedSession] dataTaskWithRequest:request
-                                        completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        ApolloStartBoundedDataRequest(
+            request,
+            kApolloSubredditSourceMaximumBytes,
+            nil,
+            ApolloSubredditSourceQueue(),
+            ^(NSData *data, NSHTTPURLResponse *http, NSError *error) {
             NSString *content = data.length > 0
                 ? [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding]
                 : nil;
-            NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]]
-                ? (NSHTTPURLResponse *)response
+            NSArray<NSString *> *subreddits = !error
+                ? ApolloSubredditListLines(content)
+                : @[];
+            NSError *resultError = error;
+            if (!error && subreddits.count > 0) {
+                ApolloSubredditSourceCacheEntry *entry = [ApolloSubredditSourceCacheEntry new];
+                entry.content = content;
+                entry.subreddits = subreddits;
+                [subredditListCache setObject:entry forKey:key];
+                ApolloPersistSubredditSource(key, content);
+                ApolloLog(@"[RandomSources] Refreshed %@ (%lu valid entries)",
+                          key, (unsigned long)subreddits.count);
+            } else {
+                if (!resultError) {
+                    resultError = ApolloSubredditSourceError(
+                        NSURLErrorBadServerResponse,
+                        @"The source returned no valid subreddit entries.");
+                }
+                ApolloLog(@"[RandomSources] Refresh failed for %@: HTTP %ld bytes=%lu error=%@",
+                          key, (long)http.statusCode, (unsigned long)data.length,
+                          resultError.localizedDescription ?: @"invalid/empty response");
+            }
+
+            NSArray *completions = [subredditListFetchCompletions[key] copy] ?: @[];
+            NSArray *forcedCompletions =
+                [subredditListForcedFetchCompletions[key] copy] ?: @[];
+            [subredditListFetchCompletions removeObjectForKey:key];
+            [subredditListForcedFetchCompletions removeObjectForKey:key];
+            [subredditListFetchBypassesCache removeObjectForKey:key];
+            [subredditListFetchesInFlight removeObject:key];
+            for (ApolloSubredditSourceRefreshCompletion waiter in completions) {
+                waiter(resultError ? nil : content, resultError);
+            }
+
+            if (forcedCompletions.count > 0) {
+                ApolloRefreshSubredditListSourceAsync(
+                    key,
+                    YES,
+                    NSURLRequestReloadIgnoringLocalCacheData,
+                    ^(NSString *forcedContent, NSError *forcedError) {
+                        for (ApolloSubredditSourceRefreshCompletion waiter
+                                in forcedCompletions) {
+                            waiter(forcedContent, forcedError);
+                        }
+                    });
+            }
+        });
+    });
+}
+
+// Disk parsing, cache pruning, and any corrective write
+// all stay off the launch thread. Until this utility-queue seed completes, the
+// bundle/request hooks consult NSCache only and immediately use their bundled
+// or native fallback; they never reach through to the plist synchronously.
+static void ApolloSeedSubredditSourceMemoryCacheAsync(void) {
+    NSArray<NSString *> *configuredSources = [ApolloConfiguredSubredditSources() copy];
+    dispatch_async(ApolloSubredditSourceQueue(), ^{
+        NSDictionary *loaded =
+            [NSDictionary dictionaryWithContentsOfFile:ApolloSubredditSourceCachePath()];
+        NSDictionary *disk = [loaded isKindOfClass:[NSDictionary class]] ? loaded : @{};
+        NSMutableDictionary<NSString *, NSString *> *pruned = [NSMutableDictionary dictionary];
+        for (NSString *source in configuredSources) {
+            NSString *content = [disk[source] isKindOfClass:[NSString class]]
+                ? disk[source]
                 : nil;
-            dispatch_async(ApolloSubredditSourceQueue(), ^{
-                NSError *resultError = error;
-                if (!error && http.statusCode == 200 &&
-                    ApolloSubredditListLines(content).count > 0) {
-                    [subredditListCache setObject:content forKey:key];
-                    ApolloPersistSubredditSource(key, content);
-                    ApolloLog(@"[RandomSources] Refreshed %@", key);
-                } else {
-                    if (!resultError) {
-                        NSString *reason = http && http.statusCode != 200
-                            ? [NSString stringWithFormat:@"The source returned HTTP %ld.",
-                                                               (long)http.statusCode]
-                            : @"The source returned no valid subreddit entries.";
-                        resultError = ApolloSubredditSourceError(
-                            NSURLErrorBadServerResponse, reason);
-                    }
-                    ApolloLog(@"[RandomSources] Refresh failed for %@: HTTP %ld error=%@",
-                              key, (long)http.statusCode,
-                              resultError.localizedDescription ?: @"invalid/empty response");
-                }
+            if ([content lengthOfBytesUsingEncoding:NSUTF8StringEncoding] >
+                kApolloSubredditSourceMaximumBytes) continue;
+            NSArray<NSString *> *subreddits = ApolloSubredditListLines(content);
+            if (subreddits.count == 0) continue;
+            pruned[source] = content;
+            ApolloSubredditSourceCacheEntry *entry = [ApolloSubredditSourceCacheEntry new];
+            entry.content = content;
+            entry.subreddits = subreddits;
+            [subredditListCache setObject:entry forKey:source];
+        }
+        subredditListPersistentCache = pruned;
+        if (![pruned isEqualToDictionary:disk] &&
+            ![pruned writeToFile:ApolloSubredditSourceCachePath() atomically:YES]) {
+            ApolloLog(@"[RandomSources] Failed to prune persisted source cache");
+        }
+        ApolloLog(@"[RandomSources] Loaded %lu persisted source(s) off launch thread",
+                  (unsigned long)pruned.count);
 
-                NSArray *completions = [subredditListFetchCompletions[key] copy] ?: @[];
-                NSArray *forcedCompletions =
-                    [subredditListForcedFetchCompletions[key] copy] ?: @[];
-                [subredditListFetchCompletions removeObjectForKey:key];
-                [subredditListForcedFetchCompletions removeObjectForKey:key];
-                [subredditListFetchBypassesCache removeObjectForKey:key];
-                [subredditListFetchesInFlight removeObject:key];
-                for (ApolloSubredditSourceRefreshCompletion waiter in completions) {
-                    waiter(resultError ? nil : content, resultError);
-                }
-
-                if (forcedCompletions.count > 0) {
-                    ApolloRefreshSubredditListSourceAsync(
-                        key,
-                        YES,
-                        NSURLRequestReloadIgnoringLocalCacheData,
-                        ^(NSString *forcedContent, NSError *forcedError) {
-                            for (ApolloSubredditSourceRefreshCompletion waiter
-                                    in forcedCompletions) {
-                                waiter(forcedContent, forcedError);
-                            }
-                        });
-                }
-            });
-        }] resume];
+        // Queue refreshes after seeding so a request hook that fires during a
+        // cold launch can use the newly loaded cache before network work starts.
+        for (NSString *source in configuredSources) {
+            ApolloRefreshSubredditListSourceAsync(
+                source,
+                YES,
+                NSURLRequestUseProtocolCachePolicy,
+                nil);
+        }
     });
 }
 
@@ -1713,10 +1791,17 @@ void ApolloRefreshTrendingSubreddits(
         YES,
         NSURLRequestReloadIgnoringLocalCacheData,
         ^(NSString *content, NSError *error) {
-            NSArray<NSString *> *sample =
-                error ? nil
-                      : ApolloSampleTrendingSubreddits(
-                            ApolloSubredditListLines(content), limit);
+            NSString *key = [NSURL URLWithString:source].absoluteString;
+            ApolloSubredditSourceCacheEntry *entry = key.length > 0
+                ? [subredditListCache objectForKey:key]
+                : nil;
+            NSArray<NSString *> *subreddits = entry.subreddits;
+            if (!error && subreddits.count == 0) {
+                subreddits = ApolloSubredditListLines(content);
+            }
+            NSArray<NSString *> *sample = error
+                ? nil
+                : ApolloSampleTrendingSubreddits(subreddits, limit);
             dispatch_async(dispatch_get_main_queue(), ^{
                 if (completion) completion(sample, error);
             });
@@ -1911,6 +1996,24 @@ static const char kARCompletion = '\0';
     return customUA;
 }
 
+// #785: "Go to user" with a trailing space after the username crashes. Apollo
+// interpolates the raw search text into "user/<name>/about.json", and the
+// malformed request's response reaches +[RDKObjectBuilder objectFromJSON:] as a
+// plain NSString, which traps on `json[@"kind"]` (unrecognized selector). Trim
+// whitespace/newlines so the request targets the user the person actually typed.
+- (id)userWithUsername:(NSString *)username completion:(id)completion {
+    if ([username isKindOfClass:[NSString class]]) {
+        NSString *trimmed = [username stringByTrimmingCharactersInSet:
+                             [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (trimmed.length > 0 && ![trimmed isEqualToString:username]) {
+            ApolloLog(@"[GoToUser] Trimmed username (len %lu -> %lu) before user lookup",
+                      (unsigned long)username.length, (unsigned long)trimmed.length);
+            return %orig(trimmed, completion);
+        }
+    }
+    return %orig;
+}
+
 // Defensive guard: bail out if the response isn't a dictionary. Apollo otherwise
 // crashes with "unrecognized selector" when it does `response[@"kind"]` on a string.
 - (NSArray *)objectsFromListingResponse:(id)response {
@@ -1943,7 +2046,6 @@ static const char kARCompletion = '\0';
 -(NSURL *)URLForResource:(NSString *)name withExtension:(NSString *)ext {
     NSURL *url = %orig;
     if ([name isEqualToString:@"trending-subreddits"] && [ext isEqualToString:@"plist"]) {
-        NSURL *subredditListURL = [NSURL URLWithString:sTrendingSubredditsSource];
         NSDateFormatter *formatter = [[NSDateFormatter alloc] init];
         // ex: 2023-9-28 (28th September 2023)
         [formatter setDateFormat:@"yyyy-M-d"];
@@ -1976,11 +2078,11 @@ static const char kARCompletion = '\0';
         // Constructor prefetch normally has this ready. On a cold/slow network,
         // return the bundled fallback now and let the async refresh benefit the
         // next lookup instead of freezing the splash screen.
-        NSString *cacheKey = subredditListURL.absoluteString;
-        NSString *subredditListContent = cacheKey.length > 0
+        NSString *cacheKey = [NSURL URLWithString:sTrendingSubredditsSource].absoluteString;
+        ApolloSubredditSourceCacheEntry *sourceEntry = cacheKey.length > 0
             ? [subredditListCache objectForKey:cacheKey]
             : nil;
-        if (subredditListContent.length == 0) {
+        if (sourceEntry.subreddits.count == 0) {
             ApolloRefreshSubredditListSourceAsync(
                 sTrendingSubredditsSource,
                 NO,
@@ -1991,10 +2093,10 @@ static const char kARCompletion = '\0';
             return writeDict(fallbackDict);
         }
 
-        // Parse into array
+        // Sample the source lines parsed by the utility-queue refresh.
         NSArray<NSString *> *subreddits =
             ApolloSampleTrendingSubreddits(
-                ApolloSubredditListLines(subredditListContent),
+                sourceEntry.subreddits,
                 sTrendingSubredditsLimit);
         if (subreddits.count == 0) {
             if (sTrendingSubredditsLimit.integerValue != 0) {
@@ -2025,7 +2127,7 @@ static const char kARCompletion = '\0';
         uint8_t bytes[] = {0x30, 0x01, 0x00};
         [[NSData dataWithBytes:bytes length:sizeof(bytes)] writeToFile:dummyPath atomically:YES];
     }
-    ApolloLog(@"[StoreKit] Spoofing appStoreReceiptURL -> %@", dummyPath);
+    ApolloLogDebug(@"[StoreKit] Spoofing appStoreReceiptURL -> %@", dummyPath);
     return [NSURL fileURLWithPath:dummyPath];
 }
 %end
@@ -2292,12 +2394,14 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
 // task-creation entry point.
 - (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request {
     NSURLRequest *ua = ApolloImgChestRequestByAddingUserAgentIfNeeded(request);
-    return ua ? %orig(ua) : %orig;
+    if (ua) return %orig(ua);
+    return %orig;
 }
 
 - (NSURLSessionDownloadTask *)downloadTaskWithRequest:(NSURLRequest *)request completionHandler:(void (^)(NSURL *, NSURLResponse *, NSError *))completionHandler {
     NSURLRequest *ua = ApolloImgChestRequestByAddingUserAgentIfNeeded(request);
-    return ua ? %orig(ua, completionHandler) : %orig;
+    if (ua) return %orig(ua, completionHandler);
+    return %orig;
 }
 
 - (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request {
@@ -2373,9 +2477,10 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
     }
 
     // Check cache
-    NSString *subredditListContent = [subredditListCache objectForKey:subredditListURL.absoluteString];
+    ApolloSubredditSourceCacheEntry *sourceEntry =
+        [subredditListCache objectForKey:subredditListURL.absoluteString];
 
-    if (!subredditListContent) {
+    if (sourceEntry.subreddits.count == 0) {
         // The constructor normally prewarms this cache. If it did not finish
         // (offline/slow network), preserve Apollo's native request for this tap
         // and refresh asynchronously for the next one.
@@ -2387,11 +2492,7 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
         return %orig;
     }
 
-    // Parse the content into a list of strings
-    NSArray<NSString *> *subreddits = ApolloSubredditListLines(subredditListContent);
-    if (subreddits.count == 0) {
-        return %orig;
-    }
+    NSArray<NSString *> *subreddits = sourceEntry.subreddits;
 
     // Pick a random subreddit, then modify the request URL to use that subreddit, simulating a 302 redirect in Reddit's original API behaviour
     NSString *randomSubreddit = subreddits[arc4random_uniform((uint32_t)subreddits.count)];
@@ -2462,10 +2563,20 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
         imgChestAlbumResponder = ApolloImgChestAlbumCreationResponderForRequest(request);
     }
     if (completionHandler && imgChestAlbumResponder) {
-        void (^wrappedHandler)(NSData *, NSURLResponse *, NSError *) = ^(__unused NSData *data, __unused NSURLResponse *response, __unused NSError *error) {
-            imgChestAlbumResponder(completionHandler);
+        __block __weak NSURLSessionDataTask *proxyTask = nil;
+        void (^wrappedHandler)(NSData *, NSURLResponse *, NSError *) = ^(NSData *data, NSURLResponse *response, NSError *error) {
+            if ([error.domain isEqualToString:NSURLErrorDomain] && error.code == NSURLErrorCancelled) {
+                completionHandler(data, response, error);
+                return;
+            }
+            ApolloImgChestUploadOperation *operation = imgChestAlbumResponder(completionHandler);
+            ApolloImgChestAssociateOperationWithTask(operation, proxyTask);
         };
-        return %orig(ApolloLocalFastFailRequest(@"apollo-imgchest-album"), wrappedHandler);
+        NSURLSessionDataTask *task = %orig(ApolloLocalFastFailRequest(@"apollo-imgchest-album"), wrappedHandler);
+        // Apollo resumes the returned data task only after this hook returns,
+        // so the wrapper cannot run before its weak cancellation proxy is set.
+        proxyTask = task;
+        return task;
     }
 
     // Manage Uploads (issue #414): deletes of uploads this tweak created are
@@ -2827,9 +2938,16 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
 //   sub_10030afa0: FauxCutOutView y=11.5, w=125, h=37
 //   sub_10030c880: PixelPalView y=-2.0
 //   sub_10030d6c4: tap overlay y=11.0, w=125, h=37, cornerRadius=18.5
-// On devices with different safe area insets, compute the correct DI Y position.
-// The gap between DI bottom and safe area scales proportionally with safeTop.
-// Y is floored to the nearest half-pixel to match the baseline's sub-pixel alignment.
+// The island's real position varies per device AND per iOS release, and the
+// safe-area top is not a reliable proxy for it (issue #826: iPhone Air on
+// iOS 27 reports a taller safe area while the physical island stayed put, so
+// the old proportional model over-shifted the whole pal cluster down behind
+// the island pill). Instead, read the physical cutout rect the same way
+// UIKit's own status bar does when laying out around the island
+// (-[_UIStatusBarVisualProvider_DynamicSplit sensorAreaRect], iOS 16+):
+// -[UIScreen _exclusionArea].rect, converted into the current coordinate
+// space with nativeScale/scale. The old proportional model stays as the
+// fallback if the private API ever disappears.
 //
 // --- Pixel Pals freeze guard (issue #305) ---
 // Tapping the Dynamic Island Pixel Pals area (pixelPalTappedWithTapGestureRecognizer:)
@@ -2849,6 +2967,77 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
 // ("preventing the pixel pal menu from opening with any media or website open
 // should fix everything") and is a strict superset of Apollo's intended
 // behaviour (the menu is already meant to be unreachable while media is open).
+// Reads the physical Dynamic Island cutout rect in the app's logical
+// coordinate space via -[UIScreen _exclusionArea] (private, island devices
+// only — nil on notch/older hardware). This is the exact source and
+// conversion UIKit's status bar uses, so it tracks new devices and iOS
+// releases without a per-device table, and is correct under Display Zoom
+// (nativeScale != scale), which the proportional fallback has to bail on.
+static BOOL ApolloDynamicIslandRect(CGRect *outRect) {
+    UIScreen *screen = [UIScreen mainScreen];
+    SEL exclusionSel = NSSelectorFromString(@"_exclusionArea");
+    if (![screen respondsToSelector:exclusionSel]) return NO;
+    id area = ((id (*)(id, SEL))objc_msgSend)(screen, exclusionSel);
+    SEL rectSel = NSSelectorFromString(@"rect");
+    if (!area || ![area respondsToSelector:rectSel]) return NO;
+    CGRect rect = ((CGRect (*)(id, SEL))objc_msgSend)(area, rectSel);
+    // Mirror -[_UIStatusBarVisualProvider_DynamicSplit sensorAreaRect]'s
+    // conversion into the current (Display Zoom) coordinate space.
+    CGFloat nativeScale = screen.nativeScale;
+    CGFloat scale = screen.scale;
+    if (nativeScale > 0 && scale > 0 && nativeScale != scale) {
+        CGFloat zoom = nativeScale / scale;
+        rect.origin.x *= zoom;
+        rect.origin.y *= zoom;
+        rect.size.width *= zoom;
+        rect.size.height *= zoom;
+    }
+    // Sanity: a small pill near the top of the screen, or the API changed.
+    if (CGRectIsEmpty(rect) ||
+        rect.origin.y < 0.0 || rect.origin.y > 40.0 ||
+        rect.size.height < 20.0 || rect.size.height > 60.0 ||
+        rect.size.width < 60.0 || rect.size.width > CGRectGetWidth(screen.bounds) * 0.6) {
+        return NO;
+    }
+    *outRect = rect;
+    return YES;
+}
+
+// Vertical shift to add to Apollo's hardcoded 14 Pro DI element positions so
+// they line up with this device's actual island. 0 when no correction applies.
+static CGFloat ApolloPixelPalShift(UIWindow *window) {
+    CGFloat nativeScale = [UIScreen mainScreen].nativeScale;
+    CGFloat halfPx = 0.5 / (nativeScale > 0 ? nativeScale : 3.0);
+
+    CGRect island;
+    if (ApolloDynamicIslandRect(&island)) {
+        // Center Apollo's 37pt faux pill on the real cutout; floor to the
+        // nearest half-pixel to match the baseline's sub-pixel alignment.
+        CGFloat correctY = floor((CGRectGetMidY(island) - 37.0 / 2.0) / halfPx) * halfPx;
+        CGFloat shift = correctY - 11.5;
+        static dispatch_once_t logOnce;
+        dispatch_once(&logOnce, ^{
+            ApolloLog(@"[PixelPals] island cutout {%.2f, %.2f, %.2f, %.2f} safeTop=%.1f → shift %.3f",
+                      island.origin.x, island.origin.y, island.size.width, island.size.height,
+                      window.safeAreaInsets.top, shift);
+        });
+        // Baseline devices land within a half-point of Apollo's own 11.5;
+        // leave them untouched.
+        return fabs(shift) < 0.75 ? 0.0 : shift;
+    }
+
+    // Fallback (pre-iOS-16 UIKit internals changed): proportional model —
+    // gap between DI bottom and safe area scales with safeTop. Wrong on
+    // devices where the safe area moved independently of the island (#826),
+    // but better than nothing.
+    if (nativeScale != [UIScreen mainScreen].scale) return 0.0;
+    CGFloat safeTop = window.safeAreaInsets.top;
+    if (safeTop < 50.0 || fabs(safeTop - 59.0) < 0.5) return 0.0;
+    CGFloat scaledGap = 10.5 * safeTop / 59.0;
+    CGFloat correctY = floor((safeTop - 37.0 - scaledGap) / halfPx) * halfPx;
+    return correctY - 11.5;
+}
+
 static BOOL ApolloPixelPalsBlockedByModal(UIWindow *window) {
     Class overlayCls = objc_getClass("_TtC6Apollo29PixelPalOverlayViewController");
     UIViewController *vc = window.rootViewController;
@@ -2881,18 +3070,9 @@ static BOOL ApolloPixelPalsBlockedByModal(UIWindow *window) {
     %orig;
 
     UIWindow *window = (UIWindow *)self;
-    CGFloat nativeScale = [UIScreen mainScreen].nativeScale;
-    if (nativeScale != [UIScreen mainScreen].scale) return;
-
-    CGFloat safeTop = window.safeAreaInsets.top;
-    if (safeTop < 50.0 || fabs(safeTop - 59.0) < 0.5) return;
-
-    // Compute correct Y: gap scales proportionally, floor to half-pixel.
-    // Baseline (14 Pro): safeTop=59, y=11.5, gap=10.5, y at half-pixel (34.5px@3x).
-    CGFloat scaledGap = 10.5 * safeTop / 59.0;
-    CGFloat halfPx = 0.5 / nativeScale;
-    CGFloat correctY = floor((safeTop - 37.0 - scaledGap) / halfPx) * halfPx;
-    CGFloat shift = correctY - 11.5;
+    CGFloat shift = ApolloPixelPalShift(window);
+    if (shift == 0.0) return;
+    CGFloat correctY = 11.5 + shift;
 
     // Shift FauxCutOutView — %orig sets y=11.5 via sub_10030afa0
     Ivar fauxIvar = class_getInstanceVariable(object_getClass(self), "fauxCutOutView");
@@ -2910,8 +3090,8 @@ static BOOL ApolloPixelPalsBlockedByModal(UIWindow *window) {
         fauxView.layer.cornerRadius = CGRectGetHeight(fauxView.bounds) * 0.5;
         fauxView.layer.cornerCurve = kCACornerCurveContinuous;
 
-        ApolloLog(@"[PixelPals] FauxCutOutView y: 11.5 → %.3f (safeTop=%.1f, gap=%.3f, shift=%.3f)",
-                  correctY, safeTop, scaledGap, shift);
+        ApolloLog(@"[PixelPals] FauxCutOutView y: 11.5 → %.3f (safeTop=%.1f, shift=%.3f)",
+                  correctY, window.safeAreaInsets.top, shift);
     }
 
     // Shift PixelPalView — %orig sets y=-2.0 via sub_10030c880
@@ -2933,20 +3113,13 @@ static BOOL ApolloPixelPalsBlockedByModal(UIWindow *window) {
     %orig;
 
     UIWindow *window = (UIWindow *)self;
-    CGFloat safeTop = window.safeAreaInsets.top;
-    if (safeTop < 50.0 || fabs(safeTop - 59.0) < 0.5) return;
-    CGFloat nativeScale = [UIScreen mainScreen].nativeScale;
-    if (nativeScale != [UIScreen mainScreen].scale) return;
+    CGFloat shift = ApolloPixelPalShift(window);
+    if (shift == 0.0) return;
 
     if (![view isMemberOfClass:[UIView class]]) return;
     CGRect f = view.frame;
     if (fabs(f.size.width - 125.0) > 0.5 || fabs(f.size.height - 37.0) > 0.5) return;
     if (!view.clipsToBounds || view.layer.cornerRadius < 18.0) return;
-
-    CGFloat scaledGap = 10.5 * safeTop / 59.0;
-    CGFloat halfPx = 0.5 / nativeScale;
-    CGFloat correctY = floor((safeTop - 37.0 - scaledGap) / halfPx) * halfPx;
-    CGFloat shift = correctY - 11.5;
 
     ApolloLog(@"[PixelPals] Tap overlay y: %.1f → %.3f", f.origin.y, f.origin.y + shift);
     f.origin.y += shift;
@@ -3156,10 +3329,10 @@ static void ApolloInstallNotificationsUnavailableOverlay(UIViewController *contr
 // and fire repeatedly without the App Store's rate limiting. Suppress both APIs.
 %hook SKStoreReviewController
 + (void)requestReview {
-    ApolloLog(@"[StoreKit] Suppressing SKStoreReviewController requestReview");
+    ApolloLogDebug(@"[StoreKit] Suppressing SKStoreReviewController requestReview");
 }
 + (void)requestReviewInScene:(UIWindowScene *)windowScene {
-    ApolloLog(@"[StoreKit] Suppressing SKStoreReviewController requestReviewInScene:");
+    ApolloLogDebug(@"[StoreKit] Suppressing SKStoreReviewController requestReviewInScene:");
 }
 %end
 
@@ -3210,33 +3383,29 @@ static BOOL ApolloDefaultsKeyChangesActiveAccount(NSString *key) {
 }
 %end
 
-// Pre-fetches random subreddit lists in background
-static void initializeRandomSources() {
-    // Persisted data serves launch immediately; refresh all configured sources
-    // in the background so a later launch gets current data too.
-    for (NSString *source in @[sRandNsfwSubredditsSource ?: @"",
-                               sRandomSubredditsSource ?: @"",
-                               sTrendingSubredditsSource ?: @""]) {
-        ApolloRefreshSubredditListSourceAsync(
-            source,
-            YES,
-            NSURLRequestUseProtocolCachePolicy,
-            nil);
-    }
-}
-
 // MARK: - Constructor
 %ctor {
+    // Local crash recording installs before anything else in the tweak (and
+    // long before Apollo's app code, whose Bugsnag start is separately
+    // no-op'd in ApolloCrashBugsnagNeutralize.xm). KSCrash handlers can only
+    // be configured once per process, so this must not move later.
+    @autoreleasepool {
+        [[ApolloCrashManager sharedManager] installCrashRecorderIfEnabled];
+        [ApolloCrashContext start];
+        [[ApolloCrashPromptCoordinator sharedCoordinator] start];
+    }
+
     subredditListCache = [NSCache new];
     subredditListCache.countLimit = 16;
+    subredditListPersistentCache = [NSMutableDictionary dictionary];
     subredditListFetchesInFlight = [NSMutableSet set];
     subredditListFetchCompletions = [NSMutableDictionary dictionary];
     subredditListFetchBypassesCache = [NSMutableDictionary dictionary];
     subredditListForcedFetchCompletions = [NSMutableDictionary dictionary];
-    ApolloLoadPersistedSubredditSources();
 
     NSDictionary *defaultValues = @{UDKeyBlockAnnouncements: @YES,
                                     UDKeyEnableFLEX: @NO,
+                                    UDKeyCrashCaptureEnabled: @YES,
                                     UDKeyTrendingSubredditsLimit: @"5",
                                     UDKeyShowRandNsfw: @NO,
                                     UDKeyRandomSubredditsSource: defaultRandomSubredditsSource,
@@ -3251,6 +3420,8 @@ static void initializeRandomSources() {
                                     UDKeyEnableFlairColors: @NO,
                                     UDKeyShowRecentlyReadThumbnails: @YES,
                                     UDKeyFeedTextPostThumbnails: @YES,
+                                    UDKeyFeedGalleryCarousel: @YES,
+                                    UDKeySwipeUpForComments: @YES,
                                     UDKeySportsClipsInlineVideo: @YES,
                                     UDKeyPreferredGIFFallbackFormat: @1,
                                     UDKeyUnmuteCommentsVideos: @0,
@@ -3313,6 +3484,7 @@ static void initializeRandomSources() {
                                     UDKeyLibreTranslateURL: @"https://libretranslate.de/translate",
                                     UDKeyLibreTranslateAPIKey: @"",
                                     UDKeyTranslationSkipLanguages: @[],
+                                    UDKeyAppleTranslateSheet: @NO,
                                     UDKeyEnableAISummaries: @NO,
                                     UDKeyEnableAIPostSummaries: @YES,
                                     UDKeyEnableAICommentSummaries: @YES,
@@ -3369,6 +3541,8 @@ static void initializeRandomSources() {
     }
     sShowRecentlyReadThumbnails = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyShowRecentlyReadThumbnails];
     sFeedTextPostThumbnails = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyFeedTextPostThumbnails];
+    sFeedGalleryCarousel = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyFeedGalleryCarousel];
+    sSwipeUpForComments = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySwipeUpForComments];
     sPreferredGIFFallbackFormat = ([[NSUserDefaults standardUserDefaults] integerForKey:UDKeyPreferredGIFFallbackFormat] == 0) ? 0 : 1;
     sReadPostMaxCount = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyReadPostMaxCount];
     sUnmuteCommentsVideos = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyUnmuteCommentsVideos];
@@ -3432,6 +3606,22 @@ static void initializeRandomSources() {
         sOpenRouterAIModel = loadKey(UDKeyOpenRouterAIModel);
         sGeminiAPIKey = loadKey(UDKeyGeminiAPIKey);
         sGeminiAIModel = loadKey(UDKeyGeminiAIModel);
+        // 3.5.0 exposed these defaults as editable placeholders, so some users
+        // saved them explicitly. Both providers have since retired those exact
+        // IDs. Clear only the known former defaults so the bridge adopts its
+        // maintained replacement without touching a deliberate custom choice.
+        if ([sOpenRouterAIModel isEqualToString:@"meta-llama/llama-3.3-70b-instruct:free"]) {
+            sOpenRouterAIModel = nil;
+            [standardDefaults removeObjectForKey:UDKeyOpenRouterAIModel];
+            ApolloLog(@"[AICloud] Migrated retired OpenRouter default to current free router");
+        }
+        NSString *normalizedGeminiModel = [sGeminiAIModel lowercaseString];
+        if ([normalizedGeminiModel isEqualToString:@"gemini-2.5-flash"] ||
+            [normalizedGeminiModel isEqualToString:@"models/gemini-2.5-flash"]) {
+            sGeminiAIModel = nil;
+            [standardDefaults removeObjectForKey:UDKeyGeminiAIModel];
+            ApolloLog(@"[AICloud] Migrated retired Gemini default to current stable Flash model");
+        }
         sCustomAIAPIKey = loadKey(UDKeyCustomAIAPIKey);
         sCustomAIModel = loadKey(UDKeyCustomAIModel);
         sCustomAIBaseURL = loadKey(UDKeyCustomAIBaseURL);
@@ -3545,13 +3735,30 @@ static void initializeRandomSources() {
         ApolloLog(@"[PerPostSort] exclusivity: normalized stale both-on at launch (native Remember Subreddit Sort -> OFF)");
     }
     sScrollEdgeEffectStyle = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyScrollEdgeEffectStyle];
-    if (sScrollEdgeEffectStyle < ApolloScrollEdgeEffectStyleAutomatic || sScrollEdgeEffectStyle > ApolloScrollEdgeEffectStyleHidden) {
-        sScrollEdgeEffectStyle = ApolloScrollEdgeEffectStyleAutomatic;
+    NSInteger systemHeaderStyle = [NSProcessInfo processInfo].operatingSystemVersion.majorVersion >= 27
+        ? ApolloScrollEdgeEffectStyleHard
+        : ApolloScrollEdgeEffectStyleSoft;
+    if (sScrollEdgeEffectStyle == ApolloScrollEdgeEffectStyleAutomatic) {
+        // System Default was removed from the picker because it made the same
+        // option look different across OS versions. Preserve its old visual
+        // result once, then store the explicit Soft/Hard choice users now see.
+        sScrollEdgeEffectStyle = systemHeaderStyle;
+        [standardDefaults setInteger:sScrollEdgeEffectStyle forKey:UDKeyScrollEdgeEffectStyle];
+    } else if (sScrollEdgeEffectStyle == 3) {
+        // Retired Hidden mode: closest surviving intent (no hard cutoff line)
+        // is Soft. 3 stays reserved — see the enum note in ApolloState.h.
+        sScrollEdgeEffectStyle = ApolloScrollEdgeEffectStyleSoft;
+        [standardDefaults setInteger:sScrollEdgeEffectStyle forKey:UDKeyScrollEdgeEffectStyle];
+    } else if (sScrollEdgeEffectStyle != ApolloScrollEdgeEffectStyleSoft &&
+               sScrollEdgeEffectStyle != ApolloScrollEdgeEffectStyleHard &&
+               sScrollEdgeEffectStyle != ApolloScrollEdgeEffectStyleBlur) {
+        sScrollEdgeEffectStyle = systemHeaderStyle;
         [standardDefaults setInteger:sScrollEdgeEffectStyle forKey:UDKeyScrollEdgeEffectStyle];
     }
     sModernSubredditDividers = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyModernSubredditDividers];
     sSubredditListEnhancements = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySubredditListEnhancements];
     sHideSubredditListDescriptions = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyHideSubredditListDescriptions];
+    sHideMultiredditDescriptions = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyHideMultiredditDescriptions];
     sEnableFlairColors = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyEnableFlairColors];
     sEnableBulkTranslation = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyEnableBulkTranslation];
     sAutoTranslateOnAppear = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyAutoTranslateOnAppear];
@@ -3607,6 +3814,8 @@ static void initializeRandomSources() {
         }
         sTranslationSkipLanguages = [clean copy];
     }
+
+    sAppleTranslateSheet = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyAppleTranslateSheet];
 
     // Web JSON: read the flag here, but defer the keychain-backed
     // cookie/modhash/username hydration until AFTER the SecItem fishhooks are
@@ -3743,6 +3952,10 @@ static void initializeRandomSources() {
     sTrendingSubredditsSource = (NSString *)[[NSUserDefaults standardUserDefaults] objectForKey:UDKeyTrendingSubredditsSource];
     sTrendingSubredditsLimit = (NSString *)[[NSUserDefaults standardUserDefaults] objectForKey:UDKeyTrendingSubredditsLimit];
 
+    // Launch hooks are cache-only and fail open until this off-main seed lands.
+    // The seed also queues refreshes after loading the last-known-good values.
+    ApolloSeedSubredditSourceMemoryCacheAsync();
+
     %init;
 
     ApolloMarkdownGifInstall();
@@ -3812,8 +4025,6 @@ static void initializeRandomSources() {
             [[%c(FLEXManager) performSelector:@selector(sharedManager)] performSelector:@selector(showExplorer)];
         });
     }
-
-    initializeRandomSources();
 
     // Web JSON keychain hydration — must run after the SecItem fishhooks above so
     // the simulator's virtualized keychain is in place (see the deferral note

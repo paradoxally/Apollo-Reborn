@@ -286,7 +286,7 @@ static void OpenAccountManager(void) {
     UITabBarController *tabBarController = nil;
     if ([rootVC isKindOfClass:[UITabBarController class]]) {
         tabBarController = (UITabBarController *)rootVC;
-    } else if (rootVC.presentedViewController && [rootVC.presentedViewController isKindOfClass:[UITabBarController class]]) {
+    } else if ([rootVC.presentedViewController isKindOfClass:[UITabBarController class]]) {
         tabBarController = (UITabBarController *)rootVC.presentedViewController;
     }
 
@@ -297,13 +297,13 @@ static void OpenAccountManager(void) {
                 UINavigationController *navController = (UINavigationController *)vc;
                 // Search through the entire navigation stack, not just topViewController
                 for (UIViewController *stackVC in navController.viewControllers) {
-                    if ([stackVC isKindOfClass:profileVCClass]) {
+                    if ([stackVC isMemberOfClass:profileVCClass]) {
                         profileVC = stackVC;
                         break;
                     }
                 }
                 if (profileVC) break;
-            } else if ([vc isKindOfClass:profileVCClass]) {
+            } else if ([vc isMemberOfClass:profileVCClass]) {
                 profileVC = vc;
                 break;
             }
@@ -976,6 +976,18 @@ static BOOL ApolloRecenterTitleControl(UIView *titleControl);
 }
 
 - (void)updateGlassForHostView:(UIView *)hostView candidateViews:(NSArray<UIView *> *)candidateViews {
+    // The capsule exists for title contrast, so it follows the header's
+    // material: Hard paints a real band behind the title (a capsule on top
+    // double-stacks into a button look — #836), while Soft's subtle clarity
+    // treatment and Blur's diffusion leave the title needing its own backing.
+    // Resolved style, not raw mode: Automatic must track what the OS renders.
+    if (ApolloResolvedScrollEdgeEffectStyle() == ApolloScrollEdgeEffectStyleHard) {
+        [self.glassView removeFromSuperview];
+        self.glassView = nil;
+        self.glassHostView = nil;
+        return;
+    }
+
     CGRect targetFrame = [self glassFrameForHostView:hostView candidateViews:candidateViews];
     if (CGRectIsNull(targetFrame) || CGRectIsEmpty(targetFrame)) {
         [self.glassView removeFromSuperview];
@@ -1522,4 +1534,13 @@ void ApolloLGTitleCenteringModeChanged(void) {
     if (objc_getClass("_UINavigationBarPlatterView")) {
         %init(ApolloLGPlatterPoke);
     }
+    // Header Style switches change no title geometry, so the change-gated
+    // capsule refresh would see an identical bar and do nothing — force a
+    // refresh on every live bar to install/remove the capsule immediately.
+    [[NSNotificationCenter defaultCenter] addObserverForName:ApolloScrollEdgeEffectStyleChangedNotification
+                                                       object:nil
+                                                        queue:[NSOperationQueue mainQueue]
+                                                   usingBlock:^(__unused NSNotification *notification) {
+        ApolloLGTitleCenteringModeChanged();
+    }];
 }

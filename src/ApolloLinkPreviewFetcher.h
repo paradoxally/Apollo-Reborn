@@ -6,10 +6,15 @@
 
 + (void)requestPreviewForURL:(NSURL *)url completion:(void (^)(ApolloLinkPreview *preview))completion;
 + (BOOL)isTwitterURL:(NSURL *)url;
-// YES when a cached preview is a weak stand-in (bot-wall page, slug/favicon
-// fallback, stub academic entry) that deserves one refetch attempt this
-// session. Consumes the per-URL retry token when it returns YES.
-+ (BOOL)shouldRetryWeakCachedPreview:(ApolloLinkPreview *)cached forURL:(NSURL *)url;
+// Non-nil when a CACHED preview is the residue of a fetch that never reached
+// the real page — a bot-wall interstitial title, a DOI page whose metadata is
+// just the DOI, or the slug-title + favicon fallback with no description — and
+// therefore deserves a background refetch rather than squatting in the cache
+// for its whole TTL. Returns a short reason slug for logging ("bot-wall",
+// "weak-academic", "weak-generic") or nil for a healthy preview. Shared by
+// requestPreviewForURL:'s own staleness gate and the render path's
+// once-per-launch cache-healing kick in ApolloInlineLinkPreviews.
++ (NSString *)refetchReasonForCachedPreview:(ApolloLinkPreview *)preview url:(NSURL *)url;
 
 @end
 

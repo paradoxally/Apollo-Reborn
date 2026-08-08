@@ -8,6 +8,66 @@
 #import <objc/runtime.h>
 #import <OSLog/OSLog.h>
 #import <os/lock.h>
+#import <Security/Security.h>
+
+#pragma mark - Security dictionaries
+
+CFDictionaryRef ApolloCreateGenericPasswordIdentity(CFStringRef service,
+                                                     CFStringRef account) {
+    const void *keys[] = { kSecClass, kSecAttrService, kSecAttrAccount };
+    const void *values[] = { kSecClassGenericPassword, service, account };
+    return CFDictionaryCreate(kCFAllocatorDefault, keys, values, 3,
+                              &kCFTypeDictionaryKeyCallBacks,
+                              &kCFTypeDictionaryValueCallBacks);
+}
+
+CFDictionaryRef ApolloCreateGenericPasswordDataQuery(CFStringRef service,
+                                                      CFStringRef account) {
+    // kSecMatchLimitOne is the default, so spelling it out only makes the
+    // dictionary larger and costs another retain/hash during construction.
+    const void *keys[] = { kSecClass, kSecAttrService, kSecAttrAccount, kSecReturnData };
+    const void *values[] = { kSecClassGenericPassword, service, account, kCFBooleanTrue };
+    return CFDictionaryCreate(kCFAllocatorDefault, keys, values, 4,
+                              &kCFTypeDictionaryKeyCallBacks,
+                              &kCFTypeDictionaryValueCallBacks);
+}
+
+static CFDictionaryRef ApolloCreateGenericPasswordDataAdd(CFStringRef service,
+                                                           CFStringRef account,
+                                                           NSData *data,
+                                                           CFStringRef accessible) CF_RETURNS_RETAINED {
+    const void *keys[] = {
+        kSecClass, kSecAttrService, kSecAttrAccount, kSecValueData, kSecAttrAccessible,
+    };
+    const void *values[] = {
+        kSecClassGenericPassword, service, account, (__bridge CFDataRef)data, accessible,
+    };
+    return CFDictionaryCreate(kCFAllocatorDefault, keys, values, 5,
+                              &kCFTypeDictionaryKeyCallBacks,
+                              &kCFTypeDictionaryValueCallBacks);
+}
+
+OSStatus ApolloUpsertGenericPasswordData(CFStringRef service,
+                                         CFStringRef account,
+                                         NSData *data,
+                                         CFStringRef accessible) {
+    CFDictionaryRef identity = ApolloCreateGenericPasswordIdentity(service, account);
+    NSDictionary *update = @{ (__bridge id)kSecValueData: data };
+    OSStatus status = SecItemUpdate(identity, (__bridge CFDictionaryRef)update);
+    if (status == errSecItemNotFound) {
+        CFDictionaryRef add =
+            ApolloCreateGenericPasswordDataAdd(service, account, data, accessible);
+        status = SecItemAdd(add, NULL);
+        CFRelease(add);
+        // Another writer may have inserted the item between our update and
+        // add. Retry the update once so that benign race still succeeds.
+        if (status == errSecDuplicateItem) {
+            status = SecItemUpdate(identity, (__bridge CFDictionaryRef)update);
+        }
+    }
+    CFRelease(identity);
+    return status;
+}
 
 #pragma mark - Logging
 
@@ -21,6 +81,37 @@ os_log_t ApolloFixLog(void) {
         sProcessStartDate = [NSDate date];
     });
     return log;
+}
+
+#pragma mark - Row-measure re-entrancy guard
+
+// See ApolloCommon.h. Main-thread only: row-height queries are delivered on
+// the main thread, and the recursion this guards against exists only there
+// (background Texture measures never sit inside UIKit row-data validation).
+// Off-main callers get NO / no-op so they behave exactly as before.
+static NSInteger sApolloRowMeasureDepth = 0;
+
+BOOL ApolloRowMeasureInProgress(void) {
+    return [NSThread isMainThread] && sApolloRowMeasureDepth > 0;
+}
+
+void ApolloRowMeasureWillBegin(void) {
+    if (![NSThread isMainThread]) return;
+    sApolloRowMeasureDepth++;
+    // A depth beyond 1 means a geometry query escaped into a measure pass and
+    // UIKit re-entered row validation — the #831/#833 stack-overflow geometry.
+    // The guards should make this unreachable; log loudly (but bounded) if a
+    // new edge ever appears so field reports pinpoint it.
+    static NSInteger sLoggedNestedMeasures = 0;
+    if (sApolloRowMeasureDepth > 1 && sLoggedNestedMeasures < 8) {
+        sLoggedNestedMeasures++;
+        ApolloLog(@"[RowMeasure] NESTED row-height pass (depth %ld) - a table geometry call leaked into a measure pass", (long)sApolloRowMeasureDepth);
+    }
+}
+
+void ApolloRowMeasureDidEnd(void) {
+    if (![NSThread isMainThread]) return;
+    if (sApolloRowMeasureDepth > 0) sApolloRowMeasureDepth--;
 }
 
 #pragma mark - Persistent login diagnostics (cross-launch)
@@ -37,61 +128,163 @@ static NSString *ApolloLoginDiagLogPath(void) {
                 stringByAppendingPathComponent:@"ApolloLoginDiag.log"];
 }
 
-static const NSUInteger kApolloLoginDiagMaxBytes = 256 * 1024; // ~256KB tail is plenty of sessions
+static const NSUInteger kApolloPersistentDiagMaxBytes = 256 * 1024; // ~256KB tail is plenty of sessions
 // When trimming, drop back to this (not just under the cap) so the next ~64KB of lines don't each
 // re-trigger a full read+rewrite of the file. Without the headroom, once the buffer is at capacity
 // every single append would rewrite the whole file — expensive on the keychain hot path.
-static const NSUInteger kApolloLoginDiagTrimTo = 192 * 1024;
+static const NSUInteger kApolloPersistentDiagTrimTo = 192 * 1024;
 
-void ApolloAppendLoginDiag(NSString *line) {
+static void ApolloAppendPersistentDiag(NSString *line, NSString *path) {
     if (![line isKindOfClass:[NSString class]] || line.length == 0) return;
-    static os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
+    static dispatch_queue_t queue = nil;
     static NSDateFormatter *fmt = nil;
-    os_unfair_lock_lock(&lock);
-    if (!fmt) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        // The list-layout diag can fire from inside setContentInset: during a
+        // scroll frame, so the file I/O must never run on the caller's thread.
+        // A serial utility queue keeps line order without blocking anyone; the
+        // only loss window is lines still queued at a hard crash (~ms), which
+        // the os_log copy of every line still covers.
+        queue = dispatch_queue_create("com.apollo.reborn.persistent-diag",
+            dispatch_queue_attr_make_with_qos_class(DISPATCH_QUEUE_SERIAL, QOS_CLASS_UTILITY, 0));
         fmt = [[NSDateFormatter alloc] init];
         fmt.dateFormat = @"MM-dd HH:mm:ss.SSS";
         fmt.locale = [NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"];
-    }
+    });
+    // Stamp on the calling thread so the timestamp is the event time, not the
+    // (slightly later) write time. NSDateFormatter is thread-safe on iOS 7+.
     NSString *stamped = [NSString stringWithFormat:@"[%@] %@\n", [fmt stringFromDate:[NSDate date]], line];
-    NSString *path = ApolloLoginDiagLogPath();
-    NSFileManager *fm = [NSFileManager defaultManager];
-
-    @try {
-        NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:path];
-        if (!fh) {
-            [fm createFileAtPath:path contents:nil
-                      attributes:@{NSFileProtectionKey: NSFileProtectionCompleteUntilFirstUserAuthentication}];
-            fh = [NSFileHandle fileHandleForWritingAtPath:path];
-        }
-        if (fh) {
-            unsigned long long end = [fh seekToEndOfFile];
-            [fh writeData:[stamped dataUsingEncoding:NSUTF8StringEncoding]];
-            [fh closeFile];
-            // Trim to the tail when it grows past the cap: reload, keep the last N bytes from a
-            // line boundary, rewrite. Cheap because it only fires occasionally.
-            if (end + stamped.length > kApolloLoginDiagMaxBytes) {
-                NSData *all = [NSData dataWithContentsOfFile:path];
-                if (all.length > kApolloLoginDiagMaxBytes) {
-                    NSData *tail = [all subdataWithRange:NSMakeRange(all.length - kApolloLoginDiagTrimTo, kApolloLoginDiagTrimTo)];
-                    NSString *tailStr = [[NSString alloc] initWithData:tail encoding:NSUTF8StringEncoding];
-                    NSRange nl = [tailStr rangeOfString:@"\n"];
-                    if (nl.location != NSNotFound && nl.location + 1 < tailStr.length) {
-                        tailStr = [tailStr substringFromIndex:nl.location + 1];
+    dispatch_async(queue, ^{
+        NSFileManager *fm = [NSFileManager defaultManager];
+        @try {
+            NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:path];
+            if (!fh) {
+                [fm createFileAtPath:path contents:nil
+                          attributes:@{NSFileProtectionKey: NSFileProtectionCompleteUntilFirstUserAuthentication}];
+                fh = [NSFileHandle fileHandleForWritingAtPath:path];
+            }
+            if (fh) {
+                unsigned long long end = [fh seekToEndOfFile];
+                [fh writeData:[stamped dataUsingEncoding:NSUTF8StringEncoding]];
+                [fh closeFile];
+                // Trim to the tail when it grows past the cap: reload, keep the last N bytes from a
+                // line boundary, rewrite. Cheap because it only fires occasionally.
+                if (end + stamped.length > kApolloPersistentDiagMaxBytes) {
+                    NSData *all = [NSData dataWithContentsOfFile:path];
+                    if (all.length > kApolloPersistentDiagMaxBytes) {
+                        NSData *tail = [all subdataWithRange:NSMakeRange(all.length - kApolloPersistentDiagTrimTo, kApolloPersistentDiagTrimTo)];
+                        NSString *tailStr = [[NSString alloc] initWithData:tail encoding:NSUTF8StringEncoding];
+                        NSRange nl = [tailStr rangeOfString:@"\n"];
+                        if (nl.location != NSNotFound && nl.location + 1 < tailStr.length) {
+                            tailStr = [tailStr substringFromIndex:nl.location + 1];
+                        }
+                        [tailStr writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
                     }
-                    [tailStr writeToFile:path atomically:YES encoding:NSUTF8StringEncoding error:nil];
                 }
             }
+        } @catch (__unused NSException *e) {
+            // Diagnostics must never take the app down; a lost line is acceptable.
         }
-    } @catch (__unused NSException *e) {
-        // Diagnostics must never take the app down; a lost line is acceptable.
+    });
+}
+
+void ApolloAppendLoginDiag(NSString *line) {
+    ApolloAppendPersistentDiag(line, ApolloLoginDiagLogPath());
+}
+
+static NSString *ApolloListLayoutDiagLogPath(void) {
+    return [[NSHomeDirectory() stringByAppendingPathComponent:@"Library"]
+                stringByAppendingPathComponent:@"ApolloListLayoutDiag.log"];
+}
+
+void ApolloAppendListLayoutDiag(NSString *line) {
+    ApolloAppendPersistentDiag(line, ApolloListLayoutDiagLogPath());
+}
+
+#pragma mark - Liquid Glass tab bar morph state (private-ivar reads)
+
+// Single-slot Ivar caches: Apollo runs one tab bar class and one visual
+// provider class per process, and these reads sit on scroll-frame paths
+// (ApolloAutoHideTabBar's upward-reveal detection, the list bottom-inset
+// guard), where repeated class_getInstanceVariable lookups would pay a
+// runtime-lock toll per frame. Main-thread only, so plain statics suffice.
+static id ApolloTabBarVisualProvider(UITabBar *tabBar) {
+    if (!tabBar) return nil;
+    static Class barClass = Nil;
+    static Ivar providerIvar = NULL;
+    Class cls = object_getClass(tabBar);
+    if (cls != barClass) {
+        providerIvar = class_getInstanceVariable(cls, "_visualProvider");
+        barClass = cls;
     }
-    os_unfair_lock_unlock(&lock);
+    return providerIvar ? object_getIvar(tabBar, providerIvar) : nil;
+}
+
+NSInteger ApolloTabBarVisualMorphTarget(UITabBar *tabBar, BOOL *known) {
+    if (known) *known = NO;
+    id provider = ApolloTabBarVisualProvider(tabBar);
+    if (!provider) return NSNotFound;
+
+    static Class providerClass = Nil;
+    static Ivar targetIvar = NULL;
+    static BOOL encodingIsInteger = NO;
+    Class cls = object_getClass(provider);
+    if (cls != providerClass) {
+        targetIvar = class_getInstanceVariable(cls, "_currentMorphTarget");
+        const char *encoding = targetIvar ? ivar_getTypeEncoding(targetIvar) : NULL;
+        encodingIsInteger = encoding && (encoding[0] == 'q' || encoding[0] == 'Q');
+        providerClass = cls;
+    }
+    if (!targetIvar || !encodingIsInteger) return NSNotFound;
+
+    NSInteger target = NSNotFound;
+    memcpy(&target,
+           (const uint8_t *)(__bridge const void *)provider + ivar_getOffset(targetIvar),
+           sizeof(target));
+    if (known) *known = YES;
+    return target;
+}
+
+BOOL ApolloTabBarVisualProviderBoolIvar(UITabBar *tabBar, const char *name, BOOL *known) {
+    if (known) *known = NO;
+    if (!name) return NO;
+    id provider = ApolloTabBarVisualProvider(tabBar);
+    if (!provider) return NO;
+
+    // Cache keyed on (class, name pointer): the name is a string literal at
+    // every call site, so pointer identity is stable; a rare miss on an equal
+    // but distinct literal just re-runs the lookup.
+    static Class providerClass = Nil;
+    static const char *cachedName = NULL;
+    static Ivar boolIvar = NULL;
+    Class cls = object_getClass(provider);
+    if (cls != providerClass || name != cachedName) {
+        boolIvar = class_getInstanceVariable(cls, name);
+        providerClass = cls;
+        cachedName = name;
+    }
+    if (!boolIvar) return NO;
+
+    // Swift stored Bools carry no useful ObjC type encoding (RuntimeBrowser
+    // shows `void`); UIKit's own code reads and writes exactly one byte at the
+    // exported ivar offset, so mirror that representation.
+    uint8_t value = 0;
+    memcpy(&value,
+           (const uint8_t *)(__bridge const void *)provider + ivar_getOffset(boolIvar),
+           sizeof(value));
+    if (known) *known = YES;
+    return (value & 1) != 0;
 }
 
 // The prior/persistent diagnostics tail, for the exporter to prepend. Empty string if none.
 static NSString *ApolloPersistentLoginDiagnostics(void) {
     NSString *contents = [NSString stringWithContentsOfFile:ApolloLoginDiagLogPath()
+                                                   encoding:NSUTF8StringEncoding error:nil];
+    return contents.length ? contents : @"";
+}
+
+static NSString *ApolloPersistentListLayoutDiagnostics(void) {
+    NSString *contents = [NSString stringWithContentsOfFile:ApolloListLayoutDiagLogPath()
                                                    encoding:NSUTF8StringEncoding error:nil];
     return contents.length ? contents : @"";
 }
@@ -132,19 +325,27 @@ static NSString *ApolloCollectLogsFiltered(BOOL aiOnly) {
 
         // The cross-launch login-diagnostics tail (prior sessions too) — prepended for the full
         // log so a force-quit sign-out is still diagnosable. Not included in the AI-only export.
-        NSString *persistent = aiOnly ? @"" : ApolloPersistentLoginDiagnostics();
+        NSString *persistentLogin = aiOnly ? @"" : ApolloPersistentLoginDiagnostics();
+        NSString *persistentListLayout = aiOnly ? @"" : ApolloPersistentListLayoutDiagnostics();
 
-        if (filteredEntries.count == 0 && persistent.length == 0) {
+        if (filteredEntries.count == 0 && persistentLogin.length == 0 && persistentListLayout.length == 0) {
             return aiOnly
                 ? @"No Apollo AI log entries found since app launch."
                 : @"No [ApolloFix] log entries found since app launch.";
         }
 
         NSMutableString *output = [NSMutableString new];
-        if (persistent.length) {
+        if (persistentListLayout.length) {
+            [output appendString:@"===== Persistent list/tab-bar diagnostics (spans previous sessions; survives force-quit) =====\n"];
+            [output appendString:persistentListLayout];
+            if (![persistentListLayout hasSuffix:@"\n"]) [output appendString:@"\n"];
+        }
+        if (persistentLogin.length) {
             [output appendString:@"===== Persistent login diagnostics (spans previous sessions; survives force-quit) =====\n"];
-            [output appendString:persistent];
-            if (![persistent hasSuffix:@"\n"]) [output appendString:@"\n"];
+            [output appendString:persistentLogin];
+            if (![persistentLogin hasSuffix:@"\n"]) [output appendString:@"\n"];
+        }
+        if (persistentListLayout.length || persistentLogin.length) {
             [output appendString:@"===== Current session ([ApolloFix] os_log) =====\n"];
         }
         [output appendFormat:@"%@ — %@ (%lu entries)\n\n",
@@ -170,6 +371,159 @@ NSString *ApolloCollectLogs(void) {
 
 NSString *ApolloCollectAILogs(void) {
     return ApolloCollectLogsFiltered(YES);
+}
+
+#pragma mark - Bounded data requests
+
+static NSString *const kApolloBoundedDataErrorDomain = @"ApolloBoundedData";
+
+@interface ApolloBoundedDataRecord : NSObject
+@property (nonatomic) NSUInteger maximumBytes;
+@property (nonatomic, strong) NSMutableData *data;
+@property (nonatomic, strong) NSHTTPURLResponse *response;
+@property (nonatomic, strong) NSError *failure;
+@property (nonatomic, copy) ApolloBoundedDataResponseValidator responseValidator;
+@property (nonatomic, strong) dispatch_queue_t completionQueue;
+@property (nonatomic, copy) ApolloBoundedDataCompletion completion;
+@end
+
+@implementation ApolloBoundedDataRecord
+@end
+
+@interface ApolloBoundedDataCoordinator : NSObject <NSURLSessionDataDelegate>
+@property (nonatomic, strong) NSURLSession *session;
+@property (nonatomic, strong) NSMutableDictionary<NSNumber *, ApolloBoundedDataRecord *> *records;
++ (instancetype)sharedCoordinator;
+- (NSURLSessionDataTask *)startRequest:(NSURLRequest *)request
+                          maximumBytes:(NSUInteger)maximumBytes
+                     responseValidator:(ApolloBoundedDataResponseValidator)responseValidator
+                       completionQueue:(dispatch_queue_t)completionQueue
+                            completion:(ApolloBoundedDataCompletion)completion;
+@end
+
+@implementation ApolloBoundedDataCoordinator
+
++ (instancetype)sharedCoordinator {
+    static ApolloBoundedDataCoordinator *coordinator;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ coordinator = [ApolloBoundedDataCoordinator new]; });
+    return coordinator;
+}
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _records = [NSMutableDictionary dictionary];
+        NSOperationQueue *queue = [NSOperationQueue new];
+        queue.name = @"com.apolloreborn.bounded-data";
+        queue.maxConcurrentOperationCount = 1;
+        queue.qualityOfService = NSQualityOfServiceUtility;
+        NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
+        _session = [NSURLSession sessionWithConfiguration:configuration delegate:self delegateQueue:queue];
+    }
+    return self;
+}
+
+- (NSError *)errorWithCode:(NSInteger)code description:(NSString *)description {
+    return [NSError errorWithDomain:kApolloBoundedDataErrorDomain
+                               code:code
+                           userInfo:@{NSLocalizedDescriptionKey: description ?: @"The response could not be loaded"}];
+}
+
+- (NSURLSessionDataTask *)startRequest:(NSURLRequest *)request
+                          maximumBytes:(NSUInteger)maximumBytes
+                     responseValidator:(ApolloBoundedDataResponseValidator)responseValidator
+                       completionQueue:(dispatch_queue_t)completionQueue
+                            completion:(ApolloBoundedDataCompletion)completion {
+    if (![request isKindOfClass:[NSURLRequest class]] || !request.URL || maximumBytes == 0 || !completion) {
+        if (completion) {
+            dispatch_async(completionQueue ?: dispatch_get_main_queue(), ^{
+                completion(nil, nil, [self errorWithCode:1 description:@"Invalid bounded-data request"]);
+            });
+        }
+        return nil;
+    }
+
+    NSURLSessionDataTask *task = [self.session dataTaskWithRequest:request];
+    ApolloBoundedDataRecord *record = [ApolloBoundedDataRecord new];
+    record.maximumBytes = maximumBytes;
+    record.data = [NSMutableData data];
+    record.responseValidator = [responseValidator copy];
+    record.completionQueue = completionQueue ?: dispatch_get_main_queue();
+    record.completion = [completion copy];
+    @synchronized (self) { self.records[@(task.taskIdentifier)] = record; }
+    [task resume];
+    return task;
+}
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask
+ didReceiveResponse:(NSURLResponse *)response
+  completionHandler:(void (^)(NSURLSessionResponseDisposition disposition))completionHandler {
+    ApolloBoundedDataRecord *record = nil;
+    @synchronized (self) { record = self.records[@(dataTask.taskIdentifier)]; }
+    NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
+    record.response = http;
+
+    NSError *failure = nil;
+    if (!record || !http || http.statusCode < 200 || http.statusCode >= 300) {
+        failure = [self errorWithCode:2 description:@"The server returned an HTTP error"];
+    } else if (response.expectedContentLength > 0 &&
+               (unsigned long long)response.expectedContentLength > record.maximumBytes) {
+        failure = [self errorWithCode:3 description:@"The response exceeded its size limit"];
+    } else if (record.responseValidator) {
+        failure = record.responseValidator(http);
+    }
+
+    if (failure) {
+        record.failure = failure;
+        completionHandler(NSURLSessionResponseCancel);
+        return;
+    }
+    completionHandler(NSURLSessionResponseAllow);
+}
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
+    ApolloBoundedDataRecord *record = nil;
+    @synchronized (self) { record = self.records[@(dataTask.taskIdentifier)]; }
+    if (!record || record.failure || data.length == 0) return;
+    if (data.length > record.maximumBytes - MIN(record.data.length, record.maximumBytes)) {
+        record.failure = [self errorWithCode:4 description:@"The response exceeded its size limit"];
+        [dataTask cancel];
+        return;
+    }
+    [record.data appendData:data];
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error {
+    ApolloBoundedDataRecord *record = nil;
+    @synchronized (self) {
+        NSNumber *key = @(task.taskIdentifier);
+        record = self.records[key];
+        [self.records removeObjectForKey:key];
+    }
+    if (!record) return;
+
+    NSData *result = !record.failure && !error ? [record.data copy] : nil;
+    NSError *finalError = record.failure ?: error;
+    ApolloBoundedDataCompletion completion = record.completion;
+    NSHTTPURLResponse *response = record.response;
+    dispatch_async(record.completionQueue ?: dispatch_get_main_queue(), ^{
+        completion(result, response, finalError);
+    });
+}
+
+@end
+
+NSURLSessionDataTask *ApolloStartBoundedDataRequest(NSURLRequest *request,
+                                                    NSUInteger maximumBytes,
+                                                    ApolloBoundedDataResponseValidator responseValidator,
+                                                    dispatch_queue_t completionQueue,
+                                                    ApolloBoundedDataCompletion completion) {
+    return [[ApolloBoundedDataCoordinator sharedCoordinator] startRequest:request
+                                                              maximumBytes:maximumBytes
+                                                         responseValidator:responseValidator
+                                                           completionQueue:completionQueue
+                                                                completion:completion];
 }
 
 // Get the SDK version from the main binary's LC_BUILD_VERSION load command
@@ -308,8 +662,21 @@ NSURL *ApolloURLByConvertingResolvedURLToApolloScheme(NSURL *url) {
     // the external-web path instead of being rewritten into an Apollo deep link.
     if ([host isEqualToString:@"reddit.com"] || [host hasSuffix:@".reddit.com"]) {
         components.host = @"reddit.com";
-    } else if ([host isEqualToString:@"redd.it"] || [host hasSuffix:@".redd.it"]) {
-        components.host = host;
+    } else if ([host isEqualToString:@"redd.it"]) {
+        // Only bare redd.it is the post shortener. i.redd.it, v.redd.it and
+        // preview.redd.it are media/CDN hosts and cannot identify a post.
+        NSArray<NSString *> *rawSegments = [components.path componentsSeparatedByString:@"/"];
+        NSMutableArray<NSString *> *segments = [NSMutableArray array];
+        for (NSString *segment in rawSegments) {
+            if (segment.length > 0) {
+                [segments addObject:segment];
+            }
+        }
+        if (segments.count != 1) {
+            return nil;
+        }
+        components.host = @"reddit.com";
+        components.path = [@"/comments/" stringByAppendingString:segments.firstObject];
     } else {
         return nil;
     }
@@ -933,4 +1300,20 @@ void ApolloSetLinkPreviewCardColorHex(NSString *hex) {
 
 double ApolloPerfNowMs(void) {
     return CACurrentMediaTime() * 1000.0;
+}
+
+// --- Tweak-UI text node marker -------------------------------------------
+// Content scans (translation's post-body candidate walk, etc.) must never
+// treat tweak-drawn text as user content. One shared assoc key, set at node
+// creation by whichever module draws the UI.
+static char kApolloTweakUITextNodeKey;
+
+void ApolloMarkTweakUITextNode(id node) {
+    if (!node) return;
+    objc_setAssociatedObject(node, &kApolloTweakUITextNodeKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+BOOL ApolloTextNodeIsTweakUI(id node) {
+    if (!node) return NO;
+    return [objc_getAssociatedObject(node, &kApolloTweakUITextNodeKey) boolValue];
 }

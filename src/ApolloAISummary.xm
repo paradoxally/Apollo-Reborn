@@ -816,7 +816,7 @@ static id ApolloAIScanForLink(id obj) {
     };
     for (size_t i = 0; knownNames[i]; i++) {
         id value = ApolloAIKnownObjectIvar(obj, knownNames[i]);
-        if ([value isKindOfClass:rdkLink]) return value;
+        if ([value isMemberOfClass:rdkLink]) return value;
     }
 
     for (Class cls = [obj class]; cls && cls != [NSObject class]; cls = class_getSuperclass(cls)) {
@@ -828,7 +828,7 @@ static id ApolloAIScanForLink(id obj) {
             if (!type || type[0] != '@') continue;
             id v = nil;
             @try { v = object_getIvar(obj, ivars[i]); } @catch (__unused NSException *e) { continue; }
-            if ([v isKindOfClass:rdkLink]) { free(ivars); return v; }
+            if ([v isMemberOfClass:rdkLink]) { free(ivars); return v; }
         }
         free(ivars);
     }
@@ -945,7 +945,7 @@ static id ApolloAICommentFromCellNode(id cellNode) {
     if (!cellNode) return nil;
     id comment = ApolloAIKnownObjectIvar(cellNode, "comment");
     Class rdkComment = NSClassFromString(@"RDKComment");
-    if (!rdkComment || ![comment isKindOfClass:rdkComment]) return nil;
+    if (!rdkComment || ![comment isMemberOfClass:rdkComment]) return nil;
     return comment;
 }
 
@@ -1105,10 +1105,10 @@ static void ApolloAIAppendCommentText(id comment,
 // one, otherwise via a `comment` accessor (cell models wrap it).
 static id ApolloAIRDKCommentFromObject(id obj, Class rdkComment) {
     if (!obj || !rdkComment) return nil;
-    if ([obj isKindOfClass:rdkComment]) return obj;
+    if ([obj isMemberOfClass:rdkComment]) return obj;
     if ([obj respondsToSelector:@selector(comment)]) {
         id c = ((id (*)(id, SEL))objc_msgSend)(obj, @selector(comment));
-        if ([c isKindOfClass:rdkComment]) return c;
+        if ([c isMemberOfClass:rdkComment]) return c;
     }
     return nil;
 }
@@ -1811,7 +1811,6 @@ static char kApolloAICommentExpandChoiceKey;
 // explicit request to read this summary. Cleared like a one-shot by the expand.
 static char kApolloAIPostExpandOnReadyKey;
 static char kApolloAICommentExpandOnReadyKey;
-static char kApolloAISummaryOwnerKey;
 static char kApolloAISummaryIsPostKey;
 
 static void ApolloAIForceHeaderRemeasure(NSString *fullName);
@@ -1966,12 +1965,15 @@ static ASTextNode *ApolloAIEnsureSummaryNode(id headerNode, BOOL isPost) {
     textNode = [[textNodeClass alloc] init];
     textNode.maximumNumberOfLines = 0;
     textNode.userInteractionEnabled = YES;
-    objc_setAssociatedObject(textNode, &kApolloAISummaryOwnerKey, headerNode, OBJC_ASSOCIATION_ASSIGN);
+    // Tweak chrome, not post content — keeps the translation module's
+    // post-body candidate scan from ever picking the summary pill as "the body".
+    ApolloMarkTweakUITextNode(textNode);
     objc_setAssociatedObject(textNode, &kApolloAISummaryIsPostKey, @(isPost), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     __weak ASTextNode *weakTextNode = textNode;
+    __weak id weakHeaderNode = headerNode;
     [textNode onDidLoad:^(__kindof ASDisplayNode *node) {
         ASTextNode *strongTextNode = weakTextNode;
-        id owner = objc_getAssociatedObject(strongTextNode, &kApolloAISummaryOwnerKey);
+        id owner = weakHeaderNode;
         if (!owner || !strongTextNode.view) return;
         SEL action = isPost ? NSSelectorFromString(@"apollo_togglePostSummary")
                             : NSSelectorFromString(@"apollo_toggleDiscussionSummary");
@@ -2336,8 +2338,10 @@ static NSString *ApolloAIFriendlyError(NSError *error) {
             return @"Couldn't reach the AI service. Check your connection and provider settings, then try again.";
         case 13: // reasoning consumed the whole response
             return @"The model spent its entire response thinking instead of answering. Try a different model in Apollo AI settings.";
-        case 14: // HTTP 429, after the bridge's one internal retry
-            return @"The AI service is rate limiting requests. Try again shortly.";
+        case 14: // cloud only: retired, missing, or unavailable model
+            return @"That AI model is no longer available. Choose a current model in Apollo AI settings.";
+        case 15: // cloud only: provider quota/rate limit
+            return @"The AI provider's free quota or rate limit has been reached. Try again later or check your provider usage.";
         default:
             break;
     }
@@ -2608,7 +2612,7 @@ static ASStackLayoutSpec *ApolloAIInsertPostSummary(ASStackLayoutSpec *stack, id
     // 1) Directly below the inline link-preview card.
     for (NSUInteger i = 0; i < children.count; i++) {
         id c = children[i];
-        if ((linkButtonClass && [c isKindOfClass:linkButtonClass]) ||
+        if ((linkButtonClass && [c isMemberOfClass:linkButtonClass]) ||
             [NSStringFromClass([c class]) isEqualToString:@"Apollo.LinkButtonNode"]) {
             NSMutableArray *m = [children mutableCopy];
             [m insertObject:spec atIndex:i + 1];
@@ -2618,7 +2622,7 @@ static ASStackLayoutSpec *ApolloAIInsertPostSummary(ASStackLayoutSpec *stack, id
     // 2) Just before the body markdown (plain text post: between title and body).
     for (NSUInteger i = 0; i < children.count; i++) {
         id c = children[i];
-        if ((markdownClass && [c isKindOfClass:markdownClass]) ||
+        if ((markdownClass && [c isMemberOfClass:markdownClass]) ||
             [NSStringFromClass([c class]) isEqualToString:@"Apollo.MarkdownNode"]) {
             NSMutableArray *m = [children mutableCopy];
             [m insertObject:spec atIndex:i];
@@ -3124,7 +3128,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
     // link lookup fail even though this controller lookup succeeded.
     Class headerClass = NSClassFromString(@"_TtC6Apollo22CommentsHeaderCellNode");
     for (id node in ApolloAIAvailableNodes(vc)) {
-        if (headerClass && [node isKindOfClass:headerClass]) {
+        if (headerClass && [node isMemberOfClass:headerClass]) {
             ApolloAIRegisterHeaderNodeForFullName(node, fullName);
         }
     }

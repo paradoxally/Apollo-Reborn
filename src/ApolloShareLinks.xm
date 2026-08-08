@@ -16,8 +16,11 @@
 - (instancetype)initWithURL:(NSURL *)url;
 @end
 
-// Regex for opaque share links
-static NSString *const ShareLinkRegexPattern = @"^(?:https?:)?//(?:www\\.|new\\.|np\\.)?reddit\\.com/(?:r|u)/(\\w+)/s/(\\w+)$";
+// Regex for Reddit's opaque share links. These appear on every presentation
+// host (www/old/new/np/m/language subdomains), and profile links may use either
+// /u/ or /user/. Allow the harmless query/fragment Reddit appends while keeping
+// the host pinned to reddit.com and each path segment bounded.
+static NSString *const ShareLinkRegexPattern = @"^(?:https?:)?//(?:[A-Za-z0-9-]+\\.)?reddit\\.com/(?:r|u|user)/[^/?#]+/s/[A-Za-z0-9_-]+/?(?:[?#].*)?$";
 static NSRegularExpression *ShareLinkRegex;
 
 // Regex for media share links
@@ -32,15 +35,44 @@ static NSRegularExpression *ImgurTitleIdImageLinkRegex;
 static NSString *const HTMLHrefRegexPattern = @"href\\s*=\\s*(?:\"([^\"]+)\"|'([^']+)')";
 static NSRegularExpression *HTMLHrefRegex;
 
-// Cache storing resolved share URLs - this is an optimization so that we don't need to resolve the share URL every time
-static NSCache<NSString *, ShareUrlTask *> *cache;
+@interface ShareUrlTask ()
+@property (nonatomic, copy) NSString *originalURL;
+@property (nonatomic, copy) NSString *cacheKey;
+@property (nonatomic) NSUInteger redirectCount;
+@property (nonatomic) BOOL occupyingSlot;
+@property (nonatomic) BOOL userInitiated;
+@end
+
+@interface ApolloShareURLResolverDelegate : NSObject <NSURLSessionDataDelegate, NSURLSessionTaskDelegate>
+@end
+
+@interface ApolloShareURLCacheEntry : NSObject
+@property (nonatomic, copy) NSString *resolvedURL;
+@property (nonatomic, strong) NSDate *expirationDate;
+@end
+
+@implementation ApolloShareURLCacheEntry
+@end
+
+// Completed values are pressure-aware; active work is not. Keeping in-flight
+// state in a strong locked registry prevents NSCache eviction or concurrent
+// preload/tap paths from starting duplicate redirect requests.
+static NSCache<NSString *, ApolloShareURLCacheEntry *> *resolvedShareURLCache;
+static NSMutableDictionary<NSString *, ShareUrlTask *> *shareURLTasksInFlight;
+static NSMutableArray<ShareUrlTask *> *shareURLTasksWaiting;
+static NSURLSession *shareURLResolverSession;
+static NSUInteger shareURLActiveTaskCount;
+static const NSUInteger kApolloShareURLMaximumConcurrentTasks = 4;
+static const NSUInteger kApolloShareURLMaximumQueuedPreloads = 64;
+static const NSUInteger kApolloShareURLMaximumRedirects = 10;
+static const NSTimeInterval kApolloShareURLFailureCacheLifetime = 60.0;
+static char kApolloShareURLTaskKey;
 
 @implementation ShareUrlTask
 - (instancetype)init {
     self = [super init];
     if (self) {
-        _dispatchGroup = NULL;
-        _resolvedURL = NULL;
+        _pendingCompletions = [NSMutableArray array];
     }
     return self;
 }
@@ -54,27 +86,36 @@ static BOOL ApolloIsShareLinkString(NSString *urlString) {
     return match != nil;
 }
 
-// Normalize share URL for use as cache key.
-// Strips www./new./np. prefix so that e.g. "https://www.reddit.com/r/sub/s/abc"
-// and "https://reddit.com/r/sub/s/abc" (from link button display text) hit the same entry.
+// Normalize share URL for use as cache key. Reddit serves identical opaque
+// links through several presentation hosts and sometimes adds tracking query
+// items. Collapse all of those spellings so preloading and the later tap share
+// one in-flight resolution task.
 static NSString *NormalizeShareURLCacheKey(NSString *urlString) {
     if (![urlString isKindOfClass:[NSString class]] || urlString.length == 0) {
         return urlString;
     }
-    // Only normalize reddit share URLs
-    NSRange range = [urlString rangeOfString:@"://www.reddit.com/"];
-    if (range.location != NSNotFound) {
-        return [urlString stringByReplacingCharactersInRange:range withString:@"://reddit.com/"];
+    NSURLComponents *components = [NSURLComponents componentsWithString:urlString];
+    NSString *host = [components.host lowercaseString];
+    if (!components || !([host isEqualToString:@"reddit.com"] || [host hasSuffix:@".reddit.com"])) {
+        return urlString;
     }
-    range = [urlString rangeOfString:@"://new.reddit.com/"];
-    if (range.location != NSNotFound) {
-        return [urlString stringByReplacingCharactersInRange:range withString:@"://reddit.com/"];
+
+    components.scheme = @"https";
+    components.host = @"reddit.com";
+    components.query = nil;
+    components.fragment = nil;
+    return components.string ?: urlString;
+}
+
+static NSString *ApolloCachedShareURL(NSString *cacheKey) {
+    if (cacheKey.length == 0) return nil;
+    ApolloShareURLCacheEntry *entry = [resolvedShareURLCache objectForKey:cacheKey];
+    if (!entry) return nil;
+    if (entry.expirationDate && [entry.expirationDate timeIntervalSinceNow] <= 0.0) {
+        [resolvedShareURLCache removeObjectForKey:cacheKey];
+        return nil;
     }
-    range = [urlString rangeOfString:@"://np.reddit.com/"];
-    if (range.location != NSNotFound) {
-        return [urlString stringByReplacingCharactersInRange:range withString:@"://reddit.com/"];
-    }
-    return urlString;
+    return entry.resolvedURL;
 }
 
 static NSString *ApolloDecodeBasicHTMLEntities(NSString *string) {
@@ -90,7 +131,7 @@ static NSString *ApolloDecodeBasicHTMLEntities(NSString *string) {
     return decoded;
 }
 
-static void StartShareURLResolveTask(NSURL *url);
+static ShareUrlTask *StartShareURLResolveTask(NSURL *url, BOOL userInitiated);
 
 static void ApolloEnqueueShareURLIfNeeded(NSURL *url) {
     if (![url isKindOfClass:[NSURL class]]) {
@@ -100,7 +141,7 @@ static void ApolloEnqueueShareURLIfNeeded(NSURL *url) {
     if (!ApolloIsShareLinkString(urlString)) {
         return;
     }
-    StartShareURLResolveTask(url);
+    StartShareURLResolveTask(url, NO);
 }
 
 static void ApolloEnqueueShareURLStringIfNeeded(NSString *urlString) {
@@ -109,47 +150,54 @@ static void ApolloEnqueueShareURLStringIfNeeded(NSString *urlString) {
         return;
     }
     NSURL *url = [NSURL URLWithString:decodedURLString];
-    ApolloEnqueueShareURLIfNeeded(url);
+    StartShareURLResolveTask(url, NO);
 }
 
 static NSString *ApolloFirstShareURLStringFromHTML(NSString *htmlString) {
     if (![htmlString isKindOfClass:[NSString class]] || htmlString.length == 0 || !HTMLHrefRegex) {
         return nil;
     }
+    if (![htmlString containsString:@"/s/"]) {
+        return nil;
+    }
 
-    NSArray<NSTextCheckingResult *> *matches = [HTMLHrefRegex matchesInString:htmlString options:0 range:NSMakeRange(0, htmlString.length)];
-    for (NSTextCheckingResult *match in matches) {
+    __block NSString *shareURLString = nil;
+    [HTMLHrefRegex enumerateMatchesInString:htmlString options:0 range:NSMakeRange(0, htmlString.length)
+                                usingBlock:^(NSTextCheckingResult *match, __unused NSMatchingFlags flags, BOOL *stop) {
         NSRange firstRange = [match rangeAtIndex:1];
         NSRange secondRange = [match rangeAtIndex:2];
         NSRange hrefRange = firstRange.location != NSNotFound ? firstRange : secondRange;
         if (hrefRange.location == NSNotFound || hrefRange.length == 0) {
-            continue;
+            return;
         }
         NSString *href = [htmlString substringWithRange:hrefRange];
         NSString *decodedURLString = ApolloDecodeBasicHTMLEntities(href);
         if (ApolloIsShareLinkString(decodedURLString)) {
-            return decodedURLString;
+            shareURLString = decodedURLString;
+            *stop = YES;
         }
-    }
-
-    return nil;
+    }];
+    return shareURLString;
 }
 
 static void ApolloEnqueueShareURLsFromHTMLIfNeeded(NSString *htmlString) {
     if (![htmlString isKindOfClass:[NSString class]] || htmlString.length == 0 || !HTMLHrefRegex) {
         return;
     }
-    NSArray<NSTextCheckingResult *> *matches = [HTMLHrefRegex matchesInString:htmlString options:0 range:NSMakeRange(0, htmlString.length)];
-    for (NSTextCheckingResult *match in matches) {
+    if (![htmlString containsString:@"/s/"]) {
+        return;
+    }
+    [HTMLHrefRegex enumerateMatchesInString:htmlString options:0 range:NSMakeRange(0, htmlString.length)
+                                usingBlock:^(NSTextCheckingResult *match, __unused NSMatchingFlags flags, __unused BOOL *stop) {
         NSRange firstRange = [match rangeAtIndex:1];
         NSRange secondRange = [match rangeAtIndex:2];
         NSRange hrefRange = firstRange.location != NSNotFound ? firstRange : secondRange;
         if (hrefRange.location == NSNotFound || hrefRange.length == 0) {
-            continue;
+            return;
         }
         NSString *href = [htmlString substringWithRange:hrefRange];
         ApolloEnqueueShareURLStringIfNeeded(href);
-    }
+    }];
 }
 
 /// Helper functions for resolving share URLs
@@ -526,8 +574,9 @@ static UIViewController *PresentResolvingShareLinkAlert() {
 
 // Strip tracking parameters from resolved share URL
 static NSURL *RemoveShareTrackingParams(NSURL *url) {
+    if (![url isKindOfClass:[NSURL class]]) return nil;
     NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
-    NSMutableArray *queryItems = [NSMutableArray arrayWithArray:components.queryItems];
+    NSMutableArray *queryItems = [NSMutableArray arrayWithArray:components.queryItems ?: @[]];
     [queryItems filterUsingPredicate:[NSPredicate predicateWithFormat:@"name == %@", @"context"]];
     if (queryItems.count > 0) {
         components.queryItems = queryItems;
@@ -537,41 +586,187 @@ static NSURL *RemoveShareTrackingParams(NSURL *url) {
     return components.URL;
 }
 
-// Start async task to resolve share URL
-static void StartShareURLResolveTask(NSURL *url) {
-    if (![url isKindOfClass:[NSURL class]]) {
+static void ApolloPumpShareURLResolveTasks(void);
+
+// Resolve a task exactly once and release every waiter on the main queue. The
+// original share link is passed for all transport/HTTP/timeout failures, so a
+// failed resolution never strands a tap behind the resolving alert. Successful
+// resolutions stay pressure-cached; fallbacks expire quickly so a transient
+// failure or timeout cannot poison that share URL for the rest of the session.
+static void CompleteShareURLResolveTask(ShareUrlTask *task, NSString *cacheKey,
+                                        NSString *resolvedURL, BOOL succeeded) {
+    if (!task || cacheKey.length == 0 || resolvedURL.length == 0) return;
+
+    NSArray<void (^)(NSString *)> *callbacks = nil;
+    NSURLSessionDataTask *activeTask = nil;
+    @synchronized (task) {
+        if (task.resolvedURL.length > 0) return;
+        task.resolvedURL = resolvedURL;
+        activeTask = task.activeTask;
+        task.activeTask = nil;
+        callbacks = [task.pendingCompletions copy];
+        [task.pendingCompletions removeAllObjects];
+    }
+
+    if (activeTask && activeTask.state != NSURLSessionTaskStateCompleted &&
+        activeTask.state != NSURLSessionTaskStateCanceling) {
+        [activeTask cancel];
+    }
+    @synchronized (shareURLTasksInFlight) {
+        if (shareURLTasksInFlight[cacheKey] == task) [shareURLTasksInFlight removeObjectForKey:cacheKey];
+        [shareURLTasksWaiting removeObjectIdenticalTo:task];
+        if (task.occupyingSlot) {
+            task.occupyingSlot = NO;
+            if (shareURLActiveTaskCount > 0) shareURLActiveTaskCount--;
+        }
+        ApolloShareURLCacheEntry *entry = [ApolloShareURLCacheEntry new];
+        entry.resolvedURL = resolvedURL;
+        if (!succeeded) {
+            entry.expirationDate =
+                [NSDate dateWithTimeIntervalSinceNow:kApolloShareURLFailureCacheLifetime];
+        }
+        [resolvedShareURLCache setObject:entry forKey:cacheKey];
+    }
+    ApolloPumpShareURLResolveTasks();
+    if (callbacks.count == 0) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        for (void (^callback)(NSString *) in callbacks) callback(resolvedURL);
+    });
+}
+
+static void ApolloPumpShareURLResolveTasks(void) {
+    NSMutableArray<ShareUrlTask *> *tasksToStart = [NSMutableArray array];
+    @synchronized (shareURLTasksInFlight) {
+        while (shareURLActiveTaskCount < kApolloShareURLMaximumConcurrentTasks &&
+               shareURLTasksWaiting.count > 0) {
+            ShareUrlTask *task = shareURLTasksWaiting.firstObject;
+            [shareURLTasksWaiting removeObjectAtIndex:0];
+            if (task.resolvedURL.length > 0) continue;
+            task.occupyingSlot = YES;
+            shareURLActiveTaskCount++;
+            [tasksToStart addObject:task];
+        }
+    }
+    for (ShareUrlTask *task in tasksToStart) {
+        NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:task.originalURL]
+                                                               cachePolicy:NSURLRequestUseProtocolCachePolicy
+                                                           timeoutInterval:10.0];
+        NSURLSessionDataTask *getTask = [shareURLResolverSession dataTaskWithRequest:request];
+        objc_setAssociatedObject(getTask, &kApolloShareURLTaskKey, task, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        task.activeTask = getTask;
+        [getTask resume];
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(10.0 * NSEC_PER_SEC)),
+                       dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+            CompleteShareURLResolveTask(task, task.cacheKey, task.originalURL, NO);
+        });
+    }
+}
+
+@implementation ApolloShareURLResolverDelegate
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)sessionTask
+ willPerformHTTPRedirection:(NSHTTPURLResponse *)response
+         newRequest:(NSURLRequest *)request
+  completionHandler:(void (^)(NSURLRequest *request))completionHandler {
+    ShareUrlTask *task = objc_getAssociatedObject(sessionTask, &kApolloShareURLTaskKey);
+    if (!task) {
+        completionHandler(nil);
         return;
+    }
+    BOOL allowRedirect = NO;
+    @synchronized (task) {
+        if (task.resolvedURL.length == 0) {
+            task.redirectCount++;
+            allowRedirect = task.redirectCount <= kApolloShareURLMaximumRedirects;
+        }
+    }
+    completionHandler(allowRedirect ? request : nil);
+    if (!allowRedirect) {
+        CompleteShareURLResolveTask(task, task.cacheKey, task.originalURL, NO);
+    }
+}
+
+- (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)sessionTask
+ didReceiveResponse:(NSURLResponse *)response
+  completionHandler:(void (^)(NSURLSessionResponseDisposition disposition))completionHandler {
+    ShareUrlTask *task = objc_getAssociatedObject(sessionTask, &kApolloShareURLTaskKey);
+    NSHTTPURLResponse *http = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
+    NSURL *finalURL = http.statusCode >= 200 && http.statusCode < 300 ? http.URL : nil;
+    NSString *resolvedURL = RemoveShareTrackingParams(finalURL).absoluteString;
+    completionHandler(NSURLSessionResponseCancel);
+    if (task) {
+        BOOL succeeded = resolvedURL.length > 0 &&
+            ![NormalizeShareURLCacheKey(resolvedURL) isEqualToString:task.cacheKey];
+        CompleteShareURLResolveTask(task, task.cacheKey,
+                                    succeeded ? resolvedURL : task.originalURL,
+                                    succeeded);
+    }
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)sessionTask
+ didCompleteWithError:(NSError *)error {
+    ShareUrlTask *task = objc_getAssociatedObject(sessionTask, &kApolloShareURLTaskKey);
+    if (task) {
+        CompleteShareURLResolveTask(task, task.cacheKey, task.originalURL, NO);
+    }
+}
+
+@end
+
+// Start async task to resolve share URL
+static ShareUrlTask *StartShareURLResolveTask(NSURL *url, BOOL userInitiated) {
+    if (![url isKindOfClass:[NSURL class]]) {
+        return nil;
+    }
+    NSURLComponents *components = [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO];
+    if (components.host.length > 0 && components.scheme.length == 0) {
+        components.scheme = @"https";
+        url = components.URL ?: url;
     }
     NSString *urlString = [url absoluteString];
     if (![urlString isKindOfClass:[NSString class]] || urlString.length == 0) {
-        return;
+        return nil;
     }
     NSString *cacheKey = NormalizeShareURLCacheKey(urlString);
-    __block ShareUrlTask *task;
-    task = [cache objectForKey:cacheKey];
-    if (task) {
-        return;
-    }
-
-    dispatch_group_t dispatch_group = dispatch_group_create();
-    task = [[ShareUrlTask alloc] init];
-    task.dispatchGroup = dispatch_group;
-    [cache setObject:task forKey:cacheKey];
-
-    dispatch_group_enter(task.dispatchGroup);
-    NSURLSessionTask *getTask = [[NSURLSession sharedSession] dataTaskWithURL:url completionHandler:^(NSData * _Nullable data, NSURLResponse * _Nullable response, NSError * _Nullable error) {
-        if (!error) {
-            NSURL *redirectedURL = [(NSHTTPURLResponse *)response URL];
-            NSURL *cleanedURL = RemoveShareTrackingParams(redirectedURL);
-            NSString *cleanUrlString = [cleanedURL absoluteString];
-            task.resolvedURL = cleanUrlString;
+    ShareUrlTask *task = nil;
+    @synchronized (shareURLTasksInFlight) {
+        if (ApolloCachedShareURL(cacheKey).length > 0) return nil;
+        task = shareURLTasksInFlight[cacheKey];
+        if (task) {
+            if (userInitiated) {
+                task.userInitiated = YES;
+                if (!task.occupyingSlot && [shareURLTasksWaiting containsObject:task]) {
+                    [shareURLTasksWaiting removeObjectIdenticalTo:task];
+                    [shareURLTasksWaiting insertObject:task atIndex:0];
+                }
+            }
         } else {
-            task.resolvedURL = urlString;
-        }
-        dispatch_group_leave(task.dispatchGroup);
-    }];
+            task = [[ShareUrlTask alloc] init];
+            task.originalURL = urlString;
+            task.cacheKey = cacheKey;
+            task.userInitiated = userInitiated;
+            shareURLTasksInFlight[cacheKey] = task;
+            if (userInitiated) [shareURLTasksWaiting insertObject:task atIndex:0];
+            else [shareURLTasksWaiting addObject:task];
 
-    [getTask resume];
+            while (shareURLTasksWaiting.count > kApolloShareURLMaximumQueuedPreloads) {
+                ShareUrlTask *discarded = nil;
+                for (ShareUrlTask *candidate in shareURLTasksWaiting) {
+                    if (!candidate.userInitiated) {
+                        discarded = candidate;
+                        break;
+                    }
+                }
+                if (!discarded) break;
+                [shareURLTasksWaiting removeObjectIdenticalTo:discarded];
+                if (shareURLTasksInFlight[discarded.cacheKey] == discarded) {
+                    [shareURLTasksInFlight removeObjectForKey:discarded.cacheKey];
+                }
+            }
+        }
+    }
+    ApolloPumpShareURLResolveTasks();
+    return task;
 }
 
 // Asynchronously wait for share URL to resolve
@@ -582,45 +777,69 @@ static void TryResolveShareUrl(NSString *urlString, void (^successHandler)(NSStr
     }
 
     NSString *cacheKey = NormalizeShareURLCacheKey(urlString);
-    ShareUrlTask *task = [cache objectForKey:cacheKey];
+    NSString *completedURL = ApolloCachedShareURL(cacheKey);
+    if (completedURL.length > 0) {
+        successHandler(completedURL);
+        return;
+    }
+
+    ShareUrlTask *task = nil;
+    @synchronized (shareURLTasksInFlight) {
+        task = shareURLTasksInFlight[cacheKey];
+        if (task) {
+            task.userInitiated = YES;
+            if (!task.occupyingSlot && [shareURLTasksWaiting containsObject:task]) {
+                [shareURLTasksWaiting removeObjectIdenticalTo:task];
+                [shareURLTasksWaiting insertObject:task atIndex:0];
+            }
+        }
+    }
+    ApolloPumpShareURLResolveTasks();
     if (!task) {
-        // If preloading missed this URL, synchronously enqueue resolution here.
         NSTextCheckingResult *match = [ShareLinkRegex firstMatchInString:urlString options:0 range:NSMakeRange(0, [urlString length])];
         if (!match) {
             ignoreHandler();
             return;
         }
         NSURL *shareURL = [NSURL URLWithString:urlString];
-        StartShareURLResolveTask(shareURL);
-        task = [cache objectForKey:cacheKey];
+        task = StartShareURLResolveTask(shareURL, YES);
+        completedURL = ApolloCachedShareURL(cacheKey);
+        if (completedURL.length > 0) {
+            successHandler(completedURL);
+            return;
+        }
         if (!task) {
             ignoreHandler();
             return;
         }
     }
 
-    if (task.resolvedURL) {
-        successHandler(task.resolvedURL);
+    __block __weak UIViewController *weakAlertController = nil;
+    NSString *resolvedURL = nil;
+    BOOL shouldPresentAlert = NO;
+    @synchronized (task) {
+        resolvedURL = task.resolvedURL;
+        if (!resolvedURL) {
+            shouldPresentAlert = YES;
+            [task.pendingCompletions addObject:^(NSString *resolved) {
+                UIViewController *alert = weakAlertController;
+                void (^finish)(void) = ^{ successHandler(resolved.length > 0 ? resolved : urlString); };
+                if (alert.presentingViewController) {
+                    [alert dismissViewControllerAnimated:YES completion:finish];
+                } else {
+                    finish();
+                }
+            }];
+        }
+    }
+    if (resolvedURL) {
+        successHandler(resolvedURL);
         return;
-    } else {
-        // Wait for task to finish and show loading alert to not block main thread
-        UIViewController *shareAlertController = PresentResolvingShareLinkAlert();
-        dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-            if (!task.dispatchGroup) {
-                dispatch_async(dispatch_get_main_queue(), ^{
-                    [shareAlertController dismissViewControllerAnimated:YES completion:^{
-                        ignoreHandler();
-                    }];
-                });
-                return;
-            }
-            dispatch_group_wait(task.dispatchGroup, DISPATCH_TIME_FOREVER);
-            dispatch_async(dispatch_get_main_queue(), ^{
-                [shareAlertController dismissViewControllerAnimated:YES completion:^{
-                    successHandler(task.resolvedURL);
-                }];
-            });
-        });
+    }
+    if (shouldPresentAlert) {
+        // UIKit presentation stays outside the task lock. Delegate callbacks
+        // take the same lock and must never wait on a main-thread presentation.
+        weakAlertController = PresentResolvingShareLinkAlert();
     }
 }
 
@@ -637,7 +856,10 @@ static void TryResolveShareUrl(NSString *urlString, void (^successHandler)(NSStr
         val = normalizedURL;
     }
     // Steam store links: deep link to Steam app if enabled, fall back to normal handling
-    if (ApolloTryOpenInDedicatedApp((NSURL *)val, ^{ %orig(textNode, attr, val, point, range); })) {
+    void (^dedicatedAppFallback)(void) = ^{
+        %orig(textNode, attr, val, point, range);
+    };
+    if (ApolloTryOpenInDedicatedApp((NSURL *)val, dedicatedAppFallback)) {
         return;
     }
     void (^ignoreHandler)(void) = ^{
@@ -663,7 +885,10 @@ static void TryResolveShareUrl(NSString *urlString, void (^successHandler)(NSStr
         val = normalizedURL;
     }
     // Steam store links: deep link to Steam app if enabled, fall back to normal handling
-    if (ApolloTryOpenInDedicatedApp((NSURL *)val, ^{ %orig(textNode, attr, val, point, range); })) {
+    void (^dedicatedAppFallback)(void) = ^{
+        %orig(textNode, attr, val, point, range);
+    };
+    if (ApolloTryOpenInDedicatedApp((NSURL *)val, dedicatedAppFallback)) {
         return;
     }
     void (^ignoreHandler)(void) = ^{
@@ -696,7 +921,10 @@ static void TryResolveShareUrl(NSString *urlString, void (^successHandler)(NSStr
         urlString = [rdkLinkURL absoluteString];
     }
 
-    if (ApolloTryOpenInDedicatedApp([NSURL URLWithString:urlString], ^{ %orig; })) {
+    void (^dedicatedAppFallback)(void) = ^{
+        %orig;
+    };
+    if (ApolloTryOpenInDedicatedApp([NSURL URLWithString:urlString], dedicatedAppFallback)) {
         return;
     }
 
@@ -747,7 +975,10 @@ static void TryResolveShareUrl(NSString *urlString, void (^successHandler)(NSStr
         val = normalizedURL;
     }
     // Steam store links: deep link to Steam app if enabled, fall back to normal handling
-    if (ApolloTryOpenInDedicatedApp((NSURL *)val, ^{ %orig(textNode, attr, val, point, range); })) {
+    void (^dedicatedAppFallback)(void) = ^{
+        %orig(textNode, attr, val, point, range);
+    };
+    if (ApolloTryOpenInDedicatedApp((NSURL *)val, dedicatedAppFallback)) {
         return;
     }
     void (^ignoreHandler)(void) = ^{
@@ -788,7 +1019,10 @@ static void TryResolveShareUrl(NSString *urlString, void (^successHandler)(NSStr
         }
     }
 
-    if (ApolloTryOpenInDedicatedApp([NSURL URLWithString:urlString], ^{ %orig; })) {
+    void (^dedicatedAppFallback)(void) = ^{
+        %orig;
+    };
+    if (ApolloTryOpenInDedicatedApp([NSURL URLWithString:urlString], dedicatedAppFallback)) {
         return;
     }
 
@@ -851,7 +1085,10 @@ static void TryResolveShareUrl(NSString *urlString, void (^successHandler)(NSStr
         urlString = [rdkLinkURL absoluteString];
     }
 
-    if (ApolloTryOpenInDedicatedApp([NSURL URLWithString:urlString], ^{ %orig; })) {
+    void (^dedicatedAppFallback)(void) = ^{
+        %orig;
+    };
+    if (ApolloTryOpenInDedicatedApp([NSURL URLWithString:urlString], dedicatedAppFallback)) {
         return;
     }
 
@@ -895,7 +1132,20 @@ static void TryResolveShareUrl(NSString *urlString, void (^successHandler)(NSStr
 %end
 
 %ctor {
-    cache = [NSCache new];
+    resolvedShareURLCache = [NSCache new];
+    resolvedShareURLCache.countLimit = 500;
+    shareURLTasksInFlight = [NSMutableDictionary dictionary];
+    shareURLTasksWaiting = [NSMutableArray array];
+    NSURLSessionConfiguration *resolverConfiguration = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+    resolverConfiguration.URLCache = nil;
+    resolverConfiguration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
+    NSOperationQueue *resolverDelegateQueue = [NSOperationQueue new];
+    resolverDelegateQueue.name = @"com.apolloreborn.share-link-resolver";
+    resolverDelegateQueue.maxConcurrentOperationCount = 1;
+    resolverDelegateQueue.qualityOfService = NSQualityOfServiceUtility;
+    shareURLResolverSession = [NSURLSession sessionWithConfiguration:resolverConfiguration
+                                                            delegate:[ApolloShareURLResolverDelegate new]
+                                                       delegateQueue:resolverDelegateQueue];
 
     NSError *error = NULL;
     ShareLinkRegex = [NSRegularExpression regularExpressionWithPattern:ShareLinkRegexPattern options:NSRegularExpressionCaseInsensitive error:&error];

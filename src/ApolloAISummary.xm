@@ -2828,7 +2828,17 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
     // would re-run the request that just failed.
     ApolloFoundationModels *fmBridge = ApolloAIFoundationModelsBridge();
 
-    void (^runFM)(NSString *) = ^(NSString *fmText) {
+    // `cloudError` is non-nil only on the fallback leg. The on-device attempt is
+    // deliberately made even when availabilityStatus is non-zero (see the
+    // status note at the dispatch site: iOS 27 under-reports status 1 while
+    // generation works), so a doomed attempt is expected on some devices —
+    // Apple Intelligence off, assets still downloading, hardware not eligible.
+    // When that attempt fails, report the CLOUD error rather than the on-device
+    // one: the user configured a cloud provider, so "that model is no longer
+    // available, choose another" is the actionable message, whereas the FM
+    // error sends a device that can never run the model off to wait for a
+    // download that will never arrive.
+    void (^runFM)(NSString *, NSError *) = ^(NSString *fmText, NSError *cloudError) {
         // prepareSession is a cheap no-op when the identifier was already
         // prewarmed with the same instructions (viewWillAppear), and stages a
         // correct session otherwise (e.g. a fallback whose prewarm was consumed).
@@ -2839,12 +2849,17 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
       maximumResponseTokens:fmResponseTokens
                   onPartial:onPartial
                  onComplete:^(NSString *final, NSError *error) {
-                      onComplete(final, error, error ? nil : kApolloAIOnDeviceModelLabel);
+                      if (!error) { onComplete(final, nil, kApolloAIOnDeviceModelLabel); return; }
+                      if (cloudError) {
+                          ApolloLog(@"[AISummary] on-device fallback also failed (code %ld); reporting the cloud error (code %ld)",
+                                    (long)error.code, (long)cloudError.code);
+                      }
+                      onComplete(nil, cloudError ?: error, nil);
                  }];
     };
 
     if (!ApolloAICloudConfigured()) {
-        runFM(text);
+        runFM(text, nil);
         return;
     }
 
@@ -2864,7 +2879,7 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
         if (ApolloAIFMUsable()) {
             ApolloLog(@"[AISummary] cloud failed for %@ (code %ld) — falling back to on-device",
                       identifier, (long)error.code);
-            runFM(ApolloAITruncateForFM(text));
+            runFM(ApolloAITruncateForFM(text), error);
             return;
         }
         onComplete(nil, error ?: [NSError errorWithDomain:ApolloAICloudBridgeErrorDomain

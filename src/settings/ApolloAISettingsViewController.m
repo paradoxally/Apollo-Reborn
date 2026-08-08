@@ -56,8 +56,12 @@ static BOOL ApolloAIOpenAIModelLooksLikeTextChat(NSString *modelID) {
         chatFamily = second >= '0' && second <= '9';
     }
     if (!chatFamily) return NO;
+    // "-instruct" on OpenAI means the legacy completions endpoint, which the
+    // chat-completions summariser cannot call. (Only excluded here, not for
+    // OpenRouter, where "instruct" routinely names a chat model.)
     for (NSString *needle in @[@"embedding", @"image", @"audio", @"realtime", @"transcribe",
-                                @"tts", @"whisper", @"moderation", @"search-preview", @"dall-e"]) {
+                                @"tts", @"whisper", @"moderation", @"search-preview",
+                                @"dall-e", @"instruct"]) {
         if ([lower containsString:needle]) return NO;
     }
     return YES;
@@ -213,8 +217,9 @@ static UIView *ApolloAIModelAccessory(NSString *badge, BOOL selected, UIColor *f
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.title = [self.provider isEqualToString:@"openrouter"]
-        ? @"OpenRouter Models" : @"Gemini Models";
+    if ([self.provider isEqualToString:@"openrouter"]) self.title = @"OpenRouter Models";
+    else if ([self.provider isEqualToString:@"openai"]) self.title = @"OpenAI Models";
+    else self.title = @"Gemini Models";
     self.tableView.rowHeight = UITableViewAutomaticDimension;
     self.tableView.estimatedRowHeight = 58.0;
 
@@ -444,6 +449,9 @@ static UIView *ApolloAIModelAccessory(NSString *badge, BOOL selected, UIColor *f
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
     if ([self.provider isEqualToString:@"openrouter"]) {
         return @"Free and Paid labels use OpenRouter’s current live pricing. Free-model availability and rate limits can vary.";
+    }
+    if ([self.provider isEqualToString:@"openai"]) {
+        return @"Your account’s available models, filtered to the chat-capable ones. Non-chat models (embeddings, speech, image) are omitted because summaries use the chat-completions endpoint.";
     }
     return @"Google does not report per-model free-tier eligibility in its model catalog. Preview, Experimental, and Latest labels describe model lifecycle only.";
 }

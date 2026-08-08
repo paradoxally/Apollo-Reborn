@@ -2850,6 +2850,13 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
                   onPartial:onPartial
                  onComplete:^(NSString *final, NSError *error) {
                       if (!error) { onComplete(final, nil, kApolloAIOnDeviceModelLabel); return; }
+                      // A cancelled fallback keeps its own code-6 sentinel. The
+                      // callers' navigation-teardown guards key on 6 and return
+                      // silently; substituting the cloud error there would record
+                      // a failure and paint an error card for a summary the user
+                      // merely navigated away from, and the failure latch can then
+                      // block regeneration when the thread is reopened.
+                      if (error.code == 6) { onComplete(nil, error, nil); return; }
                       if (cloudError) {
                           ApolloLog(@"[AISummary] on-device fallback also failed (code %ld); reporting the cloud error (code %ld)",
                                     (long)error.code, (long)cloudError.code);

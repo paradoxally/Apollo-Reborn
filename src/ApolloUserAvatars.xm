@@ -3,6 +3,7 @@
 #import <CoreImage/CoreImage.h>
 #import <objc/runtime.h>
 #import <objc/message.h>
+#import <malloc/malloc.h>
 
 #import "ApolloCommon.h"
 #import "ApolloState.h"
@@ -114,6 +115,11 @@ static const void *kApolloProfileTabAvatarImageMarkerKey = &kApolloProfileTabAva
 // the visible subset in display order; cards with no data stay hidden and out of
 // the row, so the layout centres however many actually have values.
 @property(nonatomic, strong) NSArray<ApolloProfileStatCard *> *statCards;
+// Raw values behind the cards' compact text, kept for the tap-detail popup
+// (issue #797): the cards show "13.1k", the popup shows "13,102".
+@property(nonatomic) NSInteger statLinkKarma;
+@property(nonatomic) NSInteger statCommentKarma;
+@property(nonatomic) NSTimeInterval statCreatedUTC;
 @property(nonatomic, strong) ApolloProfileStatCard *postKarmaCard;
 @property(nonatomic, strong) ApolloProfileStatCard *commentKarmaCard;
 @property(nonatomic, strong) ApolloProfileStatCard *ageCard;
@@ -167,6 +173,14 @@ static void ApolloProfileScheduleInstallOrUpdateHeader(id viewControllerObject);
 static CGFloat const ApolloProfileStatsRowHeight = 66.0;
 static CGFloat const ApolloProfileStatsCardGap = 10.0;
 static CGFloat const ApolloProfileStatsTopGap = 14.0;
+// The side margin of Apollo's NATIVE profile menu table (the Posts/Comments/
+// Saved group under the header): 15pt, pixel-measured from both a standard
+// iOS 17 375pt device (issue #852's screenshots) and the iOS 26 glass sim.
+// The identity layout's own 24pt text inset reads fine for centered text but
+// left the boxed stat cards (24pt) and the avatar/Edit chrome (24/20pt)
+// visibly misaligned against those grouped rows, so all profile chrome aligns
+// to this margin instead (issue #852).
+static CGFloat const ApolloProfileGroupedMargin = 15.0;
 // Collapsed bio line cap; the "more" toggle expands past it.
 static NSInteger const ApolloProfileAboutCollapsedLines = 3;
 
@@ -256,17 +270,11 @@ static UIImage *ApolloProfileTintedSymbol(NSString *name, CGFloat pointSize, UIC
     _effectView.clipsToBounds = YES;
     _effectView.layer.cornerRadius = 18.0;
     _effectView.layer.cornerCurve = kCACornerCurveContinuous;
-    // Faint white rim only — reads as a glass edge on dark, disappears on light.
-    // The hard separator stroke it replaces looked like an empty outlined box on
-    // the pale melt. Separation instead comes from the soft shadow on `self`.
-    _effectView.layer.borderWidth = 1.0;
-    _effectView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.12].CGColor;
     [self addSubview:_effectView];
 
     // Soft ambient shadow lifts the card off the banner melt without a visible
     // outline. Cast from `self` (the effect view clips its own rounded bounds).
     self.layer.shadowColor = UIColor.blackColor.CGColor;
-    self.layer.shadowOpacity = 0.12;
     self.layer.shadowRadius = 7.0;
     self.layer.shadowOffset = CGSizeMake(0.0, 3.0);
 
@@ -282,13 +290,49 @@ static UIImage *ApolloProfileTintedSymbol(NSString *name, CGFloat pointSize, UIC
     _captionLabel.font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightSemibold];
     _captionLabel.textColor = [UIColor secondaryLabelColor];
     _captionLabel.textAlignment = NSTextAlignmentCenter;
+    // "Comment Karma" doesn't fit a third-of-a-13-mini card at full size —
+    // shrink like the value label instead of truncating (issue #852).
+    _captionLabel.adjustsFontSizeToFitWidth = YES;
+    _captionLabel.minimumScaleFactor = 0.75;
     [_effectView.contentView addSubview:_captionLabel];
+
+    [self apollo_applyCardStyle];
     return self;
+}
+
+// Mode-dependent chrome. Dark (and real Liquid Glass, which adapts on its own)
+// keeps the translucent glass card: material + faint white rim + a lifted
+// shadow. Light mode on non-glass builds goes FLAT instead — solid (theme)
+// card background, no rim, whisper of a shadow — because the grey blur
+// material plus a white rim plus a 0.12 black halo read as a smudged outline
+// on a white page and matched nothing else on the screen (issue #852; also the
+// "Liquid Glass UI on Standard" half of #797). The flat card matches the
+// native inset-grouped rows directly below it.
+- (void)apollo_applyCardStyle {
+    BOOL dark = self.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
+    if (dark || IsLiquidGlass()) {
+        self.effectView.effect = ApolloProfileCardEffect();
+        self.effectView.backgroundColor = [UIColor clearColor];
+        // Faint white rim — reads as a glass edge on dark. The hard separator
+        // stroke it replaces looked like an empty outlined box on the pale melt.
+        self.effectView.layer.borderWidth = 1.0;
+        self.effectView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.12].CGColor;
+        // Lift the shadow in dark mode where a black shadow reads weakly.
+        self.layer.shadowOpacity = dark ? 0.28 : 0.12;
+    } else {
+        self.effectView.effect = nil;
+        UIColor *bg = ApolloThemeCardBackgroundColor() ?: [UIColor secondarySystemGroupedBackgroundColor];
+        self.effectView.backgroundColor = [bg resolvedColorWithTraitCollection:self.traitCollection];
+        self.effectView.layer.borderWidth = 0.0;
+        self.layer.shadowOpacity = 0.08;
+    }
 }
 
 - (void)setValue:(NSString *)value caption:(NSString *)caption {
     self.valueLabel.text = value;
     self.captionLabel.text = caption;
+    self.accessibilityLabel = [NSString stringWithFormat:@"%@: %@", caption, value];
+    self.accessibilityHint = @"Double tap for details";
 }
 
 - (void)layoutSubviews {
@@ -304,10 +348,7 @@ static UIImage *ApolloProfileTintedSymbol(NSString *name, CGFloat pointSize, UIC
     [super traitCollectionDidChange:previousTraitCollection];
     self.valueLabel.textColor = [UIColor labelColor];
     self.captionLabel.textColor = [UIColor secondaryLabelColor];
-    self.effectView.layer.borderColor = [UIColor colorWithWhite:1.0 alpha:0.12].CGColor;
-    // Lift the shadow slightly in dark mode where a black shadow reads weakly.
-    BOOL dark = self.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
-    self.layer.shadowOpacity = dark ? 0.28 : 0.12;
+    [self apollo_applyCardStyle];
 }
 
 @end
@@ -473,11 +514,18 @@ static const void *kApolloProfileGlassAccentKey = &kApolloProfileGlassAccentKey;
         [self addSubview:_badgeBookView];
 
         // Glass stat cards. Created up front (hidden) and populated in applyProfileInfo.
+        // Tappable (issue #797): stock Apollo's karma/age text opened a detail
+        // popup with the exact counts; the cards replaced that text, so they
+        // take over the tap too.
         _postKarmaCard = [[ApolloProfileStatCard alloc] init];
         _commentKarmaCard = [[ApolloProfileStatCard alloc] init];
         _ageCard = [[ApolloProfileStatCard alloc] init];
         for (ApolloProfileStatCard *card in @[_postKarmaCard, _commentKarmaCard, _ageCard]) {
             card.hidden = YES;
+            [card addGestureRecognizer:[[UITapGestureRecognizer alloc] initWithTarget:self
+                                                                               action:@selector(apollo_statCardTapped:)]];
+            card.isAccessibilityElement = YES;
+            card.accessibilityTraits = UIAccessibilityTraitButton;
             [self addSubview:card];
         }
         _statCards = @[];
@@ -712,7 +760,10 @@ static UIFont *ApolloProfileClassicNameFont(void) {
 // cascade below picks up the new alignment and starts below whichever of the
 // avatar or the name column reaches further down.
 - (void)apollo_applyClassicIdentityOverrides:(ApolloIdentityHeaderLayout *)identity forWidth:(CGFloat)width {
-    CGFloat margin = ApolloIdentityHeaderSideInset();
+    // The native-group margin, not the layout's 24pt text inset: Classic's
+    // leading avatar (and the body column beneath it) line up with the Edit
+    // pill and the grouped rows below the header (issue #852).
+    CGFloat margin = ApolloProfileGroupedMargin;
     CGFloat diameter = ApolloIdentityHeaderAvatarDiameter();
     BOOL rtl = self.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
     CGFloat avatarX = rtl ? (width - margin - diameter) : margin;
@@ -740,12 +791,30 @@ static UIFont *ApolloProfileClassicNameFont(void) {
     // Dynamic Type size (a centered stack would grow back upward into the
     // banner once stackHeight exceeded the ~48pt visible/below-banner half).
     CGFloat stackY = CGRectGetHeight(identity->bannerFrame);
+    if (stackY <= 0.0) {
+        // Banner disabled: there is no seam, and "flush at y=0" pinned the name
+        // to the header's top edge while the avatar hung below it (issue #851).
+        // With everything on solid background, center the visible name/subname
+        // stack on the avatar — the same vertical anchor the Edit pill uses —
+        // clamped so huge Dynamic Type stacks grow downward, never above the
+        // avatar's top.
+        CGFloat stackHeight = nameHeight + (self.usernameLabel.hidden ? 0.0 : (1.0 + subnameHeight));
+        stackY = MAX(CGRectGetMinY(avatarFrame),
+                     floor(CGRectGetMidY(avatarFrame) - stackHeight / 2.0));
+    }
     CGRect nameFrame = CGRectMake(nameX, stackY, nameWidth, nameHeight);
     CGRect subnameFrame = CGRectMake(nameX, CGRectGetMaxY(nameFrame) + 1.0, nameWidth, subnameHeight);
 
     identity->avatarFrame = avatarFrame;
     identity->nameFrame = nameFrame;
     identity->subnameFrame = subnameFrame;
+    // Classic moves the entire body stack onto the native 15pt grouped
+    // margins. Widen the column by the 9pt recovered on each side instead of
+    // only moving its origin: otherwise LTR ends 18pt short on the trailing
+    // edge, while RTL over-expands toward the leading edge. The max-width
+    // column on iPad keeps its cap plus the same symmetric 18pt adjustment.
+    identity->bodyWidth = MIN(width - 2.0 * margin,
+                              identity->bodyWidth + 2.0 * (ApolloIdentityHeaderSideInset() - margin));
     // bodyX is a frame origin (always the rect's left edge, even in RTL) — in
     // RTL the body column hugs the right margin instead, so its origin sits
     // `bodyWidth` in from that margin rather than at `margin` itself.
@@ -938,13 +1007,21 @@ static UIFont *ApolloProfileClassicNameFont(void) {
         y += badgeH;
     }
 
-    // Glass stat cards
+    // Glass stat cards. The row hugs the 15pt inset-grouped margin rather than
+    // the text column's inset, so the card edges line up with the native
+    // Posts/Comments/Saved group directly below the header (issue #852). The
+    // symmetric widening keeps the row centered (and RTL-safe); on iPad the
+    // capped, centered body column just gains the same few points per side.
     NSUInteger cardCount = self.statCards.count;
     if (cardCount > 0) {
         y += ApolloProfileStatsTopGap;
         if (apply) {
+            CGFloat delta = MAX(0.0, MIN(bodyX - ApolloProfileGroupedMargin,
+                                         ApolloIdentityHeaderSideInset() - ApolloProfileGroupedMargin));
+            CGFloat rowX = bodyX - delta;
+            CGFloat rowW = bodyWidth + delta * 2.0;
             CGFloat totalGap = ApolloProfileStatsCardGap * (cardCount - 1);
-            CGFloat cardW = floor((bodyWidth - totalGap) / cardCount);
+            CGFloat cardW = floor((rowW - totalGap) / cardCount);
             // RTL mirrors reading order, exactly like the Follow/Message row above:
             // statCards[0] (post karma) is the card that reads first, which is the
             // trailing (right) slot in RTL. The last physical slot still absorbs the
@@ -952,8 +1029,8 @@ static UIFont *ApolloProfileClassicNameFont(void) {
             BOOL rtl = self.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
             for (NSUInteger i = 0; i < cardCount; i++) {
                 NSUInteger slot = rtl ? (cardCount - 1 - i) : i;
-                CGFloat cardX = bodyX + (CGFloat)slot * (cardW + ApolloProfileStatsCardGap);
-                CGFloat thisWidth = (slot == cardCount - 1) ? (bodyX + bodyWidth - cardX) : cardW;
+                CGFloat cardX = rowX + (CGFloat)slot * (cardW + ApolloProfileStatsCardGap);
+                CGFloat thisWidth = (slot == cardCount - 1) ? (rowX + rowW - cardX) : cardW;
                 self.statCards[i].frame = CGRectMake(cardX, y, thisWidth, ApolloProfileStatsRowHeight);
             }
         }
@@ -1001,7 +1078,8 @@ static UIFont *ApolloProfileClassicNameFont(void) {
     CGFloat editButtonWidth = [self apollo_editButtonWidth];
     CGFloat editButtonHeight = ApolloProfileEditButtonHeight();
     BOOL editRTL = self.effectiveUserInterfaceLayoutDirection == UIUserInterfaceLayoutDirectionRightToLeft;
-    CGFloat editButtonX = editRTL ? 20.0 : (width - editButtonWidth - 20.0);
+    CGFloat editButtonX = editRTL ? ApolloProfileGroupedMargin
+                                  : (width - editButtonWidth - ApolloProfileGroupedMargin);
     self.editProfileButton.frame = CGRectMake(editButtonX,
                                               CGRectGetMidY(identity.avatarFrame) - editButtonHeight / 2.0,
                                               editButtonWidth, editButtonHeight);
@@ -1118,9 +1196,15 @@ static UIFont *ApolloProfileClassicNameFont(void) {
         // a "0 karma" row); !sProfileShowStatCards is the viewer turning cards off.
         for (ApolloProfileStatCard *card in @[self.postKarmaCard, self.commentKarmaCard, self.ageCard]) card.hidden = YES;
         self.statCards = @[];
+        self.statLinkKarma = -1;
+        self.statCommentKarma = -1;
+        self.statCreatedUTC = 0.0;
         return;
     }
 
+    self.statLinkKarma = info.linkKarma;
+    self.statCommentKarma = info.commentKarma;
+    self.statCreatedUTC = info.createdUTC;
     if (info.linkKarma >= 0) {
         [self.postKarmaCard setValue:ApolloProfileFormatCount(info.linkKarma) caption:@"Post Karma"];
         [visible addObject:self.postKarmaCard];
@@ -1138,6 +1222,55 @@ static UIFont *ApolloProfileClassicNameFont(void) {
         card.hidden = ![visible containsObject:card];
     }
     self.statCards = visible;
+}
+
+// Stat-card tap (issue #797): show the detail popup stock Apollo offered on
+// its karma/age text — exact grouped counts, and for the age card the actual
+// join date (the card itself can only say "New" for young accounts, which
+// reporters called out as unhelpful).
+- (void)apollo_statCardTapped:(UITapGestureRecognizer *)gesture {
+    UIView *card = gesture.view;
+    NSString *title = nil, *message = nil;
+
+    NSNumberFormatter *grouped = [[NSNumberFormatter alloc] init];
+    grouped.numberStyle = NSNumberFormatterDecimalStyle;
+
+    if (card == self.postKarmaCard && self.statLinkKarma >= 0) {
+        title = @"Post Karma";
+        message = [grouped stringFromNumber:@(self.statLinkKarma)];
+    } else if (card == self.commentKarmaCard && self.statCommentKarma >= 0) {
+        title = @"Comment Karma";
+        message = [grouped stringFromNumber:@(self.statCommentKarma)];
+    } else if (card == self.ageCard && self.statCreatedUTC > 0.0) {
+        NSDate *created = [NSDate dateWithTimeIntervalSince1970:self.statCreatedUTC];
+        NSDateFormatter *joined = [[NSDateFormatter alloc] init];
+        joined.dateStyle = NSDateFormatterLongStyle;
+        joined.timeStyle = NSDateFormatterNoStyle;
+        NSDateComponentsFormatter *age = [[NSDateComponentsFormatter alloc] init];
+        age.unitsStyle = NSDateComponentsFormatterUnitsStyleFull;
+        age.allowedUnits = NSCalendarUnitYear | NSCalendarUnitMonth | NSCalendarUnitDay;
+        age.maximumUnitCount = 2;
+        NSString *ago = [age stringFromDate:created toDate:[NSDate date]];
+        title = @"Reddit Age";
+        message = ago.length
+            ? [NSString stringWithFormat:@"Joined %@\n(%@ ago)", [joined stringFromDate:created], ago]
+            : [NSString stringWithFormat:@"Joined %@", [joined stringFromDate:created]];
+    }
+    if (!title) return;
+
+    // Nearest owning view controller via the responder chain — the header is
+    // a plain table header view with no controller reference of its own.
+    UIViewController *presenter = nil;
+    for (UIResponder *r = self.nextResponder; r; r = r.nextResponder) {
+        if ([r isKindOfClass:[UIViewController class]]) { presenter = (UIViewController *)r; break; }
+    }
+    if (!presenter) return;
+
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
+                                                                   message:message
+                                                            preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
+    [presenter presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)applyProfileInfo:(ApolloUserProfileInfo *)info fallbackUsername:(NSString *)username {
@@ -1323,16 +1456,78 @@ static BOOL ApolloProfileUsernameIsLoggedInAccount(NSString *username) {
     return NO;
 }
 
+// One-shot registered-class set for validating candidate isa pointers by
+// identity only (no dereference). Classes never unregister, so a single
+// snapshot is safe; classes registered later (KVO subclasses etc.) miss and
+// the probe returns nil for them — a skipped read, never a crash.
+static BOOL ApolloRuntimeKnowsClass(Class candidate) {
+    static CFSetRef sKnownClasses;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        unsigned int count = 0;
+        Class *list = objc_copyClassList(&count);
+        CFMutableSetRef set = CFSetCreateMutable(NULL, count, NULL);
+        for (unsigned int i = 0; i < count; i++) {
+            CFSetAddValue(set, (__bridge const void *)list[i]);
+        }
+        free(list);
+        sKnownClasses = set;
+    });
+    return CFSetContainsValue(sKnownClasses, (__bridge const void *)candidate);
+}
+
+// Swift-class ivars carry no ObjC type encoding, so an ivar slot named e.g.
+// "username" may be an INLINE Swift struct, not an object reference — Apollo's
+// UserCommentsViewController.username is a 16-byte Swift.String whose first
+// word is the count-and-flags word (0xC00000000000000F for a bridged 15-char
+// ASCII username), which crashed objc_opt_isKindOfClass when returned as id
+// (profile-tab long-press .ips, 2026-08-05). Before treating such a word as an
+// object: it must be untagged, 8-byte aligned, plausibly heap-ranged, a live
+// malloc block, and its isa must resolve to a class the runtime knows.
+// Tagged pointers are rejected outright — an inline struct's flag word can
+// look tagged, and a genuinely tagged value in a Swift slot is rare enough
+// that skipping it (nil) is the right trade against misreading a struct.
+static BOOL ApolloWordLooksLikeObjCObject(uintptr_t raw) {
+    if (raw == 0) return NO;
+    if (raw & 0x8000000000000000ULL) return NO;
+    if (raw & 0x7) return NO;
+    if (raw < 0x100000000ULL) return NO;
+    if (malloc_size((const void *)raw) == 0) return NO;
+    Class cls = object_getClass((__bridge id)(void *)raw);
+    if (!cls) return NO;
+    return ApolloRuntimeKnowsClass(cls);
+}
+
 static id ApolloObjectIvarValue(id object, NSString *name) {
     if (!object || name.length == 0) return nil;
-    for (Class cls = [object class]; cls && cls != [NSObject class]; cls = class_getSuperclass(cls)) {
+    for (Class cls = object_getClass(object); cls && cls != [NSObject class]; cls = class_getSuperclass(cls)) {
         Ivar ivar = class_getInstanceVariable(cls, name.UTF8String);
         if (!ivar) continue;
-        @try {
+        const char *encoding = ivar_getTypeEncoding(ivar);
+        if (encoding && encoding[0] == '@') {
+            // ObjC-typed object ivar — the runtime vouches for it.
             return object_getIvar(object, ivar);
-        } @catch (__unused NSException *exception) {
+        }
+        if (encoding && encoding[0] != '\0') {
+            // Declared non-object ObjC type (int/BOOL/struct/...): never an id.
             return nil;
         }
+        // No encoding: Swift storage. Read the word manually and validate it
+        // before letting anyone message it.
+        ptrdiff_t offset = ivar_getOffset(ivar);
+        if (offset < 0) return nil;
+        if ((size_t)offset + sizeof(uintptr_t) > class_getInstanceSize(object_getClass(object))) return nil;
+        uintptr_t raw = 0;
+        memcpy(&raw, (const uint8_t *)(__bridge const void *)object + offset, sizeof(raw));
+        if (!ApolloWordLooksLikeObjCObject(raw)) {
+            // Non-zero garbage here is exactly the word that used to be
+            // messaged and crash — log it so field reports stay diagnosable.
+            if (raw != 0) {
+                ApolloLog(@"[UserAvatars] Skipping non-object ivar word %p (%@.%@)", (void *)raw, NSStringFromClass(cls), name);
+            }
+            return nil;
+        }
+        return (__bridge id)(void *)raw;
     }
     return nil;
 }
@@ -1556,6 +1751,45 @@ static UIBezierPath *ApolloHexagonPath(CGRect rect) {
     return path;
 }
 
+// The avatar renderers below run on Texture layout/background queues (reached
+// from the setAttributedText: hooks), where UIScreen access and ambient
+// dynamic-color resolution are off-limits. Scale is read once; the placeholder
+// fill is pre-resolved for both styles and picked by a flag the main-thread
+// entry points keep fresh. Both are warmed from %ctor on the main thread.
+static volatile BOOL sApolloAvatarInterfaceIsDark = NO;
+
+static void ApolloAvatarRefreshInterfaceStyle(void) {
+    if (![NSThread isMainThread]) return;
+    // Apollo themes can override each window independently of the system
+    // appearance, so UIScreen alone picks the wrong placeholder fill when a
+    // dark Apollo theme is active on a light system (or vice versa).
+    UITraitCollection *traits = ApolloAllWindows().firstObject.traitCollection
+        ?: UIScreen.mainScreen.traitCollection;
+    sApolloAvatarInterfaceIsDark = traits.userInterfaceStyle == UIUserInterfaceStyleDark;
+}
+
+static CGFloat ApolloAvatarScreenScale(void) {
+    static CGFloat scale = 0.0;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        scale = UIScreen.mainScreen.scale;
+    });
+    return scale > 0.0 ? scale : 2.0;
+}
+
+static UIColor *ApolloAvatarPlaceholderFillColor(void) {
+    static UIColor *lightFill = nil;
+    static UIColor *darkFill = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        lightFill = [UIColor.secondarySystemFillColor resolvedColorWithTraitCollection:
+                     [UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleLight]];
+        darkFill = [UIColor.secondarySystemFillColor resolvedColorWithTraitCollection:
+                    [UITraitCollection traitCollectionWithUserInterfaceStyle:UIUserInterfaceStyleDark]];
+    });
+    return sApolloAvatarInterfaceIsDark ? darkFill : lightFill;
+}
+
 static void ApolloDrawAvatarSourceImage(UIImage *sourceImage, CGRect rect) {
     if (sourceImage) {
         CGFloat imageAspect = sourceImage.size.width > 0 ? sourceImage.size.height / sourceImage.size.width : 1.0;
@@ -1571,7 +1805,7 @@ static void ApolloDrawAvatarSourceImage(UIImage *sourceImage, CGRect rect) {
         CGRect drawRect = CGRectMake(CGRectGetMidX(rect) - drawWidth / 2.0, CGRectGetMidY(rect) - drawHeight / 2.0, drawWidth, drawHeight);
         [sourceImage drawInRect:drawRect];
     } else {
-        [[UIColor secondarySystemFillColor] setFill];
+        [ApolloAvatarPlaceholderFillColor() setFill];
         UIRectFill(rect);
     }
 }
@@ -1583,7 +1817,7 @@ static BOOL ApolloAvatarHasFrame(ApolloUserProfileInfo *info) {
 static UIImage *ApolloClippedAvatarImage(UIImage *sourceImage, CGFloat diameter, BOOL hexagon) {
     CGSize size = CGSizeMake(diameter, diameter);
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
-    format.scale = [UIScreen mainScreen].scale;
+    format.scale = ApolloAvatarScreenScale();
     UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size format:format];
     return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
         CGRect rect = CGRectMake(0.0, 0.0, diameter, diameter);
@@ -1604,7 +1838,7 @@ static UIImage *ApolloClippedAvatarImage(UIImage *sourceImage, CGFloat diameter,
             CGRect drawRect = CGRectMake((diameter - drawWidth) / 2.0, (diameter - drawHeight) / 2.0, drawWidth, drawHeight);
             [sourceImage drawInRect:drawRect];
         } else {
-            [[UIColor secondarySystemFillColor] setFill];
+            [ApolloAvatarPlaceholderFillColor() setFill];
             UIRectFill(rect);
         }
     }];
@@ -1623,7 +1857,7 @@ static UIImage *ApolloAvatarImageForInfo(ApolloUserProfileInfo *info, UIImage *s
 
     CGSize size = CGSizeMake(diameter, diameter);
     UIGraphicsImageRendererFormat *format = [UIGraphicsImageRendererFormat defaultFormat];
-    format.scale = [UIScreen mainScreen].scale;
+    format.scale = ApolloAvatarScreenScale();
     UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:size format:format];
     return [renderer imageWithActions:^(UIGraphicsImageRendererContext *context) {
         CGRect rect = CGRectMake(0.0, 0.0, diameter, diameter);
@@ -1639,18 +1873,47 @@ static UIImage *ApolloAvatarImageForInfo(ApolloUserProfileInfo *info, UIImage *s
     }];
 }
 
+// Word-boundary username search: "bob" must not match inside "bobby". A
+// candidate hit only counts when the characters on both sides are outside the
+// legal Reddit username alphabet (letters/digits/underscore/hyphen) — bare
+// rangeOfString matching is how a substring-named author used to steal a
+// longer-named author's byline (wrong avatar, stacked avatars).
+static NSRange ApolloUsernameWordRangeInString(NSString *string, NSString *needle) {
+    NSRange notFound = NSMakeRange(NSNotFound, 0);
+    if (string.length == 0 || needle.length == 0) return notFound;
+    static NSCharacterSet *usernameChars = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        usernameChars = [NSCharacterSet characterSetWithCharactersInString:
+            @"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"];
+    });
+    NSRange searchRange = NSMakeRange(0, string.length);
+    while (searchRange.length >= needle.length) {
+        NSRange found = [string rangeOfString:needle options:NSCaseInsensitiveSearch range:searchRange];
+        if (found.location == NSNotFound) return notFound;
+        BOOL leftBoundary = found.location == 0 ||
+            ![usernameChars characterIsMember:[string characterAtIndex:found.location - 1]];
+        NSUInteger end = NSMaxRange(found);
+        BOOL rightBoundary = end >= string.length ||
+            ![usernameChars characterIsMember:[string characterAtIndex:end]];
+        if (leftBoundary && rightBoundary) return found;
+        NSUInteger next = found.location + 1;
+        searchRange = NSMakeRange(next, string.length - next);
+    }
+    return notFound;
+}
+
 static NSRange ApolloUsernameRangeInString(NSString *string, NSString *username) {
     NSRange notFound = NSMakeRange(NSNotFound, 0);
     NSString *normalized = ApolloAvatarNormalizedUsername(username);
     if (string.length == 0 || normalized.length == 0) return notFound;
 
     NSString *prefixed = [@"u/" stringByAppendingString:normalized];
-    NSRange withPrefix = [string rangeOfString:prefixed options:NSCaseInsensitiveSearch];
+    NSRange withPrefix = ApolloUsernameWordRangeInString(string, prefixed);
     if (withPrefix.location != NSNotFound) {
         return NSMakeRange(withPrefix.location + 2, withPrefix.length - 2);
     }
-    NSRange direct = [string rangeOfString:normalized options:NSCaseInsensitiveSearch];
-    return direct;
+    return ApolloUsernameWordRangeInString(string, normalized);
 }
 
 static NSAttributedString *ApolloAttributedTextByPrependingAvatar(NSAttributedString *baseText, NSString *username, UIImage *avatarImage, UIImage *decoratorImage, ApolloUserProfileInfo *info, CGFloat diameter) {
@@ -1711,7 +1974,7 @@ static BOOL ApolloTextLooksAvatarPrepended(NSAttributedString *text) {
 static BOOL ApolloAttributedTextContainsUsername(NSAttributedString *text, NSString *username) {
     username = ApolloAvatarNormalizedUsername(username);
     if (text.string.length == 0 || username.length == 0) return NO;
-    return [text.string rangeOfString:username options:NSCaseInsensitiveSearch].location != NSNotFound;
+    return ApolloUsernameWordRangeInString(text.string, username).location != NSNotFound;
 }
 
 static CGFloat ApolloInlineAvatarDiameterForObject(id object) {
@@ -1777,10 +2040,12 @@ static BOOL ApolloSetAvatarImageOnTextNode(id textNode, NSString *username, UIIm
     NSAttributedString *baseText = objc_getAssociatedObject(textNode, kApolloAvatarOriginalAttributedTextKey);
 
     if (![storedUsername isEqualToString:username]) {
+        // The node still shows a previous author's avatar-prepended text (its
+        // clean rebind hasn't landed yet). Prepending onto it would stack a
+        // second avatar with no upper bound — bail and let the rebind hook /
+        // retry ladder apply once fresh text arrives.
+        if (ApolloTextLooksAvatarPrepended(current)) return NO;
         baseText = current;
-        if (ApolloTextLooksAvatarPrepended(baseText)) {
-            baseText = nil;
-        }
     }
     if (!baseText) baseText = current;
     if (!ApolloAttributedTextContainsUsername(baseText, username)) return NO;
@@ -1812,7 +2077,7 @@ static BOOL ApolloTextNodeContainsUsername(id textNode, NSString *username) {
     if (!textNode || username.length == 0) return NO;
     NSAttributedString *text = ApolloAttributedTextForNode(textNode);
     if (text.string.length == 0) return NO;
-    return [text.string.lowercaseString containsString:username.lowercaseString];
+    return ApolloUsernameWordRangeInString(text.string, username).location != NSNotFound;
 }
 
 static id ApolloCurrentAuthorTextNodeForCell(id cell, NSString *username) {
@@ -1836,10 +2101,40 @@ static void ApolloRequestDecoratorRefreshIfNeeded(ApolloUserProfileCache *cache,
     [cache requestImageForURL:info.decoratorURL completion:nil];
 }
 
-static NSMutableArray<void (^)(void)> *ApolloInlineAvatarInfoRequestQueue(void) {
-    static NSMutableArray<void (^)(void)> *queue = nil;
+// Backlog cap for queued inline-avatar info requests. Entries past the cap
+// are the ones farthest off-screen; they get dropped (and their cells'
+// pending-fetch flag cleared) rather than kept forever.
+static const NSUInteger ApolloInlineAvatarMaxQueuedInfoRequests = 48;
+
+static void ApolloDrainInlineAvatarInfoRequestQueue(void);
+static void ApolloClearPendingInlineAvatarFetch(id cell, NSString *username);
+static BOOL ApolloInlineAvatarCellUsernameMatches(id cell, NSString *username);
+static BOOL ApolloBindInlineAvatarTextNodeForCell(id cell, NSString *username);
+static void ApolloApplyInlineAvatarInfoToCell(id cell, NSString *username, ApolloUserProfileInfo *info);
+
+// One queued inline-avatar info request. Entries carry the cell weakly plus
+// the username so the drain can skip dead cells and dedupe in-flight
+// usernames without executing anything.
+@interface ApolloInlineAvatarQueueEntry : NSObject
+@property(nonatomic, weak) id cell;
+@property(nonatomic, copy) NSString *username;
+@end
+@implementation ApolloInlineAvatarQueueEntry
+@end
+
+static NSMutableArray<ApolloInlineAvatarQueueEntry *> *ApolloInlineAvatarInfoRequestQueue(void) {
+    static NSMutableArray<ApolloInlineAvatarQueueEntry *> *queue = nil;
     if (!queue) queue = [NSMutableArray array];
     return queue;
+}
+
+// Usernames whose info fetch currently occupies a request slot. A second cell
+// for the same author piggybacks on the cache-level coalescing instead of
+// consuming another slot (twenty comments by one author used to fill all ten).
+static NSMutableSet<NSString *> *ApolloInlineAvatarInFlightUsernames(void) {
+    static NSMutableSet<NSString *> *usernames = nil;
+    if (!usernames) usernames = [NSMutableSet set];
+    return usernames;
 }
 
 static NSUInteger sApolloInlineAvatarActiveInfoRequests = 0;
@@ -1873,8 +2168,12 @@ static BOOL ApolloPrepareAvatarRewriteForTextNode(id textNode, NSAttributedStrin
     }
 
     if (!ApolloAttributedTextContainsUsername(incomingAttributedText, username)) {
-        NSString *trimmed = [incomingAttributedText.string stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        if (trimmed.length > 0) ApolloClearAvatarTextNodeAssociations(textNode);
+        // Clear on ANY non-matching text, including whitespace-only: Texture's
+        // standard clear-then-rebind used to keep the old author's association
+        // alive through the whitespace pass, so the next author was compared
+        // against the previous name — a "bob" association could then claim
+        // "bobby"'s byline and paint the wrong avatar.
+        ApolloClearAvatarTextNodeAssociations(textNode);
         return NO;
     }
 
@@ -1904,7 +2203,7 @@ static BOOL ApolloPrepareAvatarRewriteForTextNode(id textNode, NSAttributedStrin
 
     if (swapOut) *swapOut = updated;
     if (ApolloInlineAvatarShouldLog(&sApolloInlineAvatarRewriteLogCount)) {
-        ApolloLog(@"[UserAvatars] Inline avatar preserved after text rewrite u/%@ node=%p", username, textNode);
+        ApolloLogDebug(@"[UserAvatars] Inline avatar preserved after text rewrite u/%@ node=%p", username, textNode);
     }
     return YES;
 }
@@ -1918,24 +2217,82 @@ static NSTimeInterval ApolloInlineAvatarBindDelayForAttempt(NSUInteger attempt) 
     }
 }
 
-static void ApolloDrainInlineAvatarInfoRequestQueue(void) {
-    NSMutableArray<void (^)(void)> *queue = ApolloInlineAvatarInfoRequestQueue();
-    while (sApolloInlineAvatarActiveInfoRequests < ApolloInlineAvatarMaxActiveInfoRequests && queue.count > 0) {
-        void (^requestBlock)(void) = [queue.firstObject copy];
-        [queue removeObjectAtIndex:0];
-        sApolloInlineAvatarActiveInfoRequests++;
-        requestBlock();
-    }
-}
-
-static void ApolloEnqueueInlineAvatarInfoRequest(void (^requestBlock)(void)) {
-    if (!requestBlock) return;
-    [ApolloInlineAvatarInfoRequestQueue() addObject:[requestBlock copy]];
+static void ApolloInlineAvatarInfoRequestDidFinish(void) {
+    if (sApolloInlineAvatarActiveInfoRequests > 0) sApolloInlineAvatarActiveInfoRequests--;
     ApolloDrainInlineAvatarInfoRequestQueue();
 }
 
-static void ApolloInlineAvatarInfoRequestDidFinish(void) {
-    if (sApolloInlineAvatarActiveInfoRequests > 0) sApolloInlineAvatarActiveInfoRequests--;
+// Validate the cell/username pairing and start (or piggyback on) the cache
+// fetch. Slot accounting lives here: a request only occupies a slot when it
+// actually starts a fresh fetch for a username with no fetch in flight.
+static void ApolloInlineAvatarStartInfoRequest(id cell, NSString *username, BOOL piggyback) {
+    if (!cell) return;
+    if (!sShowUserAvatars || !ApolloInlineAvatarCellUsernameMatches(cell, username) ||
+        !ApolloBindInlineAvatarTextNodeForCell(cell, username)) {
+        ApolloClearPendingInlineAvatarFetch(cell, username);
+        return;
+    }
+
+    NSMutableSet<NSString *> *inFlight = ApolloInlineAvatarInFlightUsernames();
+    if (!piggyback) {
+        sApolloInlineAvatarActiveInfoRequests++;
+        [inFlight addObject:username];
+    }
+    __block BOOL releasedSlot = piggyback;
+    void (^releaseSlot)(void) = ^{
+        if (releasedSlot) return;
+        releasedSlot = YES;
+        [inFlight removeObject:username];
+        ApolloInlineAvatarInfoRequestDidFinish();
+    };
+
+    __weak id weakCell = cell;
+    ApolloUserProfileCache *cache = [ApolloUserProfileCache sharedCache];
+    [cache requestInfoForUsername:username completion:^(ApolloUserProfileInfo *info) {
+        releaseSlot();
+        id cellNow = weakCell;
+        if (!cellNow) return;
+        ApolloClearPendingInlineAvatarFetch(cellNow, username);
+        if (!sShowUserAvatars || !info.iconURL) return;
+        ApolloApplyInlineAvatarInfoToCell(cellNow, username, info);
+    }];
+}
+
+static void ApolloDrainInlineAvatarInfoRequestQueue(void) {
+    NSMutableArray<ApolloInlineAvatarQueueEntry *> *queue = ApolloInlineAvatarInfoRequestQueue();
+    NSMutableSet<NSString *> *inFlight = ApolloInlineAvatarInFlightUsernames();
+    while (sApolloInlineAvatarActiveInfoRequests < ApolloInlineAvatarMaxActiveInfoRequests && queue.count > 0) {
+        // LIFO: during a fling the newest entries belong to the cells that are
+        // actually on screen — FIFO served the oldest (long since scrolled
+        // away) first and starved the visible ones.
+        ApolloInlineAvatarQueueEntry *entry = queue.lastObject;
+        [queue removeLastObject];
+        id cell = entry.cell;
+        if (!cell) continue; // dead cell: drop without consuming a slot
+        BOOL piggyback = [inFlight containsObject:entry.username];
+        ApolloInlineAvatarStartInfoRequest(cell, entry.username, piggyback);
+    }
+}
+
+static void ApolloEnqueueInlineAvatarInfoRequest(id cell, NSString *username) {
+    if (!cell || username.length == 0) return;
+    NSMutableArray<ApolloInlineAvatarQueueEntry *> *queue = ApolloInlineAvatarInfoRequestQueue();
+    // Prune dead-weak-cell entries eagerly so they never occupy queue space.
+    for (NSInteger index = (NSInteger)queue.count - 1; index >= 0; index--) {
+        if (!queue[(NSUInteger)index].cell) [queue removeObjectAtIndex:(NSUInteger)index];
+    }
+    ApolloInlineAvatarQueueEntry *entry = [[ApolloInlineAvatarQueueEntry alloc] init];
+    entry.cell = cell;
+    entry.username = username;
+    [queue addObject:entry];
+    // Bounded backlog: drop the oldest (farthest off-screen) entries, clearing
+    // their pending-fetch flag so scrolling back re-requests them.
+    while (queue.count > ApolloInlineAvatarMaxQueuedInfoRequests) {
+        ApolloInlineAvatarQueueEntry *dropped = queue.firstObject;
+        [queue removeObjectAtIndex:0];
+        id droppedCell = dropped.cell;
+        if (droppedCell) ApolloClearPendingInlineAvatarFetch(droppedCell, dropped.username);
+    }
     ApolloDrainInlineAvatarInfoRequestQueue();
 }
 
@@ -1977,7 +2334,7 @@ static BOOL ApolloApplyInlineAvatarPlaceholderToCell(id cell, NSString *username
 
     BOOL applied = ApolloApplyAvatarRenderToCell(cell, username, nil, nil, nil);
     if (applied && ApolloInlineAvatarShouldLog(&sApolloInlineAvatarPlaceholderLogCount)) {
-        ApolloLog(@"[UserAvatars] Inline avatar placeholder applied u/%@ cell=%p", username, cell);
+        ApolloLogDebug(@"[UserAvatars] Inline avatar placeholder applied u/%@ cell=%p", username, cell);
     }
     return applied;
 }
@@ -2011,12 +2368,18 @@ static void ApolloScheduleInlineAvatarLateReapplyForCell(id cell, NSString *user
             if (cachedInfo.iconURL && cachedImage) {
                 id previousTextNode = objc_getAssociatedObject(strongCell, kApolloAvatarTextNodeKey);
                 BOOL hadAvatar = ApolloTextLooksAvatarPrepended(ApolloAttributedTextForNode(previousTextNode));
-                objc_setAssociatedObject(strongCell, kApolloAvatarTextNodeKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                // Keep the existing binding: nil-ing it here forced a fresh
+                // fuzzy re-scan on a byline that now contains the avatar
+                // attachment (+2 chars), which worsens the real byline's score
+                // enough that body text / flair containing the username could
+                // win — migrating or duplicating the avatar. The bind helper
+                // already re-validates the stored node and only rescans when
+                // it's genuinely gone from the cell's tree.
                 ApolloApplyInlineAvatarInfoToCell(strongCell, username, cachedInfo);
                 id currentTextNode = objc_getAssociatedObject(strongCell, kApolloAvatarTextNodeKey);
                 BOOL hasAvatar = ApolloTextLooksAvatarPrepended(ApolloAttributedTextForNode(currentTextNode));
                 if ((!hadAvatar || currentTextNode != previousTextNode) && hasAvatar && ApolloInlineAvatarShouldLog(&sApolloInlineAvatarLateReapplyLogCount)) {
-                    ApolloLog(@"[UserAvatars] Inline avatar late reapply u/%@ cell=%p", username, strongCell);
+                    ApolloLogDebug(@"[UserAvatars] Inline avatar late reapply u/%@ cell=%p", username, strongCell);
                 }
             }
 
@@ -2038,7 +2401,7 @@ static void ApolloApplyInlineAvatarInfoToCell(id cell, NSString *username, Apoll
     if (cachedImage) {
         BOOL applied = ApolloApplyAvatarRenderToCell(cell, username, info, cachedImage, cachedDecoratorImage);
         if (applied && ApolloInlineAvatarShouldLog(&sApolloInlineAvatarAppliedLogCount)) {
-            ApolloLog(@"[UserAvatars] Inline avatar applied from cache u/%@ cell=%p", username, cell);
+            ApolloLogDebug(@"[UserAvatars] Inline avatar applied from cache u/%@ cell=%p", username, cell);
         }
         if (applied) ApolloScheduleInlineAvatarLateReapplyForCell(cell, username);
         ApolloRequestDecoratorRefreshIfNeeded(cache, info);
@@ -2055,7 +2418,7 @@ static void ApolloApplyInlineAvatarInfoToCell(id cell, NSString *username, Apoll
         UIImage *loadedDecoratorImage = info.decoratorURL ? [cache cachedImageForURL:info.decoratorURL] : nil;
         BOOL applied = ApolloApplyAvatarRenderToCell(cellNow, username, info, loadedImage, loadedDecoratorImage);
         if (applied && ApolloInlineAvatarShouldLog(&sApolloInlineAvatarAppliedLogCount)) {
-            ApolloLog(@"[UserAvatars] Inline avatar applied after image load u/%@ cell=%p", username, cellNow);
+            ApolloLogDebug(@"[UserAvatars] Inline avatar applied after image load u/%@ cell=%p", username, cellNow);
         }
         if (applied) ApolloScheduleInlineAvatarLateReapplyForCell(cellNow, username);
         ApolloRequestDecoratorRefreshIfNeeded(cache, info);
@@ -2078,7 +2441,7 @@ static void ApolloScheduleInlineAvatarInfoFetchAttempt(id cell, NSString *userna
         }
         if (!ApolloBindInlineAvatarTextNodeForCell(strongCell, username)) {
             if (ApolloInlineAvatarShouldLog(&sApolloInlineAvatarNoTextLogCount)) {
-                ApolloLog(@"[UserAvatars] Inline avatar waiting for author text u/%@ attempt=%lu cell=%p", username, (unsigned long)(attempt + 1), strongCell);
+                ApolloLogDebug(@"[UserAvatars] Inline avatar waiting for author text u/%@ attempt=%lu cell=%p", username, (unsigned long)(attempt + 1), strongCell);
             }
             if (attempt + 1 < ApolloInlineAvatarMaxBindAttempts) {
                 ApolloScheduleInlineAvatarInfoFetchAttempt(strongCell, username, attempt + 1);
@@ -2104,41 +2467,9 @@ static void ApolloScheduleInlineAvatarInfoFetchAttempt(id cell, NSString *userna
         }
 
         if (ApolloInlineAvatarShouldLog(&sApolloInlineAvatarQueuedLogCount)) {
-            ApolloLog(@"[UserAvatars] Inline avatar queued metadata fetch u/%@ cell=%p", username, strongCell);
+            ApolloLogDebug(@"[UserAvatars] Inline avatar queued metadata fetch u/%@ cell=%p", username, strongCell);
         }
-        ApolloEnqueueInlineAvatarInfoRequest(^{
-            id requestCell = weakCell;
-            if (!requestCell) {
-                ApolloInlineAvatarInfoRequestDidFinish();
-                return;
-            }
-            if (!sShowUserAvatars) {
-                ApolloClearPendingInlineAvatarFetch(requestCell, username);
-                ApolloInlineAvatarInfoRequestDidFinish();
-                return;
-            }
-            if (!ApolloInlineAvatarCellUsernameMatches(requestCell, username) || !ApolloBindInlineAvatarTextNodeForCell(requestCell, username)) {
-                ApolloClearPendingInlineAvatarFetch(requestCell, username);
-                ApolloInlineAvatarInfoRequestDidFinish();
-                return;
-            }
-
-            __block BOOL releasedSlot = NO;
-            void (^releaseSlot)(void) = ^{
-                if (releasedSlot) return;
-                releasedSlot = YES;
-                ApolloInlineAvatarInfoRequestDidFinish();
-            };
-
-            [cache requestInfoForUsername:username completion:^(ApolloUserProfileInfo *info) {
-                releaseSlot();
-                id cellNow = weakCell;
-                if (!cellNow) return;
-                ApolloClearPendingInlineAvatarFetch(cellNow, username);
-                if (!sShowUserAvatars || !info.iconURL) return;
-                ApolloApplyInlineAvatarInfoToCell(cellNow, username, info);
-            }];
-        });
+        ApolloEnqueueInlineAvatarInfoRequest(strongCell, username);
     });
 }
 
@@ -2153,6 +2484,9 @@ static void ApolloScheduleInlineAvatarInfoFetchForCell(id cell, NSString *userna
 }
 
 static void ApolloApplyAvatarToCellWithDiameter(id cell, NSString *username, CGFloat diameter) {
+    // Cheap main-thread hook to keep the pre-resolved placeholder fill's
+    // light/dark pick current for the off-main renderers.
+    ApolloAvatarRefreshInterfaceStyle();
     username = ApolloAvatarNormalizedUsername(username);
     if (!cell || username.length == 0) {
         ApolloRestoreAvatarForCell(cell);
@@ -2437,14 +2771,16 @@ static void ApolloProfileLoadImages(ApolloProfileHeaderView *header, NSString *u
             header.bannerImageView.image = nil;
             ApolloProfileSyncAmbient(header);
         } else if (info.bannerURL) {
-            UIImage *banner = [cache cachedImageForURL:info.bannerURL];
+            // Banner-sized path: decoded at display scale into its own small
+            // cache so profile banners can't evict the avatar cache.
+            UIImage *banner = [cache cachedBannerImageForURL:info.bannerURL];
             if (banner) {
                 ApolloImmersiveSetBannerCacheKey(banner, info.bannerURL.absoluteString);
                 header.bannerImageView.image = banner;
                 ApolloProfileSyncAmbient(header);
             } else {
                 NSURL *bannerURL = info.bannerURL;
-                [cache requestImageForURL:bannerURL completion:^(UIImage *loadedImage) {
+                [cache requestBannerImageForURL:bannerURL completion:^(UIImage *loadedImage) {
                     if (!loadedImage) return;
                     if (!ApolloAvatarUsernameMatches(header.username, targetUsername)) return;
                     if (!ApolloProfileURLsMatch(header.currentBannerURL, bannerURL)) return;
@@ -2852,7 +3188,7 @@ static void ApolloProfileInstallOrUpdateHeader(id viewControllerObject) {
     NSString *className = NSStringFromClass([viewController class]);
     if (!tableView) {
         if (ApolloViewControllerLooksProfileRelated(viewController)) {
-            ApolloLog(@"[UserAvatars] Profile header skipped class=%@ vc=%p reason=no-table", className, viewControllerObject);
+            ApolloLogDebug(@"[UserAvatars] Profile header skipped class=%@ vc=%p reason=no-table", className, viewControllerObject);
         }
         return;
     }
@@ -2880,7 +3216,7 @@ static void ApolloProfileInstallOrUpdateHeader(id viewControllerObject) {
     NSString *username = ApolloUsernameFromProfileViewController(viewController);
     if (username.length == 0) {
         if (ApolloViewControllerLooksProfileRelated(viewController)) {
-            ApolloLog(@"[UserAvatars] Profile header skipped class=%@ vc=%p table=%p reason=no-username title=%@", className, viewControllerObject, tableView, viewController.navigationItem.title ?: viewController.title ?: @"nil");
+            ApolloLogDebug(@"[UserAvatars] Profile header skipped class=%@ vc=%p table=%p reason=no-username title=%@", className, viewControllerObject, tableView, viewController.navigationItem.title ?: viewController.title ?: @"nil");
         }
         return;
     }
@@ -4272,13 +4608,22 @@ static void ApolloInlineAvatarReapplyAfterModelUpdate(NSString *fullName) {
 
 %ctor {
     %init;
+    // Warm the off-main-safe render statics while we're guaranteed to be on
+    // the main thread (see ApolloAvatarScreenScale / PlaceholderFillColor).
+    ApolloAvatarRefreshInterfaceStyle();
+    (void)ApolloAvatarScreenScale();
+    (void)ApolloAvatarPlaceholderFillColor();
+    // -init warms ApolloBannerMaxPixelDimension's UIScreen access. Pin the
+    // singleton's first construction to main before Texture background layout
+    // can reach sharedCache through a setAttributedText: hook.
+    (void)[ApolloUserProfileCache sharedCache];
     [[NSNotificationCenter defaultCenter] addObserverForName:@"com.christianselig.ModelObjectUpdated"
                                                       object:nil
                                                        queue:nil
                                                   usingBlock:^(NSNotification *note) {
         if (!sShowUserAvatars || ![NSThread isMainThread]) return;
         id model = note.object;
-        if (![model isKindOfClass:objc_getClass("RDKComment")]) return;
+        if (![model isMemberOfClass:objc_getClass("RDKComment")]) return;
         if (![model respondsToSelector:@selector(fullName)]) return;
         NSString *fullName = ((id (*)(id, SEL))objc_msgSend)(model, @selector(fullName));
         if (![fullName isKindOfClass:[NSString class]] || fullName.length == 0) return;

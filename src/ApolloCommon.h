@@ -1,18 +1,67 @@
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <os/log.h>
+#import <Security/SecBase.h>
 
 // On iOS 26, NSLog redacts strings, so use os_log: https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-26-release-notes#NSLog
 // Uses a dedicated subsystem so OSLogStore can efficiently filter our entries.
-#define ApolloLog(fmt, ...) do { \
+#define ApolloLogWithType(type, fmt, ...) do { \
     NSString *logMessage = [NSString stringWithFormat:@"[ApolloFix] " fmt, ##__VA_ARGS__]; \
-    os_log_with_type(ApolloFixLog(), OS_LOG_TYPE_DEFAULT, "%{public}s", [logMessage UTF8String]); \
+    os_log_with_type(ApolloFixLog(), type, "%{public}s", [logMessage UTF8String]); \
 } while(0)
+#define ApolloLog(fmt, ...) ApolloLogWithType(OS_LOG_TYPE_DEFAULT, fmt, ##__VA_ARGS__)
+#define ApolloLogDebug(fmt, ...) ApolloLogWithType(OS_LOG_TYPE_DEBUG, fmt, ##__VA_ARGS__)
 
 __BEGIN_DECLS
 os_log_t ApolloFixLog(void);
 NSString *ApolloCollectLogs(void);
+
+// --- Row-measure re-entrancy guard (issues #831/#833/#838/#839/#841) ---
+// Main-thread depth of UITableView row-height passes currently on the stack
+// (maintained by the ASTableView tableView:heightForRowAtIndexPath: hook in
+// ApolloInlineLinkPreviews.xm). While a pass is in progress, UIKit is inside
+// its row-data (re)validation (-[UISectionRowData refreshWithSection:...] /
+// endUpdates); calling ANY UITableView geometry query (indexPathForCell:,
+// rectForRowAtIndexPath:, indexPathsForVisibleRows, ...) from tweak code at
+// that moment makes UIKit start a NESTED full-section validation — one extra
+// ~48-frame nesting level per row — until the main thread's 1MB stack
+// overflows (EXC_BAD_ACCESS on a stack-guard address, crashing whatever
+// innocent code runs at the boundary). Any tweak code that can run inside a
+// row measure (layoutSpecThatFits:, text-setter hooks, ...) must check
+// ApolloRowMeasureInProgress() before touching table geometry and decline or
+// defer instead.
+BOOL ApolloRowMeasureInProgress(void);
+void ApolloRowMeasureWillBegin(void);
+void ApolloRowMeasureDidEnd(void);
 NSString *ApolloCollectAILogs(void);
+
+// One-shot immutable Security dictionaries for the generic-password shapes
+// shared by the tweak. Callers own the returned dictionary.
+CFDictionaryRef ApolloCreateGenericPasswordIdentity(CFStringRef service,
+                                                     CFStringRef account) CF_RETURNS_RETAINED;
+CFDictionaryRef ApolloCreateGenericPasswordDataQuery(CFStringRef service,
+                                                      CFStringRef account) CF_RETURNS_RETAINED;
+OSStatus ApolloUpsertGenericPasswordData(CFStringRef service,
+                                         CFStringRef account,
+                                         NSData *data,
+                                         CFStringRef accessible);
+
+// Starts a data request whose response is bounded before and during transfer.
+// HTTP errors and an advertised/actual body larger than maximumBytes fail the
+// task. responseValidator may reject a 2xx response (for example by MIME type)
+// before any bytes are accepted. Completion is delivered exactly once on
+// completionQueue (the main queue when nil), including cancellation.
+typedef NSError *(^ApolloBoundedDataResponseValidator)(NSHTTPURLResponse *response);
+typedef void (^ApolloBoundedDataCompletion)(NSData *data,
+                                            NSHTTPURLResponse *response,
+                                            NSError *error);
+NSURLSessionDataTask *ApolloStartBoundedDataRequest(
+    NSURLRequest *request,
+    NSUInteger maximumBytes,
+    ApolloBoundedDataResponseValidator responseValidator,
+    dispatch_queue_t completionQueue,
+    ApolloBoundedDataCompletion completion);
+
 BOOL IsLiquidGlass(void);
 NSURL *ApolloURLByConvertingResolvedURLToApolloScheme(NSURL *url);
 BOOL ApolloRouteResolvedURLViaApolloScheme(NSURL *resolvedURL);
@@ -169,6 +218,30 @@ NSArray<NSDictionary *> *ApolloKeychainMirrorItemsForBackup(void);
 // session that actually signed the user out. Safe to call from any thread; never logs secrets.
 void ApolloAppendLoginDiag(NSString *line);
 
+// Append an iOS 27 list/tab-bar geometry diagnostic to a bounded cross-launch
+// buffer. Export Debug Logs prepends this buffer so the foregrounding session
+// that produced a stale inset remains available even if Apollo is later killed.
+// Never include post titles, account names, URLs, or other user content.
+void ApolloAppendListLayoutDiag(NSString *line);
+
+// iOS 26+ Liquid Glass: the tab bar's real expanded/collapsed state, read from
+// the visual provider's stored `_currentMorphTarget` (0 expanded, 1 mid-morph,
+// 2 minimized). UITabBar's own `_isMinimized` accessor is guarded by an
+// Apple-app assertion (UIKit literally checks for Photos), so calling it from a
+// sideloaded app crashes — the runtime ivar read is the only safe path.
+// Returns NSNotFound with *known = NO when the private layout is missing
+// (future iOS). Callers must treat unknown as "assume nothing" and fail OPEN
+// (accept UIKit's writes), never as "expanded" — fighting UIKit per frame on a
+// wrong guess is worse than missing one correction. Main-thread only.
+NSInteger ApolloTabBarVisualMorphTarget(UITabBar *tabBar, BOOL *known);
+
+// One-byte Swift Bool stored property on the tab bar's visual provider (e.g.
+// "isAnimatingCollapsedState"). Swift ivars carry no useful ObjC type encoding
+// (RuntimeBrowser shows `void`), so this mirrors UIKit's own one-byte
+// read/write of the exported ivar offset. *known = NO when the ivar is gone.
+// Main-thread only.
+BOOL ApolloTabBarVisualProviderBoolIvar(UITabBar *tabBar, const char *name, BOOL *known);
+
 // Dev-only login-persistence debug (see Tweak.xm): a report of where the account keychain item
 // lives (each copy's access group / size / protection class), and a FLEX-gated action that
 // poisons/restores the account item's protection class to reproduce the -25300 on demand. Both
@@ -182,4 +255,11 @@ NSString *ApolloDebugPoisonAccountAccessibility(void);
 // No-op for any other menu, and for feeds that aren't a single subreddit.
 // Called from ApolloNativeActionMenuBuildMenu as it converts the action sheet.
 void ApolloInjectGalleryViewMenuItemIfNeeded(NSMutableArray *children, NSString *menuTitle, id actionController);
+
+// Marks a tweak-created text node/label as our own UI chrome (AI summary pill,
+// injected affordances, ...). Content pipelines that scan the view/node tree
+// for USER content (e.g. translation's post-body candidate scan) must skip
+// marked objects — otherwise tweak UI can be mistaken for the post body.
+void ApolloMarkTweakUITextNode(id node);
+BOOL ApolloTextNodeIsTweakUI(id node);
 __END_DECLS

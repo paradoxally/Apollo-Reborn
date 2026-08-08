@@ -156,7 +156,7 @@ static BOOL ApolloSubredditIndexShouldInspectTable(UITableView *tableView) {
     id owner = (id)tableView.dataSource;
     if (!owner) owner = (id)tableView.delegate;
     Class redditListClass = ApolloSubredditIndexRedditListViewControllerClass();
-    if (owner && redditListClass && ![owner isKindOfClass:redditListClass]) {
+    if (owner && redditListClass && ![owner isMemberOfClass:redditListClass]) {
         objc_setAssociatedObject(tableView, &kApolloSubredditIndexNotSubredditsTableKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         return NO;
     }
@@ -312,7 +312,7 @@ static UIControl *ApolloSubredditIndexRedditListAccessoryButton(UITableViewCell 
     });
 
     Class cellClass = ApolloSubredditIndexRedditListTableViewCellClass();
-    if (!accessoryButtonIvar || !cellClass || ![cell isKindOfClass:cellClass]) return nil;
+    if (!accessoryButtonIvar || !cellClass || ![cell isMemberOfClass:cellClass]) return nil;
 
     id value = object_getIvar(cell, accessoryButtonIvar);
     return [value isKindOfClass:[UIControl class]] ? (UIControl *)value : nil;
@@ -641,7 +641,7 @@ static UIControl *ApolloSubredditIndexFindStarControlInView(UIView *view, UITabl
         UIView *candidate = stack.lastObject;
         [stack removeLastObject];
 
-        if ([candidate isKindOfClass:[UIControl class]] && ![candidate isKindOfClass:[ApolloSubredditStarHitProxy class]] && !candidate.hidden && candidate.alpha > 0.05) {
+        if ([candidate isKindOfClass:[UIControl class]] && ![candidate isMemberOfClass:[ApolloSubredditStarHitProxy class]] && !candidate.hidden && candidate.alpha > 0.05) {
             CGRect frameInCell = CGRectZero;
             BOOL plausibleSize = ApolloSubredditIndexStarControlFrameIsPlausible((UIControl *)candidate, cell, &frameInCell);
             CGFloat midX = CGRectGetMidX(frameInCell);
@@ -1169,10 +1169,10 @@ static void ApolloSubredditIndexInstallStarProxyForCell(UITableViewCell *cell, U
 
     if (![objc_getAssociatedObject(cell, &kApolloSubredditStarProxyLoggedKey) boolValue]) {
         objc_setAssociatedObject(cell, &kApolloSubredditStarProxyLoggedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        ApolloLog(@"[SubredditIndex] star-proxy-installed subreddit=%@ frame=%@ native=%@",
-                  proxy.subredditName ?: @"(unknown)",
-                  NSStringFromCGRect(proxy.frame),
-                  NSStringFromClass([nativeControl class]));
+        ApolloLogDebug(@"[SubredditIndex] star-proxy-installed subreddit=%@ frame=%@ native=%@",
+                       proxy.subredditName ?: @"(unknown)",
+                       NSStringFromCGRect(proxy.frame),
+                       NSStringFromClass([nativeControl class]));
     }
 }
 
@@ -1226,10 +1226,10 @@ static void ApolloSubredditIndexInstallOrUpdate(UITableView *tableView) {
 
     if (![objc_getAssociatedObject(tableView, &kApolloSubredditIndexLoggedKey) boolValue]) {
         objc_setAssociatedObject(tableView, &kApolloSubredditIndexLoggedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        ApolloLog(@"[SubredditIndex] installed titles=%lu table=%@ vc=%@",
-                  (unsigned long)titles.count,
-                  tableView,
-                  NSStringFromClass([ApolloSubredditIndexOwningViewController(tableView) class]));
+        ApolloLogDebug(@"[SubredditIndex] installed titles=%lu table=%@ vc=%@",
+                       (unsigned long)titles.count,
+                       tableView,
+                       NSStringFromClass([ApolloSubredditIndexOwningViewController(tableView) class]));
     }
 }
 
@@ -1278,13 +1278,17 @@ static BOOL ApolloSubredditIndexTableAlreadyRecognised(UITableView *tableView) {
 }
 
 static UIView *ApolloSubredditIndexModernSelectionBackground(UITableView *tableView, UITableViewCell *cell) {
+    // Deliberately TRANSPARENT: its only job is to suppress UIKit's default
+    // grey selection chrome so the in-contentView press overlay is the single
+    // source of highlight tint. It used to carry its own accent fill (0.10),
+    // but that layer is masked by the opaque cell background on regular rows
+    // and only ever showed on the Home/Popular/All meta rows (which have no
+    // opaque backdrop) — stacking with the 0.16 press overlay and making those
+    // rows visibly brighter than the rest of the list (issue #714).
     UIView *view = [[UIView alloc] initWithFrame:CGRectZero];
     view.userInteractionEnabled = NO;
     view.opaque = NO;
-    UIColor *accentColor = ApolloSubredditIndexThemeAccentColor(tableView, cell);
-    UIColor *overlayColor = [accentColor colorWithAlphaComponent:0.10];
-    view.backgroundColor = overlayColor;
-    view.layer.backgroundColor = overlayColor.CGColor;
+    view.backgroundColor = UIColor.clearColor;
     view.layer.borderWidth = 0.0;
     view.layer.shadowOpacity = 0.0;
     view.layer.sublayers = nil;
@@ -1313,8 +1317,21 @@ static UIView *ApolloSubredditIndexModernPressOverlay(UITableView *tableView, UI
         [container insertSubview:overlay atIndex:0];
     }
 
-    UIColor *accentColor = ApolloSubredditIndexThemeAccentColor(tableView, cell);
-    UIColor *overlayColor = [accentColor colorWithAlphaComponent:0.16];
+    // Highlight tint (issue #743): stock Apollo themes get the muted iOS-grey
+    // tap feedback they always had — the accent-derived tint only ever
+    // belonged to custom themes, and even there 0.16 read stronger than
+    // Apollo's original feedback, so it's dialled down to 0.10.
+    UIColor *overlayColor;
+    if (ApolloThemeRuntimeIsActive()) {
+        UIColor *accentColor = ApolloSubredditIndexThemeAccentColor(tableView, cell);
+        overlayColor = [accentColor colorWithAlphaComponent:0.10];
+    } else {
+        overlayColor = [UIColor systemGray4Color]; // what UIKit's default selection paints
+    }
+    // Resolve against the cell's own traits before the .CGColor write —
+    // systemGray4 is dynamic and ambient resolution can pick the wrong
+    // light/dark variant when Apollo overrides the window style.
+    overlayColor = [overlayColor resolvedColorWithTraitCollection:container.traitCollection];
     overlay.frame = container.bounds;
     overlay.backgroundColor = overlayColor;
     overlay.layer.backgroundColor = overlayColor.CGColor;
@@ -1547,7 +1564,7 @@ static void ApolloSubredditIndexPrepareCellForDisplay(UITableView *tableView, UI
     ApolloSubredditIndexApplyCellMarginsOnce(cell);
     Class redditListCellClass = ApolloSubredditIndexRedditListTableViewCellClass();
     BOOL isMultiredditChild = ApolloSubredditIndexCellIsMultiredditChild(tableView, cell, indexPath);
-    if (redditListCellClass && [cell isKindOfClass:redditListCellClass]) {
+    if (redditListCellClass && [cell isMemberOfClass:redditListCellClass]) {
         ApolloSubredditIndexApplyRedditListCellPolishOnce(cell, isMultiredditChild);
     }
     ApolloSubredditIndexApplyCellSelectionChrome(cell, tableView);
@@ -1743,7 +1760,7 @@ static void ApolloSubredditIndexStyleHeaderView(UIView *header, UITableView *tab
 
     if (![objc_getAssociatedObject(tableView, &kApolloSubredditHeaderLoggedKey) boolValue]) {
         objc_setAssociatedObject(tableView, &kApolloSubredditHeaderLoggedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        ApolloLog(@"[SubredditIndex] styled-header class=%@ title=%@", NSStringFromClass([header class]), text);
+        ApolloLogDebug(@"[SubredditIndex] styled-header class=%@ title=%@", NSStringFromClass([header class]), text);
     }
 
     // Fill the gap a transparent modern header would otherwise leave by giving the header its
@@ -1962,7 +1979,7 @@ static void ApolloSubredditIndexRaiseNativeIndexAboveHeaders(UITableView *tableV
     Class headerFooterClass = ApolloSubredditIndexTableHeaderFooterViewClass();
     for (NSUInteger position = indexPosition + 1; position < subviews.count; position++) {
         UIView *subview = subviews[position];
-        if ((recreatedHeaderClass && [subview isKindOfClass:recreatedHeaderClass]) ||
+        if ((recreatedHeaderClass && [subview isMemberOfClass:recreatedHeaderClass]) ||
             (headerFooterClass && [subview isKindOfClass:headerFooterClass])) {
             [tableView bringSubviewToFront:indexView];
             return;
@@ -2014,7 +2031,7 @@ static Class ApolloSubredditIndexSubtitleCellClass(void) {
 
 static void ApolloSubredditIndexApplyDescriptionPreference(UITableView *tableView, UITableViewCell *cell) {
     Class subtitleCellClass = ApolloSubredditIndexSubtitleCellClass();
-    if (!subtitleCellClass || ![cell isKindOfClass:subtitleCellClass]) return;
+    if (!subtitleCellClass || ![cell isMemberOfClass:subtitleCellClass]) return;
 
     UILabel *detailLabel = cell.detailTextLabel;
     if (!detailLabel) return;
@@ -2162,7 +2179,7 @@ static void ApolloSubredditIndexApplyEnhancementStateToKnownTables(void) {
 - (void)layoutSubviews {
     %orig;
     Class redditListCellClass = ApolloSubredditIndexRedditListTableViewCellClass();
-    if (!redditListCellClass || ![(UITableViewCell *)self isKindOfClass:redditListCellClass]) return;
+    if (!redditListCellClass || ![(UITableViewCell *)self isMemberOfClass:redditListCellClass]) return;
 
     UITableView *tableView = ApolloSubredditIndexTableForCell((UITableViewCell *)self);
     // Selection highlight is a bug fix that applies on the subreddit list in every mode (#452).
@@ -2211,7 +2228,7 @@ static void ApolloSubredditIndexApplyEnhancementStateToKnownTables(void) {
 - (void)setEditing:(BOOL)editing animated:(BOOL)animated {
     %orig;
     Class redditListCellClass = ApolloSubredditIndexRedditListTableViewCellClass();
-    if (!redditListCellClass || ![(UITableViewCell *)self isKindOfClass:redditListCellClass]) return;
+    if (!redditListCellClass || ![(UITableViewCell *)self isMemberOfClass:redditListCellClass]) return;
 
     UITableView *tableView = ApolloSubredditIndexTableForCell((UITableViewCell *)self);
     if (ApolloSubredditIndexEnsureSelectionTable(tableView)) {

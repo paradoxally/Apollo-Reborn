@@ -767,8 +767,14 @@ static BOOL CloudMessageSuggestsQuotaExhausted(NSString *message) {
         // glued phrase: "out of <anything> quota" is exhaustion ("out of your
         // API quota"), whereas quota BEFORE "out of" is a configuration error
         // ("quota project out of billing scope").
+        // ...and only within a short window, so "out of your API quota" counts
+        // while the usage report "3 out of the 100 requests in your quota"
+        // does not.
         NSRange outOf = [message rangeOfString:@"out of" options:NSCaseInsensitiveSearch];
-        if (outOf.location != NSNotFound && quota.location > outOf.location) return YES;
+        if (outOf.location != NSNotFound && quota.location > NSMaxRange(outOf) &&
+            quota.location - NSMaxRange(outOf) <= 12) {
+            return YES;
+        }
 
         for (NSString *signal in @[@"exceeded", @"exhausted", @"insufficient",
                                     @"limit", @"reached", @"depleted"]) {
@@ -781,9 +787,15 @@ static BOOL CloudMessageSuggestsQuotaExhausted(NSString *message) {
         // substring of "100 remaining", which would invert the check.
         NSRange remaining = [message rangeOfString:@"remaining" options:NSCaseInsensitiveSearch];
         if (remaining.location != NSNotFound) {
+            // The negation must sit immediately before it ("no quota
+            // remaining"), not merely somewhere earlier in the sentence —
+            // otherwise "No error occurred; 500 requests remaining" matches.
             for (NSString *negation in @[@"no ", @"zero "]) {
                 NSRange r = [message rangeOfString:negation options:NSCaseInsensitiveSearch];
-                if (r.location != NSNotFound && r.location < remaining.location) return YES;
+                if (r.location != NSNotFound && remaining.location > NSMaxRange(r) &&
+                    remaining.location - NSMaxRange(r) <= 12) {
+                    return YES;
+                }
             }
         }
     }
@@ -793,6 +805,29 @@ static BOOL CloudMessageSuggestsQuotaExhausted(NSString *message) {
         if ([message localizedCaseInsensitiveContainsString:needle]) return YES;
     }
     return NO;
+}
+
+// OpenAI-compatible providers put a STABLE machine-readable slug in the error
+// object's "code" when there is no HTTP status to read (the mid-stream SSE
+// path). Reading it is exact, so it is always preferred over guessing from
+// English prose — the prose heuristics above are only the fallback for
+// providers that omit the slug. Returns 0 when there is nothing to map.
+static NSInteger CloudMappedErrorCodeFromSlug(NSString *slug) {
+    if (slug.length == 0) return 0;
+    NSString *s = slug.lowercaseString;
+    if ([s isEqualToString:@"insufficient_quota"] || [s isEqualToString:@"rate_limit_exceeded"] ||
+        [s isEqualToString:@"quota_exceeded"] || [s isEqualToString:@"billing_hard_limit_reached"]) {
+        return kCloudErrorQuota;
+    }
+    if ([s isEqualToString:@"invalid_api_key"] || [s isEqualToString:@"invalid_authentication"] ||
+        [s isEqualToString:@"account_deactivated"] || [s isEqualToString:@"permission_denied"]) {
+        return kCloudErrorAuth;
+    }
+    if ([s isEqualToString:@"model_not_found"] || [s isEqualToString:@"model_terminated"]) {
+        return kCloudErrorModelUnavailable;
+    }
+    if ([s isEqualToString:@"context_length_exceeded"]) return kCloudErrorContextWindow;
+    return 0;
 }
 
 static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSString *provider) {
@@ -981,11 +1016,22 @@ static NSString *CloudVisibleTextFromRaw(NSString *raw) {
     if ([chunkError isKindOfClass:[NSDictionary class]] || [chunkError isKindOfClass:[NSString class]]) {
         NSString *message = [chunkError isKindOfClass:[NSString class]]
             ? chunkError : (((NSDictionary *)chunkError)[@"message"] ?: @"provider error");
-        NSInteger providerCode = [chunkError isKindOfClass:[NSDictionary class]]
-            ? [((NSDictionary *)chunkError)[@"code"] integerValue] : 0;
-        [self finishState:state final:nil
-                errorCode:CloudMappedErrorCode(providerCode, [message description], state.provider)
-                  message:[message description]];
+        // "code" is a NUMBER on some providers and a STABLE SLUG on others
+        // ("insufficient_quota"). Read whichever is present rather than
+        // calling integerValue on a string and silently getting 0, which is
+        // what forced the prose heuristics to carry this path alone.
+        id rawCode = [chunkError isKindOfClass:[NSDictionary class]]
+            ? ((NSDictionary *)chunkError)[@"code"] : nil;
+        NSInteger mapped = 0;
+        if ([rawCode isKindOfClass:[NSString class]]) {
+            mapped = CloudMappedErrorCodeFromSlug(rawCode);
+        }
+        if (mapped == 0) {
+            NSInteger providerCode = [rawCode isKindOfClass:[NSNumber class]]
+                ? [rawCode integerValue] : 0;
+            mapped = CloudMappedErrorCode(providerCode, [message description], state.provider);
+        }
+        [self finishState:state final:nil errorCode:mapped message:[message description]];
         return;
     }
 

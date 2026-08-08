@@ -761,15 +761,30 @@ static BOOL CloudMessageSuggestsQuotaExhausted(NSString *message) {
     // path this is the last classifier before the generic service error, and
     // providers use the word for configuration problems too (Google's "quota
     // project" auth failures). Require an exhaustion signal alongside it.
-    // "out of" only counts glued to the noun: "out of quota" is exhaustion,
-    // "quota project out of billing scope" is a configuration error.
-    if ([message localizedCaseInsensitiveContainsString:@"out of quota"]) return YES;
-    if ([message localizedCaseInsensitiveContainsString:@"quota"]) {
-        // Deliberately excludes "remaining" — it reports capacity LEFT
-        // ("500 requests remaining in your quota"), the opposite of exhaustion.
+    NSRange quota = [message rangeOfString:@"quota" options:NSCaseInsensitiveSearch];
+    if (quota.location != NSNotFound) {
+        // Order carries the meaning, so match positionally rather than as a
+        // glued phrase: "out of <anything> quota" is exhaustion ("out of your
+        // API quota"), whereas quota BEFORE "out of" is a configuration error
+        // ("quota project out of billing scope").
+        NSRange outOf = [message rangeOfString:@"out of" options:NSCaseInsensitiveSearch];
+        if (outOf.location != NSNotFound && quota.location > outOf.location) return YES;
+
         for (NSString *signal in @[@"exceeded", @"exhausted", @"insufficient",
                                     @"limit", @"reached", @"depleted"]) {
             if ([message localizedCaseInsensitiveContainsString:signal]) return YES;
+        }
+
+        // "remaining" reports capacity LEFT ("500 requests remaining"), so it
+        // only means exhaustion behind a negation: "no quota remaining".
+        // Numeric qualifiers are deliberately NOT matched — "0 remaining" is a
+        // substring of "100 remaining", which would invert the check.
+        NSRange remaining = [message rangeOfString:@"remaining" options:NSCaseInsensitiveSearch];
+        if (remaining.location != NSNotFound) {
+            for (NSString *negation in @[@"no ", @"zero "]) {
+                NSRange r = [message rangeOfString:negation options:NSCaseInsensitiveSearch];
+                if (r.location != NSNotFound && r.location < remaining.location) return YES;
+            }
         }
     }
     // These phrases are unambiguous on their own.

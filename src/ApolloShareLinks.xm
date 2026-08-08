@@ -648,16 +648,20 @@ static void ApolloPumpShareURLResolveTasks(void) {
         }
     }
     for (ShareUrlTask *task in tasksToStart) {
-        // ShareLinkRegexPattern accepts a protocol-relative "//reddit.com/..."
-        // form, which parses into a scheme-less NSURL, and a malformed string
-        // parses to nil — neither can produce a usable request, so resolve the
-        // task instead of handing the transport an unusable one.
-        NSURL *shareURL = [NSURL URLWithString:task.originalURL];
-        NSString *shareScheme = shareURL.scheme.lowercaseString;
-        if (!shareURL || shareURL.host.length == 0 ||
-            (![shareScheme isEqualToString:@"https"] && ![shareScheme isEqualToString:@"http"])) {
-            ApolloLog(@"[ShareLinks] skipping unresolvable share URL (scheme=%@ host=%@)",
-                      shareScheme ?: @"(none)", shareURL.host ?: @"(none)");
+        // ShareLinkRegexPattern accepts "http:", "https:" and a protocol-relative
+        // "//reddit.com/..." form. Resolve every one of them over HTTPS: the host
+        // is regex-pinned to public reddit.com, and Apollo ships
+        // NSAllowsArbitraryLoads, so a plaintext leg would really go out in the
+        // clear and expose which share link is being resolved. Upgrading rather
+        // than rejecting also keeps the scheme-less form working, and costs
+        // nothing — reddit.com is HTTPS-only and would redirect anyway.
+        NSURLComponents *shareComponents =
+            [NSURLComponents componentsWithString:task.originalURL ?: @""];
+        shareComponents.scheme = @"https";
+        NSURL *shareURL = shareComponents.URL;
+        if (!shareURL || shareURL.host.length == 0) {
+            ApolloLog(@"[ShareLinks] skipping unresolvable share URL (host=%@)",
+                      shareURL.host ?: @"(none)");
             CompleteShareURLResolveTask(task, task.cacheKey, task.originalURL, NO);
             continue;
         }

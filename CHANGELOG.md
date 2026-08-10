@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.11.1] - 2026-08-10
+
+### Fixes
+
+- Fix **NSFW media ignoring Apollo's blur preference** — the native blur decision reads a per-account flag that Reborn's account handling was leaving stale, so blurring silently stopped matching the Reddit setting ([#866](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/866): @jordanearle)
+  - Accounts added through **reddit.com web sign-in never blurred at all**: the flag defaulted to off and the endpoint that would correct it answers empty without OAuth — the preference is now fetched over the account's own cookie session and stamped onto the live user
+  - Fresh values could also be clobbered by stale disk decodes moments later; captures are now source-ranked so an older value can never overwrite a newer one
+  - While the preference is still being resolved, Gallery and tag filtering now **cover NSFW media briefly** instead of exposing it
+- Fix the **Search tab's pill painting its light-mode color on dark themes** under iOS 27 Liquid Glass, which left a near-white pill with an unreadable placeholder — the themed fill is now resolved against the search bar's own traits instead of trusting the pill's container, which iOS 27 can host in a mismatched style ([#866](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/866): @jordanearle)
+
 ## [v3.11.0] - 2026-08-08
 
 ### Features
@@ -1000,6 +1010,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.11.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.11.0...v1.15.11_3.11.1
 [v3.11.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.4...v1.15.11_3.11.0
 [v3.10.4]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.3...v1.15.11_3.10.4
 [v3.10.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.2...v1.15.11_3.10.3

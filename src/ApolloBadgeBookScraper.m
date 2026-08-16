@@ -814,7 +814,10 @@ static NSTimeInterval const kApolloBBWebFetchWatchdog = 90.0;
         ApolloScrapeWebViewCreate(config, ^(WKWebView *web) {
             // Blocker resolution adds another async hop before the web view
             // exists, so re-check finished for the same reason as above.
-            if (self.finished) return;
+            // Create() has already attached `web` to the key window; refusing it
+            // without destroying it strands an attached view the dealloc
+            // insurance can never reach, because self.web is still nil.
+            if (self.finished) { ApolloScrapeWebViewDestroy(web); return; }
             self.web = web;
             web.navigationDelegate = self;
             web.customUserAgent = kApolloBBDesktopUA;

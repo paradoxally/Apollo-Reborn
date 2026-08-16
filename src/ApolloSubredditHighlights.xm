@@ -752,8 +752,10 @@ static NSDictionary<NSString *, ApolloHLItem *> *ApolloHLParseInfoListing(NSDict
     ApolloScrapeWebViewCreate(config, ^(WKWebView *web) {
         ApolloHLWebFetch *ss = ws;
         // The blocker resolve is async, so the fetch may already have been
-        // cancelled (done cleared) by the time we get here.
-        if (!ss || !ss.done) return;
+        // cancelled (done cleared) by the time we get here. Create() has already
+        // attached `web` to the key window; refusing it without destroying it
+        // strands an attached view nothing can reach, because ss.web is nil.
+        if (!ss || !ss.done) { ApolloScrapeWebViewDestroy(web); return; }
         ss.web = web;
         web.navigationDelegate = ss;
         [web loadRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"https://www.reddit.com/r/%@/", sub]]]];

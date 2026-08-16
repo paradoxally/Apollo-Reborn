@@ -67,7 +67,10 @@ static NSCache<NSString *, NSArray<NSNumber *> *> *ApolloSBWebStatsCache(void) {
     ApolloScrapeWebViewCreate([[WKWebViewConfiguration alloc] init], ^(WKWebView *web) {
         ApolloSBStatsWebFetch *ss = ws;
         // Blocker resolution is async — this fetch may already have finished.
-        if (!ss || !ss.done) return;
+        // Create() has already attached `web` to the key window; refusing it
+        // without destroying it strands an attached view nothing can reach,
+        // because ss.web is nil.
+        if (!ss || !ss.done) { ApolloScrapeWebViewDestroy(web); return; }
         ss.web = web;
         web.navigationDelegate = ss;
         web.customUserAgent = @"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";

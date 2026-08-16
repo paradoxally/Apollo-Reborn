@@ -211,7 +211,12 @@ static NSUInteger const ApolloSubredditCustomIconMaxBytes = 512000; // 500 KB
     NSString *key = [self normalizedSubredditName:subredditName];
     if (key.length == 0 || ![self.storedKeys containsObject:key]) return nil;
     NSString *path = [self filePathForSubreddit:subredditName];
-    return path.length > 0 ? [NSURL fileURLWithPath:path isDirectory:NO] : nil;
+    if (path.length == 0) return nil;
+    // Same purge hazard as the banner cache: storedKeys is an in-memory mirror
+    // of an NSCachesDirectory the OS may reclaim, and a URL to a purged file
+    // defeats the caller's nil-means-use-the-real-icon fallback. Cold path.
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return nil;
+    return [NSURL fileURLWithPath:path isDirectory:NO];
 }
 
 - (BOOL)saveIcon:(UIImage *)image forSubreddit:(NSString *)subredditName error:(NSError **)error {

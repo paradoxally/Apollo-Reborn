@@ -1189,7 +1189,7 @@ didReceiveResponse:(NSURLResponse *)response
     // `data:` prefix and are skipped harmlessly. The flag fails the request at
     // completion: content past the drop may be missing, and a silently
     // truncated summary is worse than falling back.
-    if (state.lineBuffer.length > kCloudMaxSSELineBytes) {
+    if (!state.finished && state.lineBuffer.length > kCloudMaxSSELineBytes) {
         ApolloLog(@"[AICloud] request %@ dropped an oversized SSE line (%lu bytes buffered)",
                   state.identifier, (unsigned long)state.lineBuffer.length);
         [state.lineBuffer setLength:0];

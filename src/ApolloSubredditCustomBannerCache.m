@@ -219,7 +219,15 @@ static NSUInteger const ApolloSubredditCustomBannerMaxBytes = 1572864; // 1.5 MB
     NSString *key = [self normalizedSubredditName:subredditName];
     if (key.length == 0 || ![self.storedKeys containsObject:key]) return nil;
     NSString *path = [self filePathForSubreddit:subredditName];
-    return path.length > 0 ? [NSURL fileURLWithPath:path isDirectory:NO] : nil;
+    if (path.length == 0) return nil;
+    // storedKeys is an in-memory mirror, and this lives under NSCachesDirectory,
+    // which the OS may purge behind our back. Callers use this URL to load the
+    // file directly and fall back to the subreddit's real banner on nil, so a
+    // URL to a purged file breaks that fallback instead of triggering it. This
+    // is the cold fullscreen-view path, not the hot render path (that reads
+    // hasCustomBannerForSubreddit:), so the stat costs nothing worth saving.
+    if (![[NSFileManager defaultManager] fileExistsAtPath:path]) return nil;
+    return [NSURL fileURLWithPath:path isDirectory:NO];
 }
 
 - (BOOL)saveBanner:(UIImage *)image forSubreddit:(NSString *)subredditName error:(NSError **)error {

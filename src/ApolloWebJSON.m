@@ -2346,11 +2346,7 @@ NSArray *ApolloWebJSONRescueFlairList(NSHTTPURLResponse *response) {
 
     NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:oauthURL];
     [req setValue:[@"Bearer " stringByAppendingString:token] forHTTPHeaderField:@"Authorization"];
-    // Bearer-only request against oauth.reddit.com, so it carries the OAuth
-    // client identity, not the browser UA — same rule as the modern-thing probe
-    // (cookie -> browser, bearer -> sUserAgent). A user running a custom OAuth
-    // UA would otherwise have this one request go out under the wrong identity.
-    [req setValue:([sUserAgent length] > 0 ? sUserAgent : defaultUserAgent) forHTTPHeaderField:@"User-Agent"];
+    [req setValue:ApolloWebJSONBrowserUserAgent() forHTTPHeaderField:@"User-Agent"];
     req.HTTPShouldHandleCookies = NO;
     req.timeoutInterval = 3;
 

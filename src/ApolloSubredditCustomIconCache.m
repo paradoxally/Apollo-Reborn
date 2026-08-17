@@ -200,6 +200,10 @@ static NSUInteger const ApolloSubredditCustomIconMaxBytes = 512000; // 500 KB
             [self postChangedNotificationForSubreddit:key];
             return;
         }
+        // Re-checked at the commit point for the same reason as the banner cache:
+        // the decode is the long part of this block and a removal can land
+        // inside it.
+        if (![self.storedKeys containsObject:key]) return;
         [self cacheImage:diskImage forKey:key];
         [self postChangedNotificationForSubreddit:key];
     });

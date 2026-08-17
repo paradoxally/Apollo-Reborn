@@ -209,6 +209,12 @@ static NSUInteger const ApolloSubredditCustomBannerMaxBytes = 1572864; // 1.5 MB
             [self postChangedNotificationForSubreddit:key];
             return;
         }
+        // Re-checked at the commit point, not just on entry: the decode above is
+        // the long part of this block and a removal can land inside it. This
+        // does not make check-and-commit atomic — removal clears the memory
+        // cache on the caller's thread by design, so it stays synchronous for
+        // the common path — but it narrows the window to the store call itself.
+        if (![self.storedKeys containsObject:key]) return;
         [self cacheImage:diskImage forKey:key];
         [self postChangedNotificationForSubreddit:key];
     });

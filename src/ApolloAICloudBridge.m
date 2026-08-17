@@ -33,12 +33,19 @@ static const NSInteger kCloudErrorReasoningOnly = 13;
 static const NSInteger kCloudErrorModelUnavailable = 14;
 static const NSInteger kCloudErrorQuota = 15;
 
-// A 200 body is buffered whole: it backs the non-streamed JSON fallback and
-// bounds runaway accumulation. An error body only ever needs to yield a short
-// provider message, so it gets a much tighter cap — an untrusted custom
-// endpoint can otherwise stream HTML at us indefinitely.
+// A 200 body is buffered whole: it backs the non-streamed JSON fallback. An
+// error body only ever needs to yield a short provider message, so it gets a
+// much tighter cap — an untrusted custom endpoint can otherwise stream HTML at
+// us indefinitely.
 static const NSUInteger kCloudMaxBufferedBody = 512 * 1024;
 static const NSUInteger kCloudMaxBufferedErrorBytes = 64 * 1024;
+// A 4,096-token answer is normally only tens of KiB. These deliberately roomy
+// ceilings protect against a malicious or broken custom endpoint without
+// constraining legitimate provider framing or reasoning metadata.
+static const NSUInteger kCloudMaxSuccessfulResponseBytes = 4 * 1024 * 1024;
+static const NSUInteger kCloudMaxSSELineBytes = 256 * 1024;
+static const NSUInteger kCloudMaxSSELineCount = 16384;
+static const NSUInteger kCloudMaxAccumulatedCharacters = 256 * 1024;
 
 #pragma mark - Provider configuration
 
@@ -996,6 +1003,12 @@ static NSString *CloudVisibleTextFromRaw(NSString *raw) {
     // framing lines are all ignorable.
     if (line.length == 0 || [line hasPrefix:@":"]) return;
     if (![line hasPrefix:@"data:"]) return;
+    if (state.sseLineCount >= kCloudMaxSSELineCount) {
+        [state.task cancel];
+        [self finishState:state final:nil errorCode:kCloudErrorService
+                  message:@"stream contained too many events"];
+        return;
+    }
     state.sseLineCount += 1;
     NSString *payload = [[line substringFromIndex:5] stringByTrimmingCharactersInSet:
                          [NSCharacterSet whitespaceCharacterSet]];
@@ -1055,9 +1068,10 @@ static NSString *CloudVisibleTextFromRaw(NSString *raw) {
     // well-formed, individually-small deltas grows the accumulated text without
     // limit until the 180s resource timeout. A summary is a few hundred chars,
     // so anything near the buffer cap is a runaway, not a long answer.
-    if (state.accumulated.length + [(NSString *)content length] > kCloudMaxBufferedBody) {
+    if (state.accumulated.length + [(NSString *)content length] > kCloudMaxAccumulatedCharacters) {
         ApolloLog(@"[AICloud] request %@ exceeded the response cap (%lu chars accumulated)",
                   state.identifier, (unsigned long)state.accumulated.length);
+        [state.task cancel];
         [self finishState:state final:nil errorCode:kCloudErrorService
                   message:@"the provider sent an oversized response"];
         return;
@@ -1120,6 +1134,13 @@ didReceiveResponse:(NSURLResponse *)response
                   state.identifier, (long)state.attempt, (unsigned long)dataTask.taskIdentifier,
                   (long)http.statusCode, response.MIMEType ?: @"?", response.expectedContentLength,
                   state.retryAfterHeader ?: @"(none)", state.generationIdentifier ?: @"(none)");
+        if (http.statusCode == 200 && response.expectedContentLength > 0 &&
+            (unsigned long long)response.expectedContentLength > kCloudMaxSuccessfulResponseBytes) {
+            completionHandler(NSURLSessionResponseCancel);
+            [self finishState:state final:nil errorCode:kCloudErrorService
+                      message:@"streamed response exceeded the byte limit"];
+            return;
+        }
     } else {
         ApolloLog(@"[AICloud][wire] request %@ response attempt=%ld task=%lu non-HTTP class=%@",
                   state.identifier, (long)state.attempt, (unsigned long)dataTask.taskIdentifier,
@@ -1131,7 +1152,6 @@ didReceiveResponse:(NSURLResponse *)response
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
     ApolloAICloudRequest *state = _requestsByTask[@(dataTask.taskIdentifier)];
     if (!state || state.finished) return;
-    state.receivedByteCount += data.length;
     state.dataCallbackCount += 1;
 
     // Always keep a capped copy of the raw body: it backs both the error-message
@@ -1147,7 +1167,19 @@ didReceiveResponse:(NSURLResponse *)response
         [state.rawBody appendData:data.length <= remaining
             ? data : [data subdataWithRange:NSMakeRange(0, remaining)]];
     }
-    if (failed) return; // buffered whole for error extraction
+    if (failed) {
+        state.receivedByteCount += data.length; // diagnostics still count error bytes
+        return; // buffered whole for error extraction
+    }
+
+    if (data.length > kCloudMaxSuccessfulResponseBytes ||
+        state.receivedByteCount > kCloudMaxSuccessfulResponseBytes - data.length) {
+        [state.task cancel];
+        [self finishState:state final:nil errorCode:kCloudErrorService
+                  message:@"streamed response exceeded the byte limit"];
+        return;
+    }
+    state.receivedByteCount += data.length;
 
     [state.lineBuffer appendData:data];
     [self processBufferedLinesForState:state];
@@ -1157,7 +1189,7 @@ didReceiveResponse:(NSURLResponse *)response
     // `data:` prefix and are skipped harmlessly. The flag fails the request at
     // completion: content past the drop may be missing, and a silently
     // truncated summary is worse than falling back.
-    if (state.lineBuffer.length > kCloudMaxBufferedBody) {
+    if (!state.finished && state.lineBuffer.length > kCloudMaxSSELineBytes) {
         ApolloLog(@"[AICloud] request %@ dropped an oversized SSE line (%lu bytes buffered)",
                   state.identifier, (unsigned long)state.lineBuffer.length);
         [state.lineBuffer setLength:0];

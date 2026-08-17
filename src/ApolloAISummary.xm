@@ -1940,8 +1940,10 @@ static NSAttributedString *ApolloAISummaryAttributedText(NSString *title,
     if (state == ApolloAIBoxStateReady) {
         // Quiet trust/expectation footer so the summary isn't mistaken for the
         // author's own words. Leads with the model that generated it (cloud model
-        // name or "Apple Intelligence") so the backend is visible at a glance;
-        // summaries cached before labels existed fall back to "AI-generated".
+        // name or "Apple Intelligence") so the backend is visible at a glance —
+        // which also tells users whether their content stayed on-device or went
+        // to their configured cloud service. Summaries cached before labels
+        // existed fall back to "AI-generated".
         NSString *generator = modelLabel.length > 0 ? modelLabel : @"AI-generated";
         NSString *caption = (!isPost && sourceCount > 0)
             ? [NSString stringWithFormat:@"\n\n%@ · based on %lu representative comments · may be inaccurate",
@@ -2059,14 +2061,14 @@ static void ApolloAIRenderSummaryNode(id headerNode, BOOL isPost) {
         if (state == ApolloAIBoxStateEmpty) {
             // Terminal, non-interactive card: don't announce it as an expandable button.
             nodeView.accessibilityTraits &= ~UIAccessibilityTraitButton;
-            nodeView.accessibilityLabel = [NSString stringWithFormat:@"%@. Nothing to summarize.", title];
+            nodeView.accessibilityLabel = [title stringByAppendingString:@". Nothing to summarize."];
             nodeView.accessibilityHint = nil;
         } else {
             nodeView.accessibilityTraits |= UIAccessibilityTraitButton;
             NSString *spoken = body.length ? body : (state == ApolloAIBoxStateLoading ? @"Summarizing" : @"");
             nodeView.accessibilityLabel = expanded
                 ? [NSString stringWithFormat:@"%@. %@", title, spoken]
-                : [NSString stringWithFormat:@"%@, collapsed", title];
+                : [title stringByAppendingString:@", collapsed"];
             nodeView.accessibilityHint = @"Double tap to expand or collapse";
         }
     }

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "version": "3.12.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "sportscourt.fill", "title": "Live Match Threads & Games", "subtitle": "Reddit's interactive posts now render live — scores, predictions, brackets. Turn it on under Posts & Feeds." },
+    { "icon": "apps.iphone", "title": "Redesigned Icon Picker", "subtitle": "Browse icon packs as cards with cover previews, plus a Daily Spotlight row." },
+    { "icon": "circle.lefthalf.filled", "title": "Icon Appearances", "subtitle": "Pick Light, Dark, or System for your app icon, applied the moment you choose." },
+    { "icon": "arrow.left.arrow.right", "title": "Swipe Past Galleries", "subtitle": "Keep swiping at a gallery's last image to go to the next page instead of bouncing." },
+    { "icon": "eye.slash.fill", "title": "Blur NSFW Media", "subtitle": "Override your Reddit preference with Always or Never, on this device only." },
+    { "icon": "tray.full.fill", "title": "Swipe Between Inbox Tabs", "subtitle": "Move between Notifications and Chat with a swipe, without the title shifting." },
+    { "icon": "ladybug.fill", "title": "Fewer Crashes", "subtitle": "Fixes for Filters & Blocks, account switching, token refresh, and hidden video ads." }
+  ]
+}

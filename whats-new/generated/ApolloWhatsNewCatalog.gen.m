@@ -15,6 +15,7 @@ typedef struct {
 
 static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "3.10.0", "What's New in Apollo Reborn" },
+    { "3.12.0", "What's New in Apollo Reborn" },
     { "3.5.0", "What's New in Apollo Reborn" },
     { "3.9.0", "What's New in Apollo Reborn" },
 };
@@ -27,6 +28,13 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "3.10.0", "checklist", "Safer Poll Voting", "Pick an option, then confirm with Vote \342\200\224 Reddit's poll votes can't be undone." },
     { "3.10.0", "bubble.left.and.bubble.right.fill", "Chat & Modmail Unlocked", "Every account can now choose modern Chat and Modmail instead of being locked in." },
     { "3.10.0", "speedometer", "Smoother & Steadier", "Faster scrolling with translation on, and a fix for a crash while reading comments." },
+    { "3.12.0", "sportscourt.fill", "Live Match Threads & Games", "Reddit's interactive posts now render live \342\200\224 scores, predictions, brackets. Turn it on under Posts & Feeds." },
+    { "3.12.0", "apps.iphone", "Redesigned Icon Picker", "Browse icon packs as cards with cover previews, plus a Daily Spotlight row." },
+    { "3.12.0", "circle.lefthalf.filled", "Icon Appearances", "Pick Light, Dark, or System for your app icon, applied the moment you choose." },
+    { "3.12.0", "arrow.left.arrow.right", "Swipe Past Galleries", "Keep swiping at a gallery's last image to go to the next page instead of bouncing." },
+    { "3.12.0", "eye.slash.fill", "Blur NSFW Media", "Override your Reddit preference with Always or Never, on this device only." },
+    { "3.12.0", "tray.full.fill", "Swipe Between Inbox Tabs", "Move between Notifications and Chat with a swipe, without the title shifting." },
+    { "3.12.0", "ladybug.fill", "Fewer Crashes", "Fixes for Filters & Blocks, account switching, token refresh, and hidden video ads." },
     { "3.5.0", "gearshape.fill", "Redesigned Settings", "A cleaner layout, plus search across every setting." },
     { "3.5.0", "person.crop.circle.fill", "Redesigned Profiles", "Immersive banners and a fresh look for user and subreddit profiles." },
     { "3.5.0", "rosette", "Badge Book", "See achievements and trophies right on a profile." },

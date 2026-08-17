@@ -365,7 +365,12 @@ static BOOL ApolloMirrorPut(NSString *service, NSString *account, NSData *data, 
 
 // A real write for this key finally landed — drop the mirror entry so the real keychain is
 // authoritative again (lets a device recover out of mirror mode if the keychain starts working).
-// Returns YES if a mirror entry was actually dropped.
+// Returns YES if a mirror entry was actually dropped from the in-process read path.
+// Deliberately NOT gated on the disk write: the caller at the delete site upgrades a
+// failing real-keychain status to success on the strength of this, and on the -34018
+// cohort the item lived only in the mirror. Failing to report the drop because stale
+// FILE cleanup failed would leave Valet's canAccessKeychain() canary gating the whole
+// account load off on exactly the devices this mirror exists to rescue.
 static BOOL ApolloMirrorRemove(NSString *service, NSString *account) {
     NSString *key = ApolloKeychainMirrorKey(service, account);
     __block BOOL had = NO;
@@ -388,7 +393,7 @@ static BOOL ApolloMirrorRemove(NSString *service, NSString *account) {
         ApolloLoginDiag(@"[KeychainMirror] real keychain took over item; stale disk cleanup failed but mirror remains suppressed in this process service=%@ account=%@",
                         service, account);
     }
-    return had && persisted;
+    return had;
 }
 
 // Snapshot for Backup Settings, so a backup taken on a keychain-broken device still carries

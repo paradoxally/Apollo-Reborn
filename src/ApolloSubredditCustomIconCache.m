@@ -181,6 +181,10 @@ static NSUInteger const ApolloSubredditCustomIconMaxBytes = 512000; // 500 KB
     // scrolling/layout hook wait on the filesystem or image decode.
     if ([self.storedKeys containsObject:key]) dispatch_async(self.ioQueue, ^{
         if ([self.imageCache objectForKey:key]) return;
+        // Same resurrection race as the banner cache: a removal that lands after
+        // this block was enqueued clears memory and unpublishes the key, but its
+        // unlink is queued behind us, so the file still reads.
+        if (![self.storedKeys containsObject:key]) return;
         NSString *path = [self filePathForSubreddit:key];
         NSData *data = [NSData dataWithContentsOfFile:path];
         if (!data.length) {

@@ -69,6 +69,9 @@ static NSError *ApolloRedditUploadCancelledError(void) {
         }
     }
     if (shouldCancel) [task cancel];
+    // Superseded by definition — otherwise it keeps uploading and can still fire
+    // its completion. Cancelled outside the lock; a no-op if it already finished.
+    [retiredTask cancel];
     return !shouldCancel;
 }
 
@@ -84,6 +87,8 @@ static NSError *ApolloRedditUploadCancelledError(void) {
         }
     }
     if (shouldCancel) [task cancel];
+    // Same as the asset task above: a replaced upload is superseded, so stop it.
+    [retiredTask cancel];
     return !shouldCancel;
 }
 

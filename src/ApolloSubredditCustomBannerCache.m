@@ -189,6 +189,11 @@ static NSUInteger const ApolloSubredditCustomBannerMaxBytes = 1572864; // 1.5 MB
 
     if ([self.storedKeys containsObject:key]) dispatch_async(self.ioQueue, ^{
         if ([self.imageCache objectForKey:key]) return;
+        // A removeBannerForSubreddit: that lands after this block was enqueued
+        // has already cleared the memory cache and unpublished the key, but its
+        // unlink is queued BEHIND us — so the file is still readable here and
+        // re-caching it would resurrect a deleted banner in memory.
+        if (![self.storedKeys containsObject:key]) return;
         NSString *path = [self filePathForSubreddit:key];
         NSData *data = [NSData dataWithContentsOfFile:path];
         if (!data.length) {

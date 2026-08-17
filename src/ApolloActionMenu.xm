@@ -338,6 +338,14 @@ void ApolloActionMenuInjectMenuElements(NSMutableArray<UIMenuElement *> *childre
     ApolloActionMenuSlotState *state = ApolloActionMenuSlotsForController(actionController, menuTitle);
     if (state.specs.count == 0) return;
 
+    // Anchor for leading-placement specs, resolved lazily on first use and then
+    // advanced per insertion. Recomputing it per spec would re-find the same
+    // slot every time, so each later row would push the previous one down and
+    // the group would render in reverse of the order/identifier sort the header
+    // documents. Only one spec uses this placement today (Gallery View), so the
+    // ordering is latent — but the registry exists for features to be added.
+    NSUInteger leadingIndex = NSNotFound;
+
     for (ApolloActionMenuSpec *spec in state.specs) {
         @try {
             if (spec.buildElement) {
@@ -363,9 +371,16 @@ void ApolloActionMenuInjectMenuElements(NSMutableArray<UIMenuElement *> *childre
                                         options:UIMenuOptionsDisplayInline children:@[action]];
             }
 
-            NSUInteger index = (spec.placement == ApolloActionMenuPlacementAfterLeadingSubmitAffordance)
-                ? ApolloActionMenuLeadingSubmitAffordanceIndex(children)
-                : children.count;
+            NSUInteger index;
+            if (spec.placement == ApolloActionMenuPlacementAfterLeadingSubmitAffordance) {
+                if (leadingIndex == NSNotFound) {
+                    leadingIndex = ApolloActionMenuLeadingSubmitAffordanceIndex(children);
+                }
+                index = MIN(leadingIndex, children.count);
+                leadingIndex = index + 1;
+            } else {
+                index = children.count;
+            }
             [children insertObject:element atIndex:MIN(index, children.count)];
         } @catch (NSException *exception) {
             ApolloLog(@"[ActionMenu] spec '%@' build threw: %@", spec.identifier, exception);

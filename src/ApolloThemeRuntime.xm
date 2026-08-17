@@ -2000,8 +2000,15 @@ static ASImageNodeTintColorModificationBlockFn ASImageNodeTintColorModificationB
 // queue the work once.
 static const void *kApolloThemePillRestoredKey = &kApolloThemePillRestoredKey;
 
+// Deliberately NOT gated on ->enabled. The scheduling hook already is, and it
+// burns the one-shot flag at schedule time — so theming being switched off in
+// the gap between the background layout pass and this main-queue block would
+// otherwise skip the restore forever: the flag is spent, and the hook will not
+// re-schedule while disabled. The pill then keeps the themed Label colour,
+// which is white-on-white in dark mode (issue #710). Writing stock black is
+// safe unconditionally; that is the only thing this function ever does.
 static void ApolloThemeRestoreOverlayPillText(id node) {
-    if (!node || !ApolloThemeCurrentSnapshot()->enabled) return;
+    if (!node) return;
     Ivar ivar = class_getInstanceVariable(object_getClass(node), "textNode");
     id textNode = ivar ? object_getIvar(node, ivar) : nil;
     if (![textNode respondsToSelector:@selector(attributedText)]) return;

@@ -20,6 +20,7 @@
 #import "ApolloUsageHeartbeat.h"
 #import "ApolloPushNotifications.h"
 #import "ApolloBarkNotifications.h"
+#import "ApolloLiquidGlassIconSelectionState.h"
 #import "ApolloState.h"
 #import "Tweak.h"
 #import "settings/CustomAPIViewController.h"
@@ -3375,6 +3376,7 @@ static BOOL ApolloPixelPalsBlockedByModal(UIWindow *window) {
 - (void)setAlternateIconName:(NSString *)name completionHandler:(void (^)(NSError *error))completionHandler {
     void (^wrapped)(NSError *) = ^(NSError *error) {
         if (!error) {
+            ApolloLGConfirmSuccessfulSystemIconChange(name);
             BOOL changed = ApolloBarkNoteSelectedIconName(name);
             if (changed && ApolloBarkModeActive()) {
                 ApolloBarkSyncBackendDeviceTransport();
@@ -3640,6 +3642,7 @@ static BOOL ApolloDefaultsKeyChangesActiveAccount(NSString *key) {
                                     UDKeyPictureInPictureSkipSeconds: @10,
                                     UDKeyPictureInPictureProgressBar: @NO,
                                     UDKeyTagFilterEnabled: @NO,
+                                    UDKeyNSFWBlurOverride: @0,
                                     UDKeyTagFilterMode: @"blur",
                                     UDKeyTagFilterNSFW: @YES,
                                     UDKeyTagFilterSpoiler: @YES,
@@ -4000,6 +4003,8 @@ static BOOL ApolloDefaultsKeyChangesActiveAccount(NSString *key) {
     sPiPProgressBar = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyPictureInPictureProgressBar];
 
     // Tag filter feature hydration.
+    sNSFWBlurOverride = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyNSFWBlurOverride];
+    if (sNSFWBlurOverride < 0 || sNSFWBlurOverride > 2) sNSFWBlurOverride = 0;
     sTagFilterEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyTagFilterEnabled];
     sTagFilterNSFW = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyTagFilterNSFW];
     sTagFilterSpoiler = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyTagFilterSpoiler];

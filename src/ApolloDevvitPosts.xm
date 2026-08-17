@@ -279,6 +279,22 @@ static BOOL sDevvitDataStoreSeeded;
 // Foundation documents -hash as unstable across releases, and a silent shift
 // wouldn't error — it would mint a fresh on-disk store every launch, so the
 // challenge-clearance cookie never persists and stale stores pile up.
+// Stable digest of a cookie header for use INSIDE the identity string. The
+// identity is persisted to NSUserDefaults, so the raw header (live credentials)
+// must never appear in it — and NSString.hash cannot be used either: Foundation
+// seeds it per process, so the identity would differ every launch, mint a fresh
+// persistent store, delete the previous one, and lose the very challenge-
+// clearance cookie the store exists to keep. Hashing the identity with SHA-256
+// afterwards does not rescue that — an unstable input stays unstable.
+static NSString *ApolloDevvitStableIdentityDigest(NSString *value) {
+    NSData *data = [(value ?: @"") dataUsingEncoding:NSUTF8StringEncoding] ?: [NSData data];
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(data.bytes, (CC_LONG)data.length, digest);
+    NSMutableString *hex = [NSMutableString stringWithCapacity:32];
+    for (int i = 0; i < 16; i++) [hex appendFormat:@"%02x", digest[i]];
+    return hex;
+}
+
 static NSUUID *ApolloDevvitStoreUUIDForIdentity(NSString *identity) {
     NSData *data = [identity dataUsingEncoding:NSUTF8StringEncoding] ?: [NSData data];
     unsigned char digest[CC_SHA256_DIGEST_LENGTH];
@@ -489,9 +505,9 @@ static const NSUInteger kApolloDevvitMaxLiveWidgets = 4;
     NSString *username = ApolloActiveWebSessionUsername();
     ApolloWebSessionEntry *entry = username.length ? ApolloWebSessionPollFor(username) : nil;
     NSString *cookieHeader = entry.cookieHeader ?: @"";
-    NSString *identity = [NSString stringWithFormat:@"%@|%lu",
+    NSString *identity = [NSString stringWithFormat:@"%@|%@",
                           username.lowercaseString ?: @"<anon>",
-                          (unsigned long)cookieHeader.hash];
+                          ApolloDevvitStableIdentityDigest(cookieHeader)];
     BOOL needsSeeding = NO;
     WKWebsiteDataStore *dataStore = ApolloDevvitDataStoreForIdentity(identity, &needsSeeding);
 

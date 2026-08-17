@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.12.0] - 2026-08-17
+
+### Features
+
+- Add **live interactive Devvit posts** — Reddit's Developer Platform posts (live match threads with scores, win predictions, lineups and commentary; brackets; community games) now render as the real, live widget instead of the "content not supported on old Reddit" placeholder ([#920](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/920): @icpryde)
+  - These posts carry nothing usable in the JSON API — the widget only exists on Reddit's web stack — so the real post page is embedded and cropped down to the Devvit element, letting Reddit's own host code do the token handshake and realtime updates
+  - Works signed in either way: API-key-free seeds the primary web session, an API key seeds the auxiliary session harvested at OAuth sign-in, and with no session at all the widget still loads and updates live — only write actions inside it go inert
+  - Shown in comments in place of the fallback text, and on large-mode feed cards; compact mode is deliberately untouched, matching the official app
+  - Off by default under **Settings > Apollo Reborn > Posts & Feeds > Feed**, with a separate **Show in Feed** sub-toggle so the widget can be kept to comments only, where its cost doesn't multiply
+  - Web views mount only while a cell is visible, tear down when it leaves the preload range, and are capped at four live instances; a content rule list blocks media and ad hosts on the hidden parts of the page so a promoted video can't autoplay unseen under the crop
+- Add a redesigned **icon picker** — packs are now browsable cards with cover previews that follow Light or Dark appearance, the Featured section becomes a **Daily Spotlight** row, and Apollo's Standard collections (Originals, Community, Ultra, Sekrit) join the same experience ([#912](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/912): @IllIIllIllIllII)
+  - The grid adapts from two columns up to three or four on wider iPad and landscape layouts, and the pack holding your active icon is marked with an accent border and checkmark
+  - Selection state and feedback were tightened in a follow-up ([#941](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/941): @IllIIllIllIllII)
+- Add **Light, Dark, and System icon appearances** — a global Icon Appearance menu above the icon browser, applied immediately to the active Liquid Glass icon ([#894](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/894): @IllIIllIllIllII)
+  - Light and Dark stay fixed regardless of device or app theme; System follows the device
+  - Light and Dark copies of every registered Icon Composer package are generated during the existing asset rebuild, so source `.icon` packages are never edited
+  - Applying an icon or appearance now gives a selection haptic, and the native Default icon applies quietly instead of raising Apollo's redundant "Having issues setting?" alert
+- Add **swipe past a feed gallery's edges to navigate** — continuing to swipe at a gallery's first or last image now goes back or forward a page instead of rubber-banding, default-on under **Settings > Apollo Reborn > Media > Browsing** ([#934](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/934): @icpryde)
+- Add a **Blur NSFW Media** override under **Settings > Apollo Reborn > Media > NSFW Media** — Always or Never on this device, or Reddit Setting to keep following your account's preference ([#874](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/874): @jordanearle)
+  - Keyless web-session accounts now resolve the account preference too, read from the cookie-authenticated endpoint rather than being left permanently unknown
+- Add **swiping between the Inbox's Notifications and Chat tabs**, and stop the title shifting as you move between them ([#900](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/900): @icpryde)
+- Add the **Right to Repair** icon ([#915](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/915): @bajader), refresh the **Synthwave** pack ([#927](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/927), [#928](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/928): @IllIIllIllIllII), and overhaul the **Classics** pack with refreshed Liquid Glass previews ([#888](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/888): @IllIIllIllIllII)
+- Improve **action-menu extensibility** — the rows Reborn adds to Apollo's "..." sheet are now declared through a single registry rather than hardcoded at the injection site, so features register what they mean and slot ordering stays consistent across the Liquid Glass and legacy paths ([#862](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/862): @DeltAndy123)
+- Improve **shared-state synchronization and cache persistence** across link previews and the subreddit caches ([#859](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/859): @ryannair05)
+
+### Fixes
+
+- Fix **five crashes** — Filters & Blocks, account switching, token refresh, and the Liquid Glass navigation title ([#897](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/897): @jordanearle)
+- Fix the **theme crash kill-switch tripping on force-quits and prewarms**, which could disable a custom theme after a perfectly normal app exit ([#923](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/923): @icpryde)
+- Fix **hidden scrape web views leaking Reddit video ads over the app** — a promoted video could autoplay full-screen from a view the user could not see ([#908](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/908): @jordanearle)
+- Fix **image previews getting cropped in multi-image feed carousels** ([#922](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/922): @icpryde)
+- Fix **Community Highlights** collapsed padding and the first-open layout snap ([#925](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/925): @icpryde), and highlights getting **stuck at 2** when Reddit serves its bot challenge ([#926](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/926): @icpryde)
+- Fix **tweet previews**, which are now shown regardless of post score ([#873](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/873): @DeltAndy123)
+- Fix **custom-theme text colors in pure black mode** and unreadable media pill text ([#869](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/869): @DeltAndy123)
+- Fix **sports clips** — add the MLB cuts-diamond CDN, repair streamain posters, and split the dubz CDN handling ([#929](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/929): @icpryde)
+- Guard **malformed multireddit API responses**, which could crash the Subreddits list ([#864](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/864): @jordanearle)
+- Keep **API-key-free requests on a browser User-Agent**, so Reddit doesn't misclassify them as third-party Data API traffic ([#889](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/889): @Thetromboneman1)
+- Bound **cloud AI streaming responses** with byte, event-count and line ceilings, so a broken or hostile endpoint can't stream indefinitely ([#887](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/887): @Thetromboneman1)
+- Use **`max_completion_tokens`** instead of the deprecated `max_tokens` where the provider requires it ([#890](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/890): @jaredrossberg)
+- Fix a **scrape web view left attached to the window** whenever a fetch finished or was cancelled during blocker resolution — the view was already in the hierarchy before the caller could refuse it, so it was never torn down (#37: @paradoxally)
+- Fix the **Devvit widget re-running Reddit's bot challenge on every launch** — the persistent cookie store was keyed off a hash Foundation reseeds per process, so a fresh store was minted and the previous one deleted each time, discarding the clearance cookie (#37: @paradoxally)
+- Fix the **subreddit banner and icon overlay pill** keeping its themed color when theming is switched off mid-layout, leaving white-on-white text in dark mode (#37: @paradoxally)
+- Fix **custom subreddit banners and icons surviving deletion in memory**, and stale cache keys returning a path to a file the system had already purged (#37: @paradoxally)
+
 ## [v3.11.1] - 2026-08-10
 
 ### Fixes
@@ -1010,6 +1054,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.12.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.11.1...v1.15.11_3.12.0
 [v3.11.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.11.0...v1.15.11_3.11.1
 [v3.11.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.4...v1.15.11_3.11.0
 [v3.10.4]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.3...v1.15.11_3.10.4

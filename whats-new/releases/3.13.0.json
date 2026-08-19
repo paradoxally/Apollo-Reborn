@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "version": "3.13.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "square.grid.2x2.fill", "title": "Gallery View Everywhere", "subtitle": "Browse Home, Popular, All, and any profile as a media grid, now with real video controls and rotation." },
+    { "icon": "slider.horizontal.below.rectangle", "title": "Scrub Feed Videos", "subtitle": "Slide along an inline video's progress bar to seek, and let feed videos play with sound." },
+    { "icon": "photo.on.rectangle.angled", "title": "Goodbye Wallpapers", "subtitle": "Apollo's farewell wallpapers are back for iPhone, iPad, and Mac, ready to save straight to Photos." },
+    { "icon": "link", "title": "Share Link Host", "subtitle": "Share Reddit links through old.reddit, vxReddit, or fxreddit for better previews in other apps." },
+    { "icon": "sportscourt.fill", "title": "Live Posts Stay in the Feed", "subtitle": "A pinned live match thread or game now renders live in the feed instead of becoming a static highlight card." },
+    { "icon": "checkmark.shield.fill", "title": "Fixes", "subtitle": "Readable link previews for non-Latin sites, A–Z scrubbing on non-glass builds, PiP on silent clips, and new sports clips." }
+  ]
+}

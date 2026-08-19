@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.13.0] - 2026-08-19
+
+### Features
+
+- Add **Gallery View everywhere** — the media grid that subreddits and multireddits already had now opens from the Home feed, Popular, All, Moderator Posts, and any user profile, inheriting whatever sort the source feed was showing ([#904](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/904): @icpryde)
+  - Your own profile gains a universal **…** menu holding Gallery View, Edit Profile, Recently Read, hidden and deleted content, and Share Profile, replacing the floating Edit pill and the nav-bar clock and eye buttons; other people's profiles get Gallery View and hidden/deleted content in their existing menu
+  - The grid and the fullscreen viewer rotate on iPhone (honouring Apollo's Smart Rotation Lock), and rotation re-anchors on the tile nearest the middle of the screen
+  - Videos get real controls — play/pause, ±15 s, a scrubber with time labels, hold-and-drag to scrub, pinch and double-tap zoom — and open with the chrome hidden, tap to reveal
+  - Full sort parity with Apollo's own menu, including Best and Controversial with time windows
+- Add a **Feed Video Scrubber** — an inline video's own progress bar becomes grabbable, so touching it and sliding seeks the video without opening the player, in the feed and on the post's video at the top of comments; off by default under **Settings > Apollo Reborn > Posts & Feeds > Feed** ([#938](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/938): @icpryde)
+  - Tapping, scrolling, long-press menus and swipe-back all keep working as before — vertical movement scrolls, horizontal movement on the bar scrubs, and competing gestures stand down while your finger is on the bar
+  - Adds **Unmute Videos in Feed** alongside it under **Settings > Apollo Reborn > Media > Playback** — Never, Always, or Remember the last thing you did with a feed video's mute button; only one feed video is audible at a time
+- Add **Wallpapers** — Apollo's Goodbye wallpaper collections for iPhone, iPad, and Mac are back under **Settings > Wallpapers**, in a full-screen viewer with paging, pinch and double-tap zoom, interactive dismissal, and a Download button that saves the original file straight to Photos ([#947](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/947): @IllIIllIllIllII)
+- Add a configurable **Share Link Host** under **Settings > Apollo Reborn > Media > Sharing** — Copy Link, the share sheet, and Share as Image can share through Reddit, old.reddit, vxReddit, or fxreddit, with only the hostname rewritten ([#857](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/857): @JamesLautner)
+- Add **Prefer Native Images** to Comment Link Host — comment images upload natively to Reddit wherever the subreddit allows image comments, so they render inline on every client, and fall back to the link host only where it doesn't ([#952](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/952): @icpryde)
+- Improve **live interactive posts** — a pinned Devvit post now stays in the feed and renders live while **Show in Feed** is on, instead of being folded into Community Highlights as a static card, and the setting is renamed from "Live Match Threads & Games" to **Live Interactive Posts** since it also carries market dashboards, drawing games, brackets and polls ([#939](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/939): @icpryde)
+  - Fixes the widget not rendering in comments for long posts, posting from inside a widget landing on "Error loading comments", and compact widgets sitting in a tall empty placeholder or not growing when expanded
+
+### Fixes
+
+- Fix **A–Z scrubbing** in the Subreddits list going dead after the first letter on non-Liquid-Glass builds, and the black bands behind its section headers while scrolling ([#936](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/936): @icpryde)
+- Fix **link previews** and **AI link summaries** rendering as mojibake for pages served in a legacy charset such as EUC-KR, Shift_JIS, GB18030, or Big5 — pages are now decoded by the charset they declare rather than guessed as UTF-8, and previously cached previews are refreshed ([#950](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/950): @icpryde)
+- Fix **Picture in Picture** taking over for silent v.redd.it clips while Activate For is set to Unmuted Videos Only — a loaded clip with no audio track is now treated as GIF content ([#951](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/951): @JeffreyCA)
+- Fix new **streamin sports clips** showing an empty player — streamin spreads uploads across two CDN hosts, so both are probed and the share page's og:video is the final fallback ([#944](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/944): @icpryde)
+
 ## [v3.12.0] - 2026-08-17
 
 ### Features
@@ -1054,6 +1079,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.13.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.12.0...v1.15.11_3.13.0
 [v3.12.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.11.1...v1.15.11_3.12.0
 [v3.11.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.11.0...v1.15.11_3.11.1
 [v3.11.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.10.4...v1.15.11_3.11.0

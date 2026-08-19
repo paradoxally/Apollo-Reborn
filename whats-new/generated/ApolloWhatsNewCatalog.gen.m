@@ -16,6 +16,7 @@ typedef struct {
 static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "3.10.0", "What's New in Apollo Reborn" },
     { "3.12.0", "What's New in Apollo Reborn" },
+    { "3.13.0", "What's New in Apollo Reborn" },
     { "3.5.0", "What's New in Apollo Reborn" },
     { "3.9.0", "What's New in Apollo Reborn" },
 };
@@ -35,6 +36,12 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "3.12.0", "eye.slash.fill", "Blur NSFW Media", "Override your Reddit preference with Always or Never, on this device only." },
     { "3.12.0", "tray.full.fill", "Swipe Between Inbox Tabs", "Move between Notifications and Chat with a swipe, without the title shifting." },
     { "3.12.0", "ladybug.fill", "Fewer Crashes", "Fixes for Filters & Blocks, account switching, token refresh, and hidden video ads." },
+    { "3.13.0", "square.grid.2x2.fill", "Gallery View Everywhere", "Browse Home, Popular, All, and any profile as a media grid, now with real video controls and rotation." },
+    { "3.13.0", "slider.horizontal.below.rectangle", "Scrub Feed Videos", "Slide along an inline video's progress bar to seek, and let feed videos play with sound." },
+    { "3.13.0", "photo.on.rectangle.angled", "Goodbye Wallpapers", "Apollo's farewell wallpapers are back for iPhone, iPad, and Mac, ready to save straight to Photos." },
+    { "3.13.0", "link", "Share Link Host", "Share Reddit links through old.reddit, vxReddit, or fxreddit for better previews in other apps." },
+    { "3.13.0", "sportscourt.fill", "Live Posts Stay in the Feed", "A pinned live match thread or game now renders live in the feed instead of becoming a static highlight card." },
+    { "3.13.0", "checkmark.shield.fill", "Fixes", "Readable link previews for non-Latin sites, A\342\200\223Z scrubbing on non-glass builds, PiP on silent clips, and new sports clips." },
     { "3.5.0", "gearshape.fill", "Redesigned Settings", "A cleaner layout, plus search across every setting." },
     { "3.5.0", "person.crop.circle.fill", "Redesigned Profiles", "Immersive banners and a fresh look for user and subreddit profiles." },
     { "3.5.0", "rosette", "Badge Book", "See achievements and trophies right on a profile." },

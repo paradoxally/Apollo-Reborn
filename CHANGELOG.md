@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.13.1] - 2026-08-24
+
+### Fixes
+
+- Fix **Swipe Past Gallery to Navigate** doing almost nothing on a real device — continuing past a gallery's first or last image only went back or forward if you kept pulling until the rubber-band stretched a good way out, so an ordinary flick just bounced; a flick that is still travelling past the edge as you lift now hands off too ([#974](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/974): @icpryde)
+  - A deliberate slow pull behaves exactly as before, and releasing stationary or in the wrong direction still bounces
+
 ## [v3.13.0] - 2026-08-19
 
 ### Features
@@ -1079,6 +1086,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.13.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.0...v1.15.11_3.13.1
 [v3.13.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.12.0...v1.15.11_3.13.0
 [v3.12.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.11.1...v1.15.11_3.12.0
 [v3.11.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.11.0...v1.15.11_3.11.1

@@ -4,6 +4,28 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.13.2] - 2026-08-29
+
+### Features
+
+- Add **9 never-released icons to the Ultra pack** — Safari (Matthew Skiles), Space Paws, Grumpy Space Paws, and Explorer of Smiles II (Raphael Lopes), Gorilla Gus II (Alfrey Davilla), The Little Prince II (Anh Nguyen), Under the Tree II and III (Qi Sandor), and Wish Maker II (Michael Myers) ([#971](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/971): @IllIIllIllIllII)
+  - Each sequel sits directly beneath its original, the SPCA icon moves from its retired support row into Ultra, and the pack now shows 90 icons
+- Add the **"Icons Drop Test" icon to the Sekrit picker** — Apollo bundles and registers EverythingApplePro's icon but never listed it; it now appears as the final Sekrit row, no shake code required ([#969](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/969), [#989](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/989): @IllIIllIllIllII)
+- Add **Forget Forward Swipe After Scrolling** — Apollo remembers every screen you swipe back from forever, so a grazed right-edge swipe could teleport you into a post you left 20 minutes ago; with this on, the forward memory expires once you've scrolled about three posts past where you backed out, while an immediate back-then-forward still returns you to the post; off by default under **Settings > Apollo Reborn > Posts & Feeds > Feed** ([#996](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/996): @icpryde)
+  - **Swipe Past Gallery to Navigate** now also defaults to off for the same reason — a gallery edge-swipe jumping to another page surprised people who only meant to bounce; anyone who deliberately turned it on keeps it
+- Improve the **subreddit A–Z index** — letters and symbols now center within consistent slots, and the favorite star's touch area no longer reaches under the index ([#981](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/981): @IllIIllIllIllII)
+- Improve **Show/Hide Deleted Comments** in the comments **⋯** menu with purpose-drawn vector icons matching Apollo's own menu artwork, replacing the generic eye symbols ([#985](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/985): @icpryde, icons by @AcornElf)
+  - Also normalizes menu icon sizing overall: the Liquid Glass menu no longer renders every icon smaller than stock Apollo's sheet, and injected rows in the legacy sheet no longer shrink to the first row's icon size
+
+### Fixes
+
+- Fix **two crashes** from sanitized user crash reports ([#968](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/968): @icpryde)
+  - A guaranteed launch crash when the randomized trending-subreddits table couldn't be written to disk — permanent under LiveContainer, where the temp directory isn't writable; writes are now verified, read back, and fall back to Apollo's bundled table
+  - A crash on the first large post cell on older iOS versions — building the known-class table realized every class in the process, and realizing a class from a weak-linked framework (ActivityKit/WeatherKit/VisionKit) on an OS without it jumps to a NULL pointer; the table is now read directly from each image's class list without realizing anything
+- Fix **composer quick-bar icons stuck on Apollo blue** next to a correctly themed GIF chip — the photo/link/bold/italic/subreddit/user/**⋯** icons now follow the theme accent, including the icon image views Apollo stamps its own tint on, and re-heal if Apollo repaints them stale ([#966](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/966), [#987](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/987): @icpryde)
+- Fix **Share > Copy Link ignoring the Share Link Host setting** — the share sheet preview showed vxReddit/old.reddit/fxReddit correctly, then Copy Link pasted the plain reddit.com link anyway; non-Reddit links are left untouched ([#970](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/970): @icpryde)
+- Fix a custom theme's **Separators color getting painted over** — the hairlines above and below the post action bar reverted to stock gray once the full thread loaded, and backgrounding the app reverted every themed separator; the separator nodes themselves now pin the theme color against any repaint pass ([#990](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/990): @icpryde)
+
 ## [v3.13.1] - 2026-08-24
 
 ### Fixes
@@ -1086,6 +1108,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.13.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.1...v1.15.11_3.13.2
 [v3.13.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.0...v1.15.11_3.13.1
 [v3.13.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.12.0...v1.15.11_3.13.0
 [v3.12.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.11.1...v1.15.11_3.12.0

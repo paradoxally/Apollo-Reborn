@@ -18,12 +18,16 @@
 #import "ApolloAccountCredentials.h"
 #import "ApolloCommentVoteInsights.h"
 #import "ApolloCommon.h"
+#import "ApolloFloatingTabs.h"
 #import "ApolloLinkPreviewFetcher.h"
+#import "ApolloTranslation.h"
+#import "ApolloGalleryImageLoader.h"
 #import "ApolloWebTextDecoding.h"
 #import "ApolloState.h"
 #import "UserDefaultConstants.h"
 #import "UIWindow+Apollo.h"
 #import <objc/message.h>
+#import <mach/mach.h>
 
 @interface UITouch (ApolloSimDebugTap)
 - (void)setPhase:(UITouchPhase)phase;
@@ -358,6 +362,7 @@ static void ApolloSimDebugForceBottomInset(CGFloat bottom) {
 // ObjC++, so plain C++ linkage matches).
 const void *ApolloScrollEdgeEffectTopStampKey(void);
 const void *ApolloScrollEdgeEffectForcedHiddenStampKey(void);
+void ApolloSubredditListDiagRearm(void);
 
 static void ApolloSimDebugDumpHeaderEffectsInView(UIView *view) {
     if ([view isKindOfClass:[UIScrollView class]]) {
@@ -383,6 +388,151 @@ static void ApolloSimDebugDumpHeaderEffects(void) {
     }
 }
 
+#pragma mark - gifmem probe (issue #1000)
+
+static double ApolloSimDebugFootprintMB(void) {
+    task_vm_info_data_t info;
+    mach_msg_type_number_t count = TASK_VM_INFO_COUNT;
+    if (task_info(mach_task_self(), TASK_VM_INFO, (task_info_t)&info, &count) != KERN_SUCCESS) return -1.0;
+    return info.phys_footprint / 1048576.0;
+}
+
+// Keeps the probe's view + image alive between samples.
+static UIImageView *sApolloSimDebugGIFView = nil;
+static UIImage *sApolloSimDebugGIFImage = nil;
+
+static void ApolloSimDebugSampleGIFMemory(NSInteger remaining, double baseline) {
+    ApolloLog(@"[gifmem] t+%lds footprint %.0f MB (+%.0f)",
+              (long)(6 - remaining), ApolloSimDebugFootprintMB(), ApolloSimDebugFootprintMB() - baseline);
+    if (remaining <= 0) {
+        [sApolloSimDebugGIFView removeFromSuperview];
+        sApolloSimDebugGIFView = nil;
+        sApolloSimDebugGIFImage = nil;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            ApolloLog(@"[gifmem] released: footprint %.0f MB (+%.0f)",
+                      ApolloSimDebugFootprintMB(), ApolloSimDebugFootprintMB() - baseline);
+        });
+        return;
+    }
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        ApolloSimDebugSampleGIFMemory(remaining - 1, baseline);
+    });
+}
+
+static void ApolloSimDebugMeasureGIFMemory(NSString *source) {
+    double baseline = ApolloSimDebugFootprintMB();
+    ApolloLog(@"[gifmem] baseline footprint %.0f MB, source %@", baseline, source);
+
+    void (^measure)(NSData *) = ^(NSData *data) {
+        if (data.length == 0) { ApolloLog(@"[gifmem] no bytes"); return; }
+        ApolloLog(@"[gifmem] %.1f MB of source bytes", data.length / 1048576.0);
+
+        UIWindow *window = nil;
+        for (UIWindow *candidate in ApolloAllWindows()) if (candidate.isKeyWindow) { window = candidate; break; }
+        window = window ?: ApolloAllWindows().firstObject;
+        if (!window) { ApolloLog(@"[gifmem] no window"); return; }
+
+        NSDate *start = NSDate.date;
+        ApolloGalleryDecodedImage *decoded = [ApolloGalleryImageLoader apollo_debugDecodeData:data];
+        if (!decoded) { ApolloLog(@"[gifmem] decode returned nil"); return; }
+        ApolloLog(@"[gifmem] decoded %.0fx%.0f in %.2fs, animated=%@",
+                  decoded.image.size.width, decoded.image.size.height,
+                  -[start timeIntervalSinceNow], decoded.animatedImage ? @"YES" : @"NO");
+
+        // Mounted exactly the way a viewer page mounts it, so the sample covers
+        // the frame traffic UIKit generates during playback and not just the
+        // decode.
+        Class viewClass = NSClassFromString(@"FLAnimatedImageView") ?: UIImageView.class;
+        UIImageView *view = [[viewClass alloc] initWithFrame:window.bounds];
+        if (decoded.animatedImage && [view respondsToSelector:@selector(setAnimatedImage:)]) {
+            [view setValue:decoded.animatedImage forKey:@"animatedImage"];
+        } else {
+            view.image = decoded.image;
+        }
+        sApolloSimDebugGIFImage = decoded.image;
+        double afterDecode = ApolloSimDebugFootprintMB();
+        ApolloLog(@"[gifmem] after build: footprint %.0f MB (+%.0f)", afterDecode, afterDecode - baseline);
+
+        view.contentMode = UIViewContentModeScaleAspectFit;
+        [window addSubview:view];
+        sApolloSimDebugGIFView = view;
+        ApolloLog(@"[gifmem] installed on screen, sampling for 6s…");
+        ApolloSimDebugSampleGIFMemory(6, baseline);
+    };
+
+    if ([source hasPrefix:@"http"]) {
+        NSURL *url = [NSURL URLWithString:source];
+        [[NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, NSURLResponse *r, NSError *e) {
+            dispatch_async(dispatch_get_main_queue(), ^{ measure(data); });
+        }] resume];
+    } else {
+        measure([NSData dataWithContentsOfFile:source]);
+    }
+}
+
+// "scrollto Y" command support: pin the tallest on-screen scroll view (the
+// comments table on a thread) to a content offset, so a test can land on the
+// same comments every run — a synthesized flick's inertia varies run to run.
+static UIScrollView *ApolloSimDebugTallestScrollViewIn(UIView *view) {
+    UIScrollView *best = nil;
+    if ([view isKindOfClass:[UIScrollView class]] && !view.hidden && view.window) {
+        best = (UIScrollView *)view;
+    }
+    for (UIView *sub in view.subviews) {
+        UIScrollView *candidate = ApolloSimDebugTallestScrollViewIn(sub);
+        if (candidate && (!best || candidate.contentSize.height > best.contentSize.height)) {
+            best = candidate;
+        }
+    }
+    return best;
+}
+
+static void ApolloSimDebugScrollTo(CGFloat y) {
+    UIScrollView *best = nil;
+    for (UIWindow *window in ApolloAllWindows()) {
+        if (window.hidden) continue;
+        UIScrollView *candidate = ApolloSimDebugTallestScrollViewIn(window);
+        if (candidate && (!best || candidate.contentSize.height > best.contentSize.height)) {
+            best = candidate;
+        }
+    }
+    if (!best) { ApolloLog(@"[SimDebugTap] scrollto: no scroll view"); return; }
+    CGFloat top = best.adjustedContentInset.top;
+    CGFloat maxY = MAX(-top, best.contentSize.height - best.bounds.size.height + best.adjustedContentInset.bottom);
+    CGFloat target = MIN(MAX(y - top, -top), maxY);
+    [best setContentOffset:CGPointMake(best.contentOffset.x, target) animated:NO];
+    ApolloLog(@"[SimDebugTap] scrollto %.0f -> offset %.0f (%@ content %.0f)",
+              y, target, NSStringFromClass([best class]), best.contentSize.height);
+}
+
+// "lpm on|off" command support: the simulator has no Battery settings pane,
+// so Low Power Mode can't be toggled there. Force -[NSProcessInfo
+// isLowPowerModeEnabled] instead and post the real power-state notification,
+// so the inline-GIF autoplay rules (which must ignore LPM — #634/#1004) and
+// anything else listening to the power state react exactly as on a device.
+// Swizzled by hand on the CONCRETE class of +[NSProcessInfo processInfo]
+// (swift-foundation hands back an _NSSwiftProcessInfo subclass on current
+// iOS, so a plain `%hook NSProcessInfo` never sees the call).
+static BOOL sApolloSimForceLowPowerMode = NO;
+static BOOL (*sApolloSimOrigIsLowPowerModeEnabled)(id, SEL) = NULL;
+
+static BOOL ApolloSimHookedIsLowPowerModeEnabled(id self, SEL _cmd) {
+    if (sApolloSimForceLowPowerMode) return YES;
+    return sApolloSimOrigIsLowPowerModeEnabled ? sApolloSimOrigIsLowPowerModeEnabled(self, _cmd) : NO;
+}
+
+static void ApolloSimInstallLowPowerModeOverride(void) {
+    Class cls = object_getClass(NSProcessInfo.processInfo);
+    Method m = class_getInstanceMethod(cls, @selector(isLowPowerModeEnabled));
+    if (!m) {
+        ApolloLog(@"[SimDebugTap] lpm override: no isLowPowerModeEnabled on %@", NSStringFromClass(cls));
+        return;
+    }
+    sApolloSimOrigIsLowPowerModeEnabled = (BOOL (*)(id, SEL))method_getImplementation(m);
+    method_setImplementation(m, (IMP)ApolloSimHookedIsLowPowerModeEnabled);
+    ApolloLog(@"[SimDebugTap] lpm override installed on %@", NSStringFromClass(cls));
+}
+
 static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *observer,
                                           CFStringRef name, const void *object, CFDictionaryRef userInfo) {
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -402,6 +552,14 @@ static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *
             ApolloSimDebugDumpHeaderEffects();
             return;
         }
+        // "listdiag" command: re-arm the subreddit-list launch geometry
+        // recorder (ApolloSubredditListLaunchSettle) against the list
+        // controller, so the settle can be observed on a pop-back without a
+        // cold launch.
+        if ([contents hasPrefix:@"listdiag"]) {
+            ApolloSubredditListDiagRearm();
+            return;
+        }
         // "headerstyle N" command: switch the Header Style setting through the
         // same path as the settings picker (global + persisted default +
         // change notification), so mode switches — including the live
@@ -415,10 +573,71 @@ static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *
             ApolloLog(@"[SimDebugTap] headerstyle -> %ld", (long)mode);
             return;
         }
+        // "gifmode N" command: set Autoplay Inline GIFs (1 Never, 2 WiFi Only,
+        // 3 Always, 4 Tap to Play) through the same defaults write the settings
+        // picker makes, so the KVO reload + live refresh of on-screen GIFs run.
+        if ([contents hasPrefix:@"gifmode "]) {
+            NSInteger mode = [[contents substringFromIndex:8] integerValue];
+            [[NSUserDefaults standardUserDefaults] setInteger:mode forKey:UDKeyAutoplayInlineGIFs];
+            ApolloLog(@"[SimDebugTap] gifmode -> %ld", (long)mode);
+            return;
+        }
+        if ([contents hasPrefix:@"scrollto "]) {
+            ApolloSimDebugScrollTo([[contents substringFromIndex:9] doubleValue]);
+            return;
+        }
+        if ([contents hasPrefix:@"lpm "]) {
+            NSString *payload = [[contents substringFromIndex:4] stringByTrimmingCharactersInSet:
+                NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            sApolloSimForceLowPowerMode = [payload isEqualToString:@"on"];
+            [[NSNotificationCenter defaultCenter] postNotificationName:NSProcessInfoPowerStateDidChangeNotification
+                                                                object:NSProcessInfo.processInfo];
+            ApolloLog(@"[SimDebugTap] lpm -> %d (isLowPowerModeEnabled=%d)",
+                      sApolloSimForceLowPowerMode, NSProcessInfo.processInfo.isLowPowerModeEnabled);
+            return;
+        }
         if ([contents hasPrefix:@"crash "]) {
             NSString *payload = [[contents substringFromIndex:6] stringByTrimmingCharactersInSet:
                 NSCharacterSet.whitespaceAndNewlineCharacterSet];
             ApolloSimDebugPerformCrash(payload);
+            return;
+        }
+        // "devvitjs <js>" command: evaluate JS in the live interactive-post
+        // widget's web view and log the result (DOM inspection without a web
+        // inspector). See ApolloDevvitDebugEvaluateJS in ApolloDevvitPosts.xm.
+        if ([contents hasPrefix:@"devvitjs "]) {
+            extern void ApolloDevvitDebugEvaluateJS(NSString *js);
+            ApolloDevvitDebugEvaluateJS([contents substringFromIndex:9]);
+            return;
+        }
+        // "devvitsweep": run the interactive-post stale-width sweep now, with
+        // a per-surface geometry dump.
+        if ([contents hasPrefix:@"devvitsweep"]) {
+            extern void ApolloDevvitDebugSweep(void);
+            ApolloDevvitDebugSweep();
+            return;
+        }
+        // "rotate <landscape|portrait>" command: rotate the scene from inside
+        // the app — Simulator.app menu automation needs accessibility grants a
+        // headless agent doesn't have, and simctl has no rotate.
+        if ([contents hasPrefix:@"rotate "]) {
+            NSString *dir = [[contents substringFromIndex:7] stringByTrimmingCharactersInSet:
+                NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            if (@available(iOS 16.0, *)) {
+                UIInterfaceOrientationMask mask = [dir isEqualToString:@"landscape"]
+                    ? UIInterfaceOrientationMaskLandscapeRight
+                    : UIInterfaceOrientationMaskPortrait;
+                UIWindowScene *scene = ApolloAllWindows().firstObject.windowScene;
+                if (!scene) { ApolloLog(@"[SimDebugTap] rotate: no window scene"); return; }
+                UIWindowSceneGeometryPreferencesIOS *prefs =
+                    [[UIWindowSceneGeometryPreferencesIOS alloc] initWithInterfaceOrientations:mask];
+                [scene requestGeometryUpdateWithPreferences:prefs errorHandler:^(NSError *error) {
+                    ApolloLog(@"[SimDebugTap] rotate error: %@", error.localizedDescription);
+                }];
+                ApolloLog(@"[SimDebugTap] rotate -> %@", dir);
+            } else {
+                ApolloLog(@"[SimDebugTap] rotate: needs iOS 16+");
+            }
             return;
         }
         if ([contents hasPrefix:@"insight "]) {
@@ -438,6 +657,17 @@ static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *
         // needs no Reddit account, so metadata extraction — charset handling
         // above all (issue #945) — can be verified against live foreign-language
         // pages on a signed-out simulator.
+        // "gifmem <path-or-url>" command: measure what the gallery viewer's
+        // animated-GIF path actually costs in resident memory. Decodes with the
+        // shipping loader entry point, hangs the result on a real on-screen
+        // UIImageView, and samples phys_footprint across the first animation
+        // loops — the point where issue #1000's jetsam happened.
+        if ([contents hasPrefix:@"gifmem "]) {
+            NSString *arg = [[contents substringFromIndex:7] stringByTrimmingCharactersInSet:
+                NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            ApolloSimDebugMeasureGIFMemory(arg);
+            return;
+        }
         if ([contents hasPrefix:@"linkpreview "]) {
             NSString *urlString = [[contents substringFromIndex:12] stringByTrimmingCharactersInSet:
                 NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -450,10 +680,29 @@ static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *
             }];
             return;
         }
+        // "translate <google|libre|auto> <text>" command: run text through the
+        // real translation provider pipeline and log the result. Needs no
+        // Reddit session — isolates provider/network failures (issue #995).
+        if ([contents hasPrefix:@"translate "]) {
+            NSString *spec = [[contents substringFromIndex:10] stringByTrimmingCharactersInSet:
+                NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            ApolloTranslationDebugProbe(spec);
+            return;
+        }
         if ([contents hasPrefix:@"text "]) {
             NSString *payload = [[contents substringFromIndex:5] stringByTrimmingCharactersInSet:
                 NSCharacterSet.newlineCharacterSet];
             ApolloSimDebugTypeText(payload);
+            return;
+        }
+        // "floattab <keep|state|tap N|close N|release N cx cy vx vy>": drive
+        // the Floating Post Tabs feature headlessly (create a tab from the
+        // topmost comments view, tap/close bubbles, run the real end-of-drag
+        // pipeline for magnet/tuck/dock testing, dump tab state to the log).
+        if ([contents hasPrefix:@"floattab "]) {
+            NSString *payload = [[contents substringFromIndex:9] stringByTrimmingCharactersInSet:
+                NSCharacterSet.whitespaceAndNewlineCharacterSet];
+            ApolloFloatingTabsDebugCommand(payload);
             return;
         }
         BOOL isSwipe = [contents hasPrefix:@"swipe "];
@@ -494,6 +743,7 @@ static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *
 }
 
 %ctor {
+    ApolloSimInstallLowPowerModeOverride();
     CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(), NULL,
         ApolloSimDebugTapNotification, CFSTR("apollofix.debugtap"), NULL,
         CFNotificationSuspensionBehaviorDeliverImmediately);

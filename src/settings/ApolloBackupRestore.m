@@ -3,6 +3,7 @@
 #import "ApolloCommon.h"
 #import "ApolloAICloudBridge.h"
 #import "ApolloState.h"
+#import "ApolloTranslation.h"
 #import "UserDefaultConstants.h"
 #import "SSZipArchive.h"
 #import <Security/Security.h>
@@ -367,6 +368,8 @@ BOOL ApolloBackupRestoreRestoreFromZipURL(NSURL *zipURL, NSString **outErrorTitl
         sTranslationProvider = @"libre";
     } else if ([provider isEqualToString:@"google"]) {
         sTranslationProvider = @"google";
+    } else if ([provider isEqualToString:@"microsoft"]) {
+        sTranslationProvider = @"microsoft";
     } else if ([provider isEqualToString:@"apple"] && IsAppleTranslationSupported()) {
         sTranslationProvider = @"apple";
     } else {
@@ -376,11 +379,19 @@ BOOL ApolloBackupRestoreRestoreFromZipURL(NSURL *zipURL, NSString **outErrorTitl
         [defaults setBool:NO forKey:UDKeyTranslationProviderUserSelected];
     }
 
+    // Restored backups can carry the dead libretranslate.de default (issue
+    // #995) — normalize exactly like %ctor does.
     NSString *libreURL = [defaults stringForKey:UDKeyLibreTranslateURL];
-    sLibreTranslateURL = libreURL.length > 0 ? libreURL : @"https://libretranslate.de/translate";
+    sLibreTranslateURL = [ApolloNormalizedLibreTranslateURLSetting(libreURL) copy];
 
     NSString *libreAPIKey = [defaults stringForKey:UDKeyLibreTranslateAPIKey];
     sLibreTranslateAPIKey = libreAPIKey.length > 0 ? libreAPIKey : nil;
+    // The Microsoft key/region statics are deliberately NOT re-synced here:
+    // restore force-exits and %ctor re-reads everything on relaunch, and the
+    // re-sync list is intentionally partial (see src/settings/README.md). The
+    // provider chain above still needs its "microsoft" arm, though — the else
+    // branch persists "google" back to defaults, which would corrupt a restored
+    // Microsoft selection before the relaunch.
 
     // A backup exported by a pre-#674 build carries the legacy single-endpoint
     // cloud keys. The domain was wiped before replay, so the migration marker is

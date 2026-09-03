@@ -36,6 +36,16 @@ extern BOOL sDevvitInteractivePosts;
 // Sub-toggle: Devvit widgets in large-mode feed cards too (vs comments only).
 // Default on, but only consulted while the master toggle is on.
 extern BOOL sDevvitFeedWidgets;
+// Opt-in (default OFF) chat-heads-style floating post tabs (up to 5 bubbles
+// that keep posts open). See ApolloFloatingTabs.xm.
+extern BOOL sFloatingPostTabs;
+// Sub-toggle: bubbles released near each other magnetize into a pile (drag
+// moves the pile, tap fans it apart). Default on; only consulted while the
+// master toggle is on.
+extern BOOL sFloatingPostTabsMagnet;
+// Sub-toggle: hold a bubble for a peek-and-pop snapshot preview (release
+// opens, slide away cancels). Default on; consulted while the master is on.
+extern BOOL sFloatingPostTabsPreview;
 extern NSInteger sPreferredGIFFallbackFormat;
 
 extern NSInteger sReadPostMaxCount;
@@ -242,8 +252,26 @@ BOOL ApolloSubredditTitleShouldTruncate(UIViewController *viewController);
 // cluster; unrelated windows and navigation stacks are never traversed.
 void ApolloSubredditRequestTitleRelayout(UINavigationItem *navigationItem);
 extern BOOL sModernSubredditDividers;
-// Master toggle for subreddit list enhancements (see UDKeySubredditListEnhancements).
+// Master toggle for subreddit list polish; Feed Shortcuts remains independent.
 extern BOOL sSubredditListEnhancements;
+typedef NS_ENUM(NSInteger, ApolloSubredditFeedIconStyle) {
+    ApolloSubredditFeedIconStyleClassic = 0,
+    ApolloSubredditFeedIconStyleCircle = 1,
+    ApolloSubredditFeedIconStyleTinted = 2,
+    ApolloSubredditFeedIconStyleSoftTile = 3,
+    ApolloSubredditFeedIconStyleSolidTile = 4,
+};
+typedef NS_ENUM(NSInteger, ApolloSubredditFeedLayout) {
+    ApolloSubredditFeedLayoutRows = 0,
+    ApolloSubredditFeedLayoutGrid = 1,
+    ApolloSubredditFeedLayoutSideBySide = 2,
+    ApolloSubredditFeedLayoutIconDock = 3,
+};
+// Home / Popular / All / Moderator icon appearance and arrangement. Independent
+// of the subreddit-list polish master.
+extern NSInteger sSubredditFeedIconStyle;
+extern NSInteger sSubredditFeedLayout;
+
 // Hide the description subtitles under the subreddit list's built-in feed rows
 // (see UDKeyHideSubredditListDescriptions). Independent of the enhancements master.
 extern BOOL sHideSubredditListDescriptions;
@@ -448,9 +476,11 @@ extern BOOL sShowTranslationTitleDetails;
 extern BOOL sTranslationMarkerUseThemeColor;
 extern BOOL sTranslatePostTitles;
 extern NSString *sTranslationTargetLanguage;
-extern NSString *sTranslationProvider; // @"google", @"libre", or @"apple"
+extern NSString *sTranslationProvider; // @"google", @"libre", @"apple", or @"microsoft"
 extern NSString *sLibreTranslateURL;
 extern NSString *sLibreTranslateAPIKey;
+extern NSString *sMicrosoftTranslateAPIKey;
+extern NSString *sMicrosoftTranslateRegion;
 // Lowercased 2-letter language codes the user has opted out of translating.
 extern NSArray<NSString *> *sTranslationSkipLanguages;
 // Redirects Apollo's own Translate button to iOS's on-device Translate sheet

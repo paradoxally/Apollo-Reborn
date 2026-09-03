@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.14.0] - 2026-09-04
+
+### Features
+
+- Add **Floating Post Tabs** — keep up to 5 posts open as chat-head bubbles that float over the app, so you can browse anywhere and jump straight back; off by default under **Settings > Posts & Feeds > Floating Tabs** ([#984](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/984): @icpryde)
+  - **Keep in Floating Tab** appears in a post's top-right **⋯** menu and in the feed's per-post **⋯** and long-press sheets, so a post can be kept without opening it
+  - A bubble wears the post's thumbnail with a small subreddit-icon rim badge, and tapping it returns you to the comments screen exactly where you left off — scroll position, collapsed threads and all; NSFW and spoiler posts never show their media
+  - Drag to snap to either edge, drag past the edge to tuck it into a sliver, hold for a peek card and release to open, or drag onto the ✕ to close
+  - **Magnetic Stacking** clicks nearby bubbles into a pile you can drag as one and tap to fan apart, and **Hold to Preview** can be turned off on its own
+  - Tabs survive a relaunch, and VoiceOver gets Open Post, Close Tab and Fan Out Stack as custom actions on every bubble
+- Add a **FOLLOWING section** to the subreddit list — followed users move out of the A–Z sections into their own section with an `@` entry in the index bar, off by default ([#997](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/997): @icpryde)
+  - Favorites, Multireddits, Moderator and Following can be **arranged in any order**, with the feed shortcuts pinned on top and the A–Z list always last
+  - Following rows get drag grips in the list's Edit mode, like Favorites, and that order persists
+  - A new **Subreddit Sections** screen under **Settings > Apollo Reborn > Features > Subreddits** carries a live preview of the layout, the Following toggle, and drag-to-reorder rows; Subreddit List Enhancements and Modern Subreddit Dividers moved here so they sit next to the preview that shows what they change
+- Add **customizable feed shortcut styles and layouts** — Home, Popular, All Posts and Moderator Posts get five icon styles (Classic, Circle, Tinted, Soft Tile, Solid Tile) and four layouts (Rows, Grid, Side-by-Side, Icon Dock), on a new **Feed Shortcuts** screen under **Settings > Apollo Reborn > Features > Subreddits** with a live preview ([#988](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/988): @IllIIllIllIllII)
+  - Popular, All Posts and Moderator Posts each get their own visibility control, replacing Apollo's old Hide Subreddits Row setting; Home stays permanently visible
+  - New installs keep Apollo's classic appearance — Classic icons, Rows layout — and spacing, typography and icon sizing adapt to how many shortcuts are visible, with Dynamic Type and narrow-width fallbacks
+- Add a **native Liquid Glass search bar** to the feed and subreddit screens, replacing the in-place pins and nav-hide takeover ([#1002](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1002): @icpryde)
+  - The bar renders as the real glass pill and activates in place — nothing slides up or off screen — with the native round-glass ✕ to cancel
+  - At rest it compresses with the drag like the Settings search and returns on a pull at the top, including after a pull-to-refresh or a tab-bar scroll-to-top
+  - Cancelling in a subreddit scrolls the banner and Community Highlights back in one continuous motion instead of flashing them into place
+  - The **Keep Search Bar Visible** row is removed — in-place activation is simply how glass search works now, and non-glass never used it
+- Add **Microsoft Translator** as a bring-your-own-key translation provider, on Azure's free tier of 2M characters a month, with auto source detection and native batching ([#998](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/998): @icpryde)
+  - Google's free endpoint now rate-limits per IP, and bulk auto-translate is exactly the pattern that trips it; any failure there retries once against a second Google host on a different quota bucket, which recovered every throttled request under live testing
+  - The LibreTranslate default moves off the shut-down `libretranslate.de`, which had been silently returning a homepage instead of a translation for everyone on the old URL; dead or redirected instances are now named explicitly, and a keyless request to an instance that requires a key fails immediately with the reason
+  - When the whole provider chain fails, a **Translation Limit Reached** notice says what to do next instead of the feature going quiet
+
+### Fixes
+
+- Fix **interactive post embeds** across the match-thread coverage they get used for most ([#991](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/991): @icpryde)
+  - Post-match threads stuck on "Loading interactive post…" forever — these are ordinary text posts whose footer links a *different* live thread, so detection now requires the linked post to be the post itself
+  - A finished match thread leaving a roughly 400pt hole in its feed card, because a committed feed row can't be resized in place; height corrections now reload that one row while the live widget survives the rebuild
+  - The "Continue to external link?" dialog being unusable — it was hard-sized wider than the viewport with its buttons ignoring taps, both reproducible in mobile Safari, and is now repaired inline as the embed polls
+- Fix **Autoplay Inline GIFs** silently behaving like Tap to Play in Low Power Mode — a hidden rule sat on top of the four modes, so **Always** and **WiFi Only** never played; the setting is now the whole answer, and Tap to Play remains the way to pause GIFs to save battery ([#1016](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1016): @icpryde)
+- Fix the **Settings search bar** staying pinned above the list instead of scrolling away with it — it now behaves the stock way while still being on screen the moment Settings opens, pull-to-search still works, tapping the Settings tab brings it back with the top, and the first group finally gets padding under the nav bar ([#975](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/975): @icpryde)
+- Fix **Gallery View** killing the app on ordinary GIFs — every frame was being decoded at full size and held in memory, so a 2.2 MB, 400-frame clip cost over 1.4 GB and three in a row would terminate any device; frames now stream, taking 17 MB for that same file ([#1001](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1001): @icpryde)
+- Fix **Find in Comments** landing a few comments below the selected match — rows that re-measure while the scroll animates shifted the content under it, so the match is now re-derived from live geometry and corrected, which also paints matches that rendered with no highlight at all ([#992](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/992): @icpryde)
+  - Adds **comma-separated multi-term search**, and the find bar now follows the theme colors with a centered Done button
+- Fix **duplicate saved items** after a pull-to-refresh on the Saved screen — Reddit's response can carry the same object more than once, and the list is now deduplicated by stable identity while preserving server order ([#1005](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1005): @Thetromboneman1)
+- Fix **Account Switcher** reordering quietly switching accounts — dragging another account past the signed-in one could sign you into it while the Account tab still showed the previous one; reordering now only changes the order, the drag handle is easier to grab, and an unsafe reorder is cancelled back to the previous order ([#1011](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1011): @IllIIllIllIllII)
+- Fix the **subreddit list's section headers overlapping rows on launch** — on a cold launch that lands on the list, the rows slid up around 25pt while the grey section bands already sat at their final position, so a band drew on top of the row above it for about a quarter of a second ([#979](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/979): @icpryde)
+- Fix the **translate globe missing from search results** on Liquid Glass — the trailing capsule was wide enough for it but the slot sat empty, and backgrounding the app brought it back only until the next refresh ([#1012](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1012): @icpryde)
+- Fix the **inline feed search bar being completely dead on visionOS** — it took no gaze highlight and answered neither a pinch nor a touch, leaving no way to search a subreddit from the headset; once active it also sat behind the floating tab bar, which now fades while you type ([#978](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/978): @rebelancap)
+
 ## [v3.13.2] - 2026-08-29
 
 ### Features
@@ -1108,6 +1152,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.14.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.2...v1.15.11_3.14.0
 [v3.13.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.1...v1.15.11_3.13.2
 [v3.13.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.0...v1.15.11_3.13.1
 [v3.13.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.12.0...v1.15.11_3.13.0

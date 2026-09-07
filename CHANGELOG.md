@@ -4,6 +4,40 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.15.0] - 2026-09-07
+
+### Features
+
+- Add a **collapsible action pill** to the Liquid Glass navigation bar — the trailing actions fold into a single More button that keeps titles centered, and a tap fans out translation, moderator actions, sorting and More with a coordinated spring; the pill folds back when you scroll or leave the screen ([#1035](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1035): @IllIIllIllIllII)
+  - Titles stay centered until the expanded actions would overlap them, then shift smoothly left without resizing, which also ends the recurring title and button resizing bugs in feeds and subreddits
+  - Apollo's original controls and context menus are preserved, and native menu presentation is coordinated with the pill so there is no duplicate glass, distorted icon or hidden control
+  - Fixes comments-title flicker, intermittent subreddit-search positioning and translation-globe alignment along the way; **Center Title Between Buttons** is replaced by the automatic placement. Collapsing is Liquid Glass-only, standard builds keep the expanded actions
+- Add **tab bar hide styles** on Liquid Glass — **Hide Bars on Scroll** now offers **Left**, **Right**, **Fade**, **Down** and **Off**, and a **Scroll Behavior** picker chooses between **Two-Gesture** (default) and Apollo's **Classic** hide-on-scroll; both re-expand the bar after 30 seconds of inactivity ([#972](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/972): @IllIIllIllIllII)
+  - **Settings > Apollo Reborn > Interface** is reorganised into compact **Tab Bar** and **Display & Navigation** groups, Hide Bars on Scroll moves here from Apollo's General screen, and **Profile Layout** opens straight from the hub
+  - **Hide Username on Tab Bar** steps aside while Icon-Only is on and comes back with its remembered value, and bottom overscroll no longer repeatedly toggles a collapsed tab bar
+- Add **Per-Account Favorites** — keep a separate set of subreddit favorites for each account; they switch with the account, including quick account switching, and are included in backup and restore; off by default under **Settings > Apollo Reborn > Features > Subreddits** ([#1017](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1017): @IllIIllIllIllII)
+  - Turning it on copies your current favorites to every existing account, new accounts start empty, and turning it off restores the shared list without losing the per-account ones
+- Add **finger-tracking swipes to the Inbox** — swiping back inside a chat conversation now returns to the chat list instead of jumping all the way out to Boxes, one level per swipe: conversation → chat list → Notifications → Boxes ([#965](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/965): @icpryde)
+  - Notifications and Chat travel as pages that follow the finger, and leaving a conversation is a real pop with the list parallaxing in behind it; a short drag springs back instead of committing
+  - The standalone Reddit Chat screen gets the same one-level back gesture
+- Add **pinned live previews** to the **Inline Media**, **Subreddit Sections** and **Rich Link Previews** settings screens — the preview card stays under the nav bar while you scroll through the controls, so every change shows in place; tap the card to unpin it, and the choice is remembered per screen ([#1022](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1022), [#1020](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1020), [#1023](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1023): @icpryde)
+  - Inline Media's card is much shorter and now reflects both master switches, swapping the media block for a plain link when previews are off
+  - Subreddit Sections animates each change in place instead of reloading, gathers all four toggles under **Options**, and takes over **Hide Multireddit Descriptions** from Feed Shortcuts
+  - Rich Link Previews shows one sample for Body and one for Comments, each drawn the way that mode actually renders — Full, Compact or Apollo's classic link button
+- Improve the **settings sliders** — the Inline Media size slider and the three Apollo AI summary sliders now select a stop from a tap on the track or on a label, and releasing a drag lands on the stop under the finger instead of one short of it ([#1022](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1022), [#1025](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1025): @icpryde)
+  - Long multi-paragraph footers no longer sit flush against the section above them
+- Improve the **settings footers** on Posts & Feeds, Media and Apollo AI — trimmed from full manuals to a few plain sentences that say what each toggle does ([#1028](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1028): @icpryde)
+
+### Fixes
+
+- Fix **freezes when navigating between subreddits or opening posts** — a UIKit search-field helper left a text-storage observer registered after it was destroyed, and a background text edit landing on the reused address deadlocked the main thread against text layout, leaving the app stuck on a spinner or a loaded comments screen ([#1024](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1024): @IllIIllIllIllII)
+- Fix the **top fade vanishing during tab switches** on Liquid Glass — for a few frames the raw feed showed sharp under the status bar before the cross-fade ran, the same pocket teardown that was already fixed for swipe-back ([#1018](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1018): @icpryde, @JeffreyCA)
+  - The nav bar now tracks a swipe-back instead of snapping to the previous screen the moment the finger touches the edge — title and search bar cross-fade with the drag, and a cancelled swipe reverses smoothly with no layout jump
+  - The feed search bar no longer sticks open after a cancelled swipe, and the post under the finger no longer flashes its highlight at the start of every swipe
+- Fix the **subreddit header and Community Highlights going missing** after swiping forward back into a subreddit ([#1037](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1037): @IllIIllIllIllII)
+- Fix the **Posts tab no longer returning to the subreddit list** — the first tap scrolls the feed to the top and the next one returns to the list again, while switching back from another tab still preserves the current subreddit ([#1021](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1021): @IllIIllIllIllII)
+- Fix the **subreddit list index disappearing or turning blue** when Subreddit List Enhancements is off — the native index is now shown and tinted with the theme accent even when the list was hidden at launch, and the favorite stars return to their native position ([#1020](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1020): @icpryde)
+
 ## [v3.14.0] - 2026-09-04
 
 ### Features
@@ -1152,6 +1186,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.15.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.14.0...v1.15.11_3.15.0
 [v3.14.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.2...v1.15.11_3.14.0
 [v3.13.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.1...v1.15.11_3.13.2
 [v3.13.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.0...v1.15.11_3.13.1

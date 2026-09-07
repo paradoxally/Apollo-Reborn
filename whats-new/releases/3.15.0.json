@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "version": "3.15.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "ellipsis.circle.fill", "title": "Collapsible Action Pill", "subtitle": "Liquid Glass nav actions fold into one More button that keeps titles centered, and fan out with a tap." },
+    { "icon": "rectangle.bottomthird.inset.filled", "title": "Tab Bar Hide Styles", "subtitle": "Choose Left, Right, Fade, Down or Off for Hide Bars on Scroll, and bring back Apollo's classic scroll behavior." },
+    { "icon": "star.circle.fill", "title": "Per-Account Favorites", "subtitle": "Keep a separate set of subreddit favorites for each account. They switch with the account." },
+    { "icon": "hand.draw.fill", "title": "Inbox Swipes", "subtitle": "Swipe back inside a chat to reach the chat list, one level per swipe, with pages that follow your finger." },
+    { "icon": "pin.fill", "title": "Pinned Previews", "subtitle": "Inline Media, Subreddit Sections and Rich Link Previews keep their live preview on screen while you scroll." },
+    { "icon": "checkmark.shield.fill", "title": "Fixes", "subtitle": "No more freezes between subreddits, the top fade survives tab switches, and swipe-back tracks the nav bar." }
+  ]
+}

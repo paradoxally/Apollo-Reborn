@@ -333,10 +333,18 @@ static NSString *ApolloCachedLinkTranslationForKey(NSString *key) {
     return hit;
 }
 
+// Bumped by every full flush below. A disk hydrate that was already in flight
+// compares it before inserting anything, so a "forget everything" landing
+// mid-launch is not quietly undone by a snapshot read before it. Main-thread
+// only: the flush runs from a main-queue observer and the hydrate reads it on
+// main.
+static uint32_t sTranslationCacheGeneration = 0;
+
 // Full flush — caches AND mirrors. For "forget everything" flows (the
 // skip-language list changed). Clearing only the NSCaches would leave the
 // mirror fallbacks above serving the stale entries right back.
 static void ApolloClearAllTranslationCaches(void) {
+    sTranslationCacheGeneration++;
     [sTranslationCache removeAllObjects];
     [sCommentTranslationByFullName removeAllObjects];
     [sLinkTranslationByFullName removeAllObjects];
@@ -9834,7 +9842,15 @@ static void ApolloPersistTranslationCachesToDisk(void) {
         linkSnapshot = [sLinkTranslationMirror copy];
     }
 
-    if (commentSnapshot.count == 0 && linkSnapshot.count == 0) return;
+    // Nothing cached: drop the file instead of serializing an empty one. It has
+    // to go rather than just be skipped — a skip-language change flushes the
+    // mirrors but the on-disk tag only covers provider and target language, so
+    // leaving the old file would rehydrate exactly the entries the user asked
+    // to forget.
+    if (commentSnapshot.count == 0 && linkSnapshot.count == 0) {
+        [[NSFileManager defaultManager] removeItemAtURL:url error:NULL];
+        return;
+    }
 
     NSMutableArray *commentEntries = [NSMutableArray array];
     NSUInteger written = 0;
@@ -9918,6 +9934,7 @@ static void ApolloHydrateTranslationCachesFromDisk(void) {
     NSURL *url = ApolloTranslationDiskCacheURL();
     if (!url) return;
     NSString *currentTag = ApolloCurrentTranslationTag();
+    uint32_t generation = sTranslationCacheGeneration;
 
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
         NSData *data = [NSData dataWithContentsOfURL:url];
@@ -9937,16 +9954,27 @@ static void ApolloHydrateTranslationCachesFromDisk(void) {
         if (comments.count == 0 && links.count == 0) return;
 
         dispatch_async(dispatch_get_main_queue(), ^{
+            // This snapshot is only good if nothing invalidated it while the
+            // read was in flight, and it must never win over a translation the
+            // running app already produced for the same key.
+            if (generation != sTranslationCacheGeneration) return;
+            if (![currentTag isEqualToString:ApolloCurrentTranslationTag()]) return;
+
+            NSUInteger restoredComments = 0, restoredLinks = 0;
             for (NSString *key in comments) {
+                if (ApolloCachedCommentTranslationForFullName(key).length > 0) continue;
                 [sCommentTranslationByFullName setObject:comments[key] forKey:key];
                 ApolloMirrorSetComment(key, comments[key]);
+                restoredComments++;
             }
             for (NSString *key in links) {
+                if (ApolloCachedLinkTranslationForKey(key).length > 0) continue;
                 [sLinkTranslationByFullName setObject:links[key] forKey:key];
                 ApolloMirrorSetLink(key, links[key]);
+                restoredLinks++;
             }
             ApolloLog(@"[translation/hydrate] restored %lu comments + %lu links (tag=%@)",
-                      (unsigned long)comments.count, (unsigned long)links.count, currentTag);
+                      (unsigned long)restoredComments, (unsigned long)restoredLinks, currentTag);
         });
     });
 }

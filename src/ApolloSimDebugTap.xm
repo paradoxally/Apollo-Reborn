@@ -865,8 +865,10 @@ static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *
         ApolloSimDebugTapNotification, CFSTR("apollofix.debugtap"), NULL,
         CFNotificationSuspensionBehaviorDeliverImmediately);
     ApolloLog(@"[SimDebugTap] listening for apollofix.debugtap");
-    ApolloLog(@"[CommentInsights][parser] self-tests %@",
-              ApolloCommentVoteInsightsRunParserSelfTests() ? @"passed" : @"FAILED");
+    // Both self-tests have to run whether or not the line is emitted — the log
+    // macro no longer evaluates its arguments when verbose logging is off.
+    BOOL parserOK = ApolloCommentVoteInsightsRunParserSelfTests();
+    ApolloLog(@"[CommentInsights][parser] self-tests %@", parserOK ? @"passed" : @"FAILED");
     NSString *charsetFailure = nil;
     BOOL charsetOK = ApolloWebTextDecodingRunSelfTests(&charsetFailure);
     ApolloLog(@"[WebTextDecoding] self-tests %@", charsetOK ? @"passed"

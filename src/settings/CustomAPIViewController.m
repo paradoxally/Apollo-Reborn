@@ -1091,6 +1091,15 @@ typedef NS_ENUM(NSInteger, Tag) {
                                       isOn:^BOOL { return [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyEnableFLEX]; }
                                   onToggle:^(UISwitch *sender) { [weakSelf flexSwitchToggled:sender]; }];
 
+    // Off by default: with it off the ApolloLog macro returns before formatting,
+    // so nothing is built and nothing is persisted. Turn it on only to capture a
+    // log for a bug report — see UDKeyVerboseLogging.
+    ApolloSettingsRow *verboseLogging =
+        [ApolloSettingsRow switchRowWithID:@"adv.verboseLogging"
+                                     title:@"Verbose Logging"
+                                      isOn:^BOOL { return ApolloVerboseLoggingIsEnabled(); }
+                                  onToggle:^(UISwitch *sender) { ApolloSetVerboseLoggingEnabled(sender.isOn); }];
+
     // Diagnostics belong with the other developer tools, not tucked into About.
     ApolloSettingsRow *exportLogs =
         [ApolloSettingsRow buttonRowWithID:@"about.exportLogs"
@@ -1117,6 +1126,7 @@ typedef NS_ENUM(NSInteger, Tag) {
 
     backend.iconSystemName    = @"bell.badge.fill";              backend.iconTileColor    = [UIColor systemRedColor];
     flex.iconSystemName       = @"ant.fill";                     flex.iconTileColor       = [UIColor systemGrayColor];
+    verboseLogging.iconSystemName = @"text.alignleft";           verboseLogging.iconTileColor = [UIColor systemGrayColor];
     exportLogs.iconSystemName = @"square.and.arrow.up.on.square.fill"; exportLogs.iconTileColor = [UIColor systemGrayColor];
     // TEMPORARY dev-only: presents the What's New sheet on demand, bypassing
     // gating (never touches UDKeyLastSeenWhatsNewVersion, so it's safe to tap
@@ -1132,8 +1142,8 @@ typedef NS_ENUM(NSInteger, Tag) {
     whatsNewDebug.iconSystemName = @"sparkles"; whatsNewDebug.iconTileColor = [UIColor systemGrayColor];
 
     return [ApolloSettingsSection sectionWithTitle:@"Advanced"
-                                            footer:@"Notification backend, developer tools and diagnostics."
-                                              rows:@[ backend, flex, exportLogs, loginPersistenceDebug, whatsNewDebug ]];
+                                            footer:@"Notification backend, developer tools and diagnostics. Verbose Logging records a detailed log for bug reports; leave it off otherwise."
+                                              rows:@[ backend, flex, verboseLogging, exportLogs, loginPersistenceDebug, whatsNewDebug ]];
 }
 
 - (ApolloSettingsSection *)buildDataSection {

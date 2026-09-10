@@ -17,6 +17,13 @@ static NSString *const UDKeyUseCustomOAuthSignIn = @"UseCustomOAuthSignIn";
 static NSString *const UDKeyUserAgent = @"UserAgent";
 static NSString *const UDKeyBlockAnnouncements = @"DisableApollonouncements";
 static NSString *const UDKeyEnableFLEX = @"EnableFlexDebugging";
+// Verbose diagnostic logging into the "apollofix" os_log subsystem. Default NO.
+// With it off the ApolloLog macro returns before it formats anything, so a
+// normal session neither builds the string nor asks logd to persist the line.
+// The launch banner and the login-persistence diagnostics still emit (they use
+// ApolloLogAlways), and the cross-launch diag files are untouched — turning this
+// on is only needed to capture a full Export Debug Logs for a bug report.
+static NSString *const UDKeyVerboseLogging = @"VerboseLogging";
 // Local crash recording (src/crash/). Default ON: reports only ever live on
 // device and are shared exclusively through the user-driven review flow.
 // KSCrash handlers install once per process, so flipping this takes effect on

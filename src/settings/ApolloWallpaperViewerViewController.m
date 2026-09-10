@@ -15,30 +15,32 @@ static void ApolloWallpaperCacheImage(NSCache<NSURL *, UIImage *> *cache,
 // Without this, choosing a different device (or reopening the same album)
 // starts from an empty per-viewer cache and its first page must visibly load.
 //
-// One wallpaper is on screen at a time and a full-screen decode is ~14MB, so
-// the budget only has to cover the visible page plus the neighbour the pager
-// prefetches. Everything else re-reads from the data cache below.
+// A full-screen decode is ~14MB and -prefetchNearbyWallpapers reaches four
+// pages ahead and two back, so these two budgets deliberately disagree about
+// how deep to hold: BYTES for the whole prefetch window, DECODES only for the
+// visible page, its two neighbours and one spare. A page that falls out of the
+// image cache is then re-decoded from bytes already in memory rather than
+// re-downloaded, which is what makes the deeper prefetch worth running without
+// pinning seven full-screen bitmaps for one settings screen.
 static NSCache<NSURL *, UIImage *> *ApolloWallpaperSharedImageCache(void) {
     static NSCache<NSURL *, UIImage *> *cache;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         cache = [[NSCache alloc] init];
-        cache.countLimit = 3;
-        cache.totalCostLimit = 16 * 1024 * 1024;
+        cache.countLimit = 4;
+        cache.totalCostLimit = 48 * 1024 * 1024;
         ApolloMemoryRegisterPurgableCache(@"wallpaper-images", cache);
     });
     return cache;
 }
 
-// Compressed originals, held only so a Save/Share tap on the visible wallpaper
-// doesn't have to re-download it.
 static NSCache<NSURL *, NSData *> *ApolloWallpaperSharedDataCache(void) {
     static NSCache<NSURL *, NSData *> *cache;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         cache = [[NSCache alloc] init];
-        cache.countLimit = 6;
-        cache.totalCostLimit = 6 * 1024 * 1024;
+        cache.countLimit = 8;
+        cache.totalCostLimit = 16 * 1024 * 1024;
         ApolloMemoryRegisterPurgableCache(@"wallpaper-data", cache);
     });
     return cache;

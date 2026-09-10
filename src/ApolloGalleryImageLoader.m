@@ -9,12 +9,15 @@
 #import <objc/message.h>
 
 // Decoded-image cache budget, in bytes of backing store. Grid thumbnails are
-// small; a handful of fullscreen originals is what actually fills this. The
-// floor here is one entry: a full-tier still is only downsampled past
-// kApolloGalleryStillMaxPixels (24MP), so a single large original can be tens
-// of MB, and a budget under that would evict every one on insertion and make
-// the pager re-decode on every flip.
-static NSUInteger const kApolloGalleryImageCacheCostLimit = 40 * 1024 * 1024;
+// small; a handful of fullscreen originals is what actually fills this.
+//
+// This is pinned to kApolloGalleryStillMaxPixels below, not chosen freely: a
+// full-tier still keeps every pixel up to that 24MP cap, so one is worth up to
+// ~96MB of backing store and any smaller budget would evict a legitimate large
+// original the instant it was inserted, re-decoding it on every page flip. The
+// budget can only come down by lowering that pixel cap, which costs pinch-zoom
+// sharpness — a separate call from bounding memory.
+static NSUInteger const kApolloGalleryImageCacheCostLimit = 96 * 1024 * 1024;
 // Original-bytes cache. Smaller: it only has to survive long enough for the
 // user to hit Save/Share on something they're looking at.
 static NSUInteger const kApolloGalleryDataCacheCostLimit = 8 * 1024 * 1024;

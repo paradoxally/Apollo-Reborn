@@ -4398,6 +4398,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
     // the simulator's virtualized keychain is in place (see the deferral note
     // where sWebJSONEnabled is read). Migrates any legacy NSUserDefaults cookie,
     // then any legacy single-global session, into the per-account store.
+    ApolloWebJSONBeginLaunchAccountSnapshot();
     ApolloWebJSONLoadPersistedCredentials();
     // Per-account coherence: a stored web session IS that account's sign-in —
     // it only works while the Web JSON transport is enabled. The mode is
@@ -4445,6 +4446,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
             @catch (NSException *e) { ApolloLog(@"[WebJSON][identity] launch synthesis failed for u/%@: %@", username, e); }
         }
     }
+    ApolloWebJSONEndLaunchAccountSnapshot();
     // This launch loads accounts fresh, so any "restart to activate" state left
     // over from a mid-session web login is now resolved — clear the indicator.
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:UDKeyWebJSONPendingRestart];

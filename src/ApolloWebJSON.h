@@ -222,6 +222,14 @@ NSString *ApolloWebJSONUsernameFromSyntheticBearer(NSString *token);
 void ApolloWebJSONRegisterAccountBearer(NSString *username, NSString *token);
 NSString *ApolloWebJSONUsernameForRegisteredBearer(NSString *token);
 
+// Opens/closes the launch-scoped decode of the persisted account blobs. Repair,
+// the bearer seed and per-username synthesis all read the same two arrays;
+// between Begin and End they share one decode instead of one each. Constructor
+// only (main thread, before main()) — every accessor decodes normally outside
+// the window.
+void ApolloWebJSONBeginLaunchAccountSnapshot(void);
+void ApolloWebJSONEndLaunchAccountSnapshot(void);
+
 // Seeds the bearer registry from the persisted RedditAccounts2 / Valet account
 // blobs (each index's username + real access token). Call once from %ctor
 // after the SecItem fishhooks are installed (the Valet read needs them in the

@@ -2031,8 +2031,7 @@ static NSString *ApolloUserFlairHTMLAttribute(NSString *tag, NSString *name) {
     if (tag.length == 0 || name.length == 0) return nil;
     NSString *escaped = [NSRegularExpression escapedPatternForString:name];
     NSString *pattern = [NSString stringWithFormat:@"\\b%@\\s*=\\s*([\"'])(.*?)\\1", escaped];
-    NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:pattern
-        options:NSRegularExpressionCaseInsensitive error:NULL];
+    NSRegularExpression *re = ApolloCachedRegex(pattern, NSRegularExpressionCaseInsensitive);
     NSTextCheckingResult *match = [re firstMatchInString:tag options:0 range:NSMakeRange(0, tag.length)];
     if (!match || match.numberOfRanges < 3) return nil;
     return [tag substringWithRange:[match rangeAtIndex:2]];
@@ -2158,8 +2157,7 @@ static NSDictionary *ApolloUserFlairWebCurrentFromHTML(NSData *data, NSString *u
     if (end <= titleStart.location) return nil;
     NSString *titlebox = [html substringWithRange:NSMakeRange(titleStart.location, end - titleStart.location)];
 
-    NSRegularExpression *anchorRegex = [NSRegularExpression regularExpressionWithPattern:@"<a\\b([^>]*)>(.*?)</a>"
-        options:NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators error:NULL];
+    NSRegularExpression *anchorRegex = ApolloStaticRegex(@"<a\\b([^>]*)>(.*?)</a>", NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators);
     NSTextCheckingResult *userAnchor = nil;
     for (NSTextCheckingResult *match in [anchorRegex matchesInString:titlebox options:0 range:NSMakeRange(0, titlebox.length)]) {
         if (match.numberOfRanges < 3) continue;
@@ -2183,8 +2181,7 @@ static NSDictionary *ApolloUserFlairWebCurrentFromHTML(NSData *data, NSString *u
 
     NSString *currentText = @"";
     NSString *currentCSSClass = @"";
-    NSRegularExpression *spanRegex = [NSRegularExpression regularExpressionWithPattern:@"<span\\b([^>]*)>"
-        options:NSRegularExpressionCaseInsensitive error:NULL];
+    NSRegularExpression *spanRegex = ApolloStaticRegex(@"<span\\b([^>]*)>", NSRegularExpressionCaseInsensitive);
     for (NSTextCheckingResult *match in [spanRegex matchesInString:taglinePrefix options:0
                                                               range:NSMakeRange(0, taglinePrefix.length)]) {
         if (match.numberOfRanges < 2) continue;
@@ -2197,8 +2194,7 @@ static NSDictionary *ApolloUserFlairWebCurrentFromHTML(NSData *data, NSString *u
     }
 
     BOOL enabled = NO;
-    NSRegularExpression *formRegex = [NSRegularExpression regularExpressionWithPattern:@"<form\\b([^>]*)>(.*?)</form>"
-        options:NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators error:NULL];
+    NSRegularExpression *formRegex = ApolloStaticRegex(@"<form\\b([^>]*)>(.*?)</form>", NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators);
     for (NSTextCheckingResult *match in [formRegex matchesInString:titlebox options:0 range:NSMakeRange(0, titlebox.length)]) {
         if (match.numberOfRanges < 3) continue;
         NSString *attrs = [titlebox substringWithRange:[match rangeAtIndex:1]];
@@ -2271,9 +2267,7 @@ static NSDictionary *ApolloUserFlairMatchWebCurrent(NSDictionary *current, NSArr
 
 static NSString *ApolloUserFlairEmojiURLFromStyle(NSString *style) {
     if (style.length == 0) return nil;
-    NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:
-        @"background-image\\s*:\\s*url\\(\\s*['\"]?([^)'\"]+)"
-        options:NSRegularExpressionCaseInsensitive error:NULL];
+    NSRegularExpression *re = ApolloStaticRegex(@"background-image\\s*:\\s*url\\(\\s*['\"]?([^)'\"]+)", NSRegularExpressionCaseInsensitive);
     NSTextCheckingResult *match = [re firstMatchInString:style options:0 range:NSMakeRange(0, style.length)];
     if (!match || match.numberOfRanges < 2) return nil;
     return ApolloUserFlairDecodeHTML([style substringWithRange:[match rangeAtIndex:1]]);
@@ -2287,10 +2281,8 @@ static NSArray *ApolloUserFlairWebOptionsFromHTML(NSData *data, NSString *subred
         return nil; // login/block/error HTML, not a valid (possibly empty) selector
     }
 
-    NSRegularExpression *liRegex = [NSRegularExpression regularExpressionWithPattern:@"<li\\b([^>]*)>(.*?)</li>"
-        options:NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators error:NULL];
-    NSRegularExpression *spanRegex = [NSRegularExpression regularExpressionWithPattern:@"<span\\b([^>]*)>"
-        options:NSRegularExpressionCaseInsensitive error:NULL];
+    NSRegularExpression *liRegex = ApolloStaticRegex(@"<li\\b([^>]*)>(.*?)</li>", NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators);
+    NSRegularExpression *spanRegex = ApolloStaticRegex(@"<span\\b([^>]*)>", NSRegularExpressionCaseInsensitive);
     NSArray<NSTextCheckingResult *> *matches = [liRegex matchesInString:html options:0 range:NSMakeRange(0, html.length)];
     NSMutableArray *options = [NSMutableArray arrayWithCapacity:matches.count];
     NSMutableDictionary<NSString *, NSString *> *allEmojiURLs = [NSMutableDictionary dictionary];
@@ -2736,7 +2728,7 @@ static NSString *ApolloUserFlairCachedSpriteIdentifier(NSDictionary *spriteMap, 
 }
 
 static NSString *ApolloUserFlairFirstGroup(NSString *str, NSString *pattern) {
-    NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:pattern options:0 error:NULL];
+    NSRegularExpression *re = ApolloCachedRegex(pattern, 0);
     NSTextCheckingResult *m = [re firstMatchInString:str options:0 range:NSMakeRange(0, str.length)];
     return (m && m.numberOfRanges > 1) ? [str substringWithRange:[m rangeAtIndex:1]] : nil;
 }
@@ -2751,7 +2743,7 @@ static NSDictionary *ApolloUserFlairParseSpriteCSS(NSString *css, NSArray *image
         if ([im[@"name"] isKindOfClass:[NSString class]] && [im[@"url"] isKindOfClass:[NSString class]]) imgURL[im[@"name"]] = im[@"url"];
     }
 
-    NSRegularExpression *ruleRe = [NSRegularExpression regularExpressionWithPattern:@"([^{}]*)\\{([^{}]*)\\}" options:0 error:NULL];
+    NSRegularExpression *ruleRe = ApolloStaticRegex(@"([^{}]*)\\{([^{}]*)\\}", 0);
     NSArray *rules = [ruleRe matchesInString:css options:0 range:NSMakeRange(0, css.length)];
 
     // Base rule: a plain `.flair` / `.flair:before` (NOT .flair-x, NOT .flair[attr])
@@ -2785,8 +2777,8 @@ static NSDictionary *ApolloUserFlairParseSpriteCSS(NSString *css, NSArray *image
     }
     if (!sheetURL || flairSheets.count != 1) return nil; // unparseable / multi-sheet
 
-    NSRegularExpression *clsRe = [NSRegularExpression regularExpressionWithPattern:@"\\.flair-([A-Za-z0-9_-]+)" options:0 error:NULL];
-    NSRegularExpression *posRe = [NSRegularExpression regularExpressionWithPattern:@"background-position\\s*:\\s*(-?[0-9.]+)(?:px)?\\s+(-?[0-9.]+)(?:px)?" options:0 error:NULL];
+    NSRegularExpression *clsRe = ApolloStaticRegex(@"\\.flair-([A-Za-z0-9_-]+)", 0);
+    NSRegularExpression *posRe = ApolloStaticRegex(@"background-position\\s*:\\s*(-?[0-9.]+)(?:px)?\\s+(-?[0-9.]+)(?:px)?", 0);
     NSMutableDictionary *map = [NSMutableDictionary dictionary];
     for (NSTextCheckingResult *m in rules) {
         NSString *sel = [css substringWithRange:[m rangeAtIndex:1]];

@@ -897,9 +897,7 @@ static NSURL *ApolloLowestDashMP4URL(NSData *mpdData, NSURL *mpdURL) {
         searchRange = NSMakeRange(videoSet.location, xml.length - videoSet.location);
     }
 
-    NSRegularExpression *re = [NSRegularExpression
-        regularExpressionWithPattern:@"<BaseURL>([^<]+\\.mp4)</BaseURL>"
-                             options:0 error:nil];
+    NSRegularExpression *re = ApolloStaticRegex(@"<BaseURL>([^<]+\\.mp4)</BaseURL>", 0);
     NSTextCheckingResult *m = [re firstMatchInString:xml options:0 range:searchRange];
     if (!m || m.numberOfRanges < 2) return nil;
     NSString *relative = [xml substringWithRange:[m rangeAtIndex:1]];

@@ -1412,3 +1412,19 @@ BOOL ApolloTextNodeIsTweakUI(id node) {
     if (!node) return NO;
     return [objc_getAssociatedObject(node, &kApolloTweakUITextNodeKey) boolValue];
 }
+
+NSRegularExpression *ApolloCachedRegex(NSString *pattern, NSRegularExpressionOptions options) {
+    if (pattern.length == 0) return nil;
+    static NSCache<NSString *, NSRegularExpression *> *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        cache = [NSCache new];
+        cache.countLimit = 64;
+    });
+    NSString *key = [NSString stringWithFormat:@"%lu\n%@", (unsigned long)options, pattern];
+    NSRegularExpression *regex = [cache objectForKey:key];
+    if (regex) return regex;
+    regex = [NSRegularExpression regularExpressionWithPattern:pattern options:options error:NULL];
+    if (regex) [cache setObject:regex forKey:key];
+    return regex;
+}

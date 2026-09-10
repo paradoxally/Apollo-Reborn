@@ -7,16 +7,56 @@
 
 // On iOS 26, NSLog redacts strings, so use os_log: https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-26-release-notes#NSLog
 // Uses a dedicated subsystem so OSLogStore can efficiently filter our entries.
-#define ApolloLogWithType(type, fmt, ...) do { \
+
+// Formats and emits unconditionally at the given level.
+#define ApolloLogAlwaysWithType(type, fmt, ...) do { \
     NSString *logMessage = [NSString stringWithFormat:@"[ApolloFix] " fmt, ##__VA_ARGS__]; \
     os_log_with_type(ApolloFixLog(), type, "%{public}s", [logMessage UTF8String]); \
 } while(0)
+
+// Reserved for the few lines that have to survive in the os_log export with
+// verbose logging off: the launch banner and every login-persistence
+// diagnostic, which are how an account-loss report is read.
+#define ApolloLogAlways(fmt, ...) ApolloLogAlwaysWithType(OS_LOG_TYPE_DEFAULT, fmt, ##__VA_ARGS__)
+
+// Everything else runs through the process-wide verbose gate, which is OFF
+// unless the user turns it on (Settings > Apollo Reborn > Advanced). Handing
+// os_log a pre-formatted string defeats its own lazy formatting, so without a
+// gate every one of the ~2,000 call sites pays -stringWithFormat: + -UTF8String
+// and asks logd to persist a line nobody will read. The gate has to be the
+// FIRST thing in the macro: a check after the format string is built saves
+// nothing. Relaxed atomic because the only writer is the settings toggle on the
+// main thread and a reader that is a few microseconds stale just drops one line.
+#define ApolloLogWithType(type, fmt, ...) do { \
+    if (__builtin_expect(__atomic_load_n(&ApolloVerboseLoggingEnabled, __ATOMIC_RELAXED), 0)) { \
+        ApolloLogAlwaysWithType(type, fmt, ##__VA_ARGS__); \
+    } \
+} while(0)
 #define ApolloLog(fmt, ...) ApolloLogWithType(OS_LOG_TYPE_DEFAULT, fmt, ##__VA_ARGS__)
+
+// Debug-level lines cost the same formatting as any other, and nothing reads
+// them outside a debugger. The `if (0)` arm keeps the arguments compiled, so a
+// local used only by a debug log does not become an unused-variable -Werror
+// failure and the format string is still type-checked.
+#if defined(DEBUG) && DEBUG
 #define ApolloLogDebug(fmt, ...) ApolloLogWithType(OS_LOG_TYPE_DEBUG, fmt, ##__VA_ARGS__)
+#else
+#define ApolloLogDebug(fmt, ...) do { \
+    if (0) { ApolloLogWithType(OS_LOG_TYPE_DEBUG, fmt, ##__VA_ARGS__); } \
+} while(0)
+#endif
 
 __BEGIN_DECLS
 os_log_t ApolloFixLog(void);
 NSString *ApolloCollectLogs(void);
+
+// Backing storage for the ApolloLog gate above. Read it through the macro, not
+// directly. Loaded from UDKeyVerboseLogging in a +load, which runs before any
+// %ctor, so the first module to log already sees the user's choice.
+extern BOOL ApolloVerboseLoggingEnabled;
+BOOL ApolloVerboseLoggingIsEnabled(void);
+// Persists the choice and publishes it to the gate in one step.
+void ApolloSetVerboseLoggingEnabled(BOOL enabled);
 
 // --- Row-measure re-entrancy guard (issues #831/#833/#838/#839/#841) ---
 // Main-thread depth of UITableView row-height passes currently on the stack

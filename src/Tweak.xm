@@ -231,7 +231,7 @@ static void ApolloLoginDiag(NSString *fmt, ...) {
     va_start(args, fmt);
     NSString *line = [[NSString alloc] initWithFormat:fmt arguments:args];
     va_end(args);
-    ApolloLog(@"%@", line);
+    ApolloLogAlways(@"%@", line);
     ApolloAppendLoginDiag(line);
 }
 
@@ -3702,6 +3702,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
 
     NSDictionary *defaultValues = @{UDKeyBlockAnnouncements: @YES,
                                     UDKeyEnableFLEX: @NO,
+                                    UDKeyVerboseLogging: @NO,
                                     UDKeyCrashCaptureEnabled: @YES,
                                     UDKeyTrendingSubredditsLimit: @"5",
                                     UDKeyShowRandNsfw: @NO,

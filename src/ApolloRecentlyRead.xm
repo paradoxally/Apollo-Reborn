@@ -1495,12 +1495,16 @@ static void ApolloCommentsVCTryMarkRead(id commentsVC, const char *trigger) {
 
 %end
 
-%ctor {
-    // Hook swift_allocObject to capture the ReadPostsTracker singleton
+// The install half of the swift_allocObject capture; hooked_swift_allocObject
+// above still owns the un-hook, which has to stay paired with the capture it
+// completes.
+size_t ApolloRecentlyReadAppendRebindings(struct rebinding *out) {
     sTrackerTypeMetadata = (__bridge void *)objc_getClass("_TtC6Apollo16ReadPostsTracker");
-    if (sTrackerTypeMetadata) {
-        rebind_symbols((struct rebinding[1]){{"swift_allocObject", (void *)hooked_swift_allocObject, (void **)&orig_swift_allocObject}}, 1);
-    }
+    if (!sTrackerTypeMetadata) return 0;
+    out[0] = (struct rebinding){"swift_allocObject", (void *)hooked_swift_allocObject, (void **)&orig_swift_allocObject};
+    return 1;
+}
 
+%ctor {
     %init;
 }

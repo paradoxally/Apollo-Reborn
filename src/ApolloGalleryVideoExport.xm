@@ -47,12 +47,8 @@ static void ApolloGalleryExportParseManifest(NSData *mpdData, NSURL *mpdURL,
     // NOTE the doubled backslash: in an ObjC string literal "\b" is a BACKSPACE
     // character, so a single one would compile into a pattern that matches
     // nothing at all (and every track would silently fall back).
-    NSRegularExpression *representations =
-        [NSRegularExpression regularExpressionWithPattern:@"<Representation\\b([^>]*)>(.*?)</Representation>"
-                                                  options:NSRegularExpressionDotMatchesLineSeparators
-                                                    error:nil];
-    NSRegularExpression *baseURL =
-        [NSRegularExpression regularExpressionWithPattern:@"<BaseURL>([^<]+)</BaseURL>" options:0 error:nil];
+    NSRegularExpression *representations = ApolloStaticRegex(@"<Representation\\b([^>]*)>(.*?)</Representation>", NSRegularExpressionDotMatchesLineSeparators);
+    NSRegularExpression *baseURL = ApolloStaticRegex(@"<BaseURL>([^<]+)</BaseURL>", 0);
     if (!representations || !baseURL) return;
 
     long long bestVideoBandwidth = -1, bestAudioBandwidth = -1;

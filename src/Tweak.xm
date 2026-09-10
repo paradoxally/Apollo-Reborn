@@ -3,6 +3,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import <os/lock.h>
+#import <stdatomic.h>
 #import <sys/utsname.h>
 #import <Security/Security.h>
 #import <StoreKit/StoreKit.h>
@@ -231,7 +232,7 @@ static void ApolloLoginDiag(NSString *fmt, ...) {
     va_start(args, fmt);
     NSString *line = [[NSString alloc] initWithFormat:fmt arguments:args];
     va_end(args);
-    ApolloLog(@"%@", line);
+    ApolloLogAlways(@"%@", line);
     ApolloAppendLoginDiag(line);
 }
 
@@ -667,7 +668,9 @@ static long ApolloExistingAccountBlobMaxLen(NSString *service, NSString *account
 // of it — the failed-read→destructive-write signature. Bypassed by the dev "disable recovery"
 // toggle so the raw wipe can still be reproduced on demand.
 static BOOL ApolloShouldBlockDestructiveAccountWrite(NSDictionary *query, NSData *newValue) {
-    if (ApolloDebugDisableRecovery()) return NO;
+    // Cheapest predicates first: this runs on every SecItemAdd and SecItemUpdate in the
+    // process, and everything except an account-family data write is decided by the two
+    // dictionary lookups below rather than by a user-defaults read.
     if (!IsAccountsFamilyQuery(query)) return NO;
     // Only guard an actual DATA write — an attribute-only update (no kSecValueData) destroys
     // nothing and must pass through.
@@ -675,6 +678,7 @@ static BOOL ApolloShouldBlockDestructiveAccountWrite(NSDictionary *query, NSData
     NSString *account = query[(__bridge id)kSecAttrAccount];
     if (ApolloWasAccountServed(account)) return NO; // reads worked this session — trust the write
     if (newValue.length >= kAccountBlobPopulatedThreshold) return NO; // not an empty/tiny write
+    if (ApolloDebugDisableRecovery()) return NO;
     long existing = ApolloExistingAccountBlobMaxLen(query[(__bridge id)kSecAttrService], account);
     return existing >= (long)kAccountBlobPopulatedThreshold; // a populated copy exists — protect it
 }
@@ -731,6 +735,19 @@ static NSString *ApolloSyncDispositionString(NSDictionary *query) {
 static long ApolloValueDataLength(NSDictionary *dict) {
     id value = dict[(__bridge id)kSecValueData];
     return [value isKindOfClass:[NSData class]] ? (long)[(NSData *)value length] : -1;
+}
+
+// Byte length of the value data a SecItemCopyMatching result already carries (-1 when the
+// caller asked for no data, or for a result shape that carries none).
+static long ApolloResultDataLength(CFTypeRef result) {
+    if (!result) return -1;
+    CFTypeID type = CFGetTypeID(result);
+    if (type == CFDataGetTypeID()) return (long)CFDataGetLength((CFDataRef)result);
+    if (type == CFDictionaryGetTypeID()) {
+        CFTypeRef data = CFDictionaryGetValue((CFDictionaryRef)result, kSecValueData);
+        if (data && CFGetTypeID(data) == CFDataGetTypeID()) return (long)CFDataGetLength((CFDataRef)data);
+    }
+    return -1;
 }
 
 // kSecAttrAccessible values are opaque short codes ("ak", "ck", …). Name the ones we know and
@@ -1277,6 +1294,26 @@ static OSStatus SecItemAdd_replacement(CFDictionaryRef query, CFTypeRef *result)
     return status;
 }
 
+// Which read misses are worth a recovery enumeration (see "Scoped-read recovery via
+// enumeration" above). That enumeration makes securityd decrypt every generic password the
+// app can see, so it is scoped to the items it was written for: the account blobs whose loss
+// signs the user out. Any other Valet key that legitimately has no item — an absent web
+// session, a first-launch heartbeat seed, Valet's own canary — used to pay a full enumeration
+// on every miss, on every device, for nothing.
+//
+// The latch keeps the affected devices whole. Recovery serving an item is proof that this
+// keychain has the scoped-read-miss fault, and on such a keychain every Valet key is suspect,
+// so recovery re-opens for all single-item reads from then on. AccountManager loads the
+// account blob at launch, ahead of any other Valet reader, so an affected device flips the
+// latch before another key needs it.
+static atomic_bool sRecoverProvenNeeded = false;
+
+static BOOL ApolloShouldAttemptRecoverRead(NSDictionary *query) {
+    if (!ApolloIsSingleItemValetQuery(query)) return NO;
+    if (IsAccountsFamilyQuery(query)) return YES;
+    return atomic_load_explicit(&sRecoverProvenNeeded, memory_order_relaxed);
+}
+
 static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef *result) {
     NSDictionary *strippedQuery = stripGroupAccessAttr(query);
 
@@ -1328,9 +1365,6 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
         status = errSecItemNotFound;
         ApolloLoginDiag(@"[FaultInjection] forcing account scoped read miss (SIMULATED — not a real keychain failure)");
     } else {
-        // For the trace, capture the returned byte length even when the caller passed result=NULL
-        // (an existence check) — do our own attributed read on the accounts item so the log always
-        // carries the size that distinguishes an empty blob from a populated one.
         status = ApolloRealSecItemCopyMatching(strippedQuery, result);
         if (status == errSecItemNotFound && IsValetQuery(strippedQuery)) {
             // Only fall back to the broadened (synced-included) read on a local miss, so a
@@ -1348,11 +1382,14 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
     // enumerated value so Valet's read succeeds and AccountManager never issues the wiping
     // empty write. This is the read-side counterpart of the write-side self-heal.
     // (The dev-only "disable recovery" toggle skips this so the raw wipe can be observed.)
-    if (status == errSecItemNotFound && ApolloIsSingleItemValetQuery(strippedQuery) && !ApolloDebugDisableRecovery()) {
+    if (status == errSecItemNotFound && ApolloShouldAttemptRecoverRead(strippedQuery) && !ApolloDebugDisableRecovery()) {
         NSString *foundGroup = nil;
         NSDictionary *foundAttrs = nil;
         OSStatus recovered = ApolloValetRecoverRead(strippedQuery, result, &foundGroup, &foundAttrs);
         if (recovered == errSecSuccess) {
+            // This keychain misses scoped reads that an enumeration answers, so open recovery
+            // back up for every single-item Valet read on it (see ApolloShouldAttemptRecoverRead).
+            atomic_store_explicit(&sRecoverProvenNeeded, true, memory_order_relaxed);
             // The group Valet's original (pre-strip) query targeted vs the group the item
             // actually lives in — a mismatch is the direct proof of the access-group split.
             id queriedGroup = ((__bridge NSDictionary *)query)[(__bridge id)kSecAttrAccessGroup];
@@ -1387,21 +1424,16 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
     }
 
     if (ApolloIsAccountsBlobQuery(strippedQuery)) {
-        long readLen = -1;
-        if (status == errSecSuccess) {
-            CFTypeRef probe = NULL;
-            NSMutableDictionary *probeQ = [strippedQuery mutableCopy];
-            [probeQ removeObjectForKey:(__bridge id)kSecReturnAttributes];
-            [probeQ removeObjectForKey:(__bridge id)kSecReturnRef];
-            probeQ[(__bridge id)kSecReturnData] = @YES;
-            probeQ[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
-            if (ApolloRealSecItemCopyMatching(probeQ, &probe) == errSecSuccess && probe) {
-                if (CFGetTypeID(probe) == CFDataGetTypeID()) readLen = (long)CFDataGetLength((CFDataRef)probe);
-                CFRelease(probe);
-            }
-        }
+        // The byte length that separates an empty blob from a populated one comes out of the
+        // result the caller was already handed. A caller that asked for no data — Valet's
+        // existence check passes result=NULL — logs readLen=n/a instead of paying a second
+        // securityd round trip whose only consumer was this line. That item's length still
+        // lands in [AccountSnapshot] at every lifecycle transition and in every ADD/UPDATE
+        // trace, which is where the wipe-vs-persistence-failure question is actually answered.
+        long readLen = (status == errSecSuccess && result) ? ApolloResultDataLength(*result) : -1;
         ApolloKeychainTrace(@"COPY", strippedQuery, status,
-                            [NSString stringWithFormat:@"route=real readLen=%ld", readLen]);
+                            [NSString stringWithFormat:@"route=real readLen=%@",
+                             readLen >= 0 ? (id)[NSString stringWithFormat:@"%ld", readLen] : (id)@"n/a"]);
     }
     return status;
 }
@@ -3706,6 +3738,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
 
     NSDictionary *defaultValues = @{UDKeyBlockAnnouncements: @YES,
                                     UDKeyEnableFLEX: @NO,
+                                    UDKeyVerboseLogging: @NO,
                                     UDKeyCrashCaptureEnabled: @YES,
                                     UDKeyTrendingSubredditsLimit: @"5",
                                     UDKeyShowRandNsfw: @NO,
@@ -4429,6 +4462,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
     // the simulator's virtualized keychain is in place (see the deferral note
     // where sWebJSONEnabled is read). Migrates any legacy NSUserDefaults cookie,
     // then any legacy single-global session, into the per-account store.
+    ApolloWebJSONBeginLaunchAccountSnapshot();
     ApolloWebJSONLoadPersistedCredentials();
     // Per-account coherence: a stored web session IS that account's sign-in —
     // it only works while the Web JSON transport is enabled. The mode is
@@ -4476,6 +4510,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
             @catch (NSException *e) { ApolloLog(@"[WebJSON][identity] launch synthesis failed for u/%@: %@", username, e); }
         }
     }
+    ApolloWebJSONEndLaunchAccountSnapshot();
     // This launch loads accounts fresh, so any "restart to activate" state left
     // over from a mid-session web login is now resolved — clear the indicator.
     [[NSUserDefaults standardUserDefaults] removeObjectForKey:UDKeyWebJSONPendingRestart];

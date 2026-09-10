@@ -1490,11 +1490,9 @@ static NSString *ApolloDisplayStringByConvertingMarkdownLinks(NSString *text, NS
     if (markdownLinksOut) *markdownLinksOut = [NSMutableArray array];
     if (![text isKindOfClass:[NSString class]] || text.length == 0) return text;
 
-    NSError *regexError = nil;
-    NSRegularExpression *markdownLinkRegex = [NSRegularExpression regularExpressionWithPattern:@"\\[([^\\]\\n]+)\\]\\((https?://[^\\s)]+)(?:\\s+\\\"[^\\\"]*\\\")?\\)"
-                                                                                       options:NSRegularExpressionCaseInsensitive
-                                                                                         error:&regexError];
-    if (regexError || !markdownLinkRegex) return text;
+    NSRegularExpression *markdownLinkRegex = ApolloStaticRegex(@"\\[([^\\]\\n]+)\\]\\((https?://[^\\s)]+)(?:\\s+\\\"[^\\\"]*\\\")?\\)",
+                                                               NSRegularExpressionCaseInsensitive);
+    if (!markdownLinkRegex) return text;
 
     NSArray<NSTextCheckingResult *> *matches = [markdownLinkRegex matchesInString:text options:0 range:NSMakeRange(0, text.length)];
     if (matches.count == 0) return text;
@@ -1564,11 +1562,8 @@ static NSAttributedString *ApolloTranslatedAttributedStringPreservingVisualLinks
         ApolloApplyLinkAttributes(attributed, rangeValue.rangeValue, urlString, baseAttributes, sourceLinkAttributes);
     }
 
-    NSError *regexError = nil;
-    NSRegularExpression *bareURLRegex = [NSRegularExpression regularExpressionWithPattern:@"(?i)\\bhttps?://[^\\s<>()\\[\\]{}\\\"']+"
-                                                                                options:0
-                                                                                  error:&regexError];
-    if (!regexError && bareURLRegex && attributed.length > 0) {
+    NSRegularExpression *bareURLRegex = ApolloStaticRegex(@"(?i)\\bhttps?://[^\\s<>()\\[\\]{}\\\"']+", 0);
+    if (bareURLRegex && attributed.length > 0) {
         NSArray<NSTextCheckingResult *> *matches = [bareURLRegex matchesInString:attributed.string options:0 range:NSMakeRange(0, attributed.length)];
         for (NSTextCheckingResult *match in matches) {
             NSRange range = ApolloRangeByTrimmingTrailingURLPunctuation(attributed.string, match.range);
@@ -1591,6 +1586,7 @@ static NSAttributedString *ApolloTranslatedAttributedStringPreservingVisualLinks
 
     return [attributed copy];
 }
+
 
 static BOOL ApolloThreadTranslationModeEnabledForVisibleCommentsVC(void) __attribute__((unused));
 static BOOL ApolloThreadTranslationModeEnabledForVisibleCommentsVC(void) {

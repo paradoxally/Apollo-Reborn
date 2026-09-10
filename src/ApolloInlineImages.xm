@@ -860,16 +860,16 @@ static void ApolloDashPosterInit(void) {
     dispatch_once(&once, ^{
         sApolloDashPosterCache = [NSCache new];
         sApolloDashPosterCache.name = @"ApolloDashPosterCache";
-        sApolloDashPosterCache.totalCostLimit = 32 * 1024 * 1024;
-        sApolloDashPosterCache.countLimit = 40;
+        // A poster is generated at feed-cell pixel size, so ~3MB each at @3x.
+        // This holds roughly seven video posts of scrollback.
+        sApolloDashPosterCache.totalCostLimit = 24 * 1024 * 1024;
+        sApolloDashPosterCache.countLimit = 24;
         sApolloDashPosterFailures = [NSMutableDictionary dictionary];
         sApolloDashPosterFailureOrder = [NSMutableOrderedSet orderedSet];
         sApolloDashPosterPending = [NSMutableDictionary dictionary];
         sApolloDashPosterQueuedStarts = [NSMutableArray array];
         sApolloDashPosterQueue = dispatch_queue_create("ca.jeffrey.apollo.dashposter", DISPATCH_QUEUE_SERIAL);
-        ApolloMemoryRegisterPurgeHandler(@"dash-posters", ^{
-            [sApolloDashPosterCache removeAllObjects];
-        });
+        ApolloMemoryRegisterPurgableCache(@"dash-posters", sApolloDashPosterCache);
     });
 }
 
@@ -897,9 +897,7 @@ static NSURL *ApolloLowestDashMP4URL(NSData *mpdData, NSURL *mpdURL) {
         searchRange = NSMakeRange(videoSet.location, xml.length - videoSet.location);
     }
 
-    NSRegularExpression *re = [NSRegularExpression
-        regularExpressionWithPattern:@"<BaseURL>([^<]+\\.mp4)</BaseURL>"
-                             options:0 error:nil];
+    NSRegularExpression *re = ApolloStaticRegex(@"<BaseURL>([^<]+\\.mp4)</BaseURL>", 0);
     NSTextCheckingResult *m = [re firstMatchInString:xml options:0 range:searchRange];
     if (!m || m.numberOfRanges < 2) return nil;
     NSString *relative = [xml substringWithRange:[m rangeAtIndex:1]];

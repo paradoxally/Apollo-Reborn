@@ -20,6 +20,7 @@
 #import "ApolloCommon.h"
 #import "ApolloFloatingTabs.h"
 #import "ApolloLinkPreviewFetcher.h"
+#import "ApolloMemoryDiagnostics.h"
 #import "ApolloTranslation.h"
 #import "ApolloGalleryImageLoader.h"
 #import "ApolloWebTextDecoding.h"
@@ -702,6 +703,17 @@ static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *
                       sApolloSimForceLowPowerMode, NSProcessInfo.processInfo.isLowPowerModeEnabled);
             return;
         }
+        // "memwarn" command: post the same notification UIKit posts under real
+        // low-memory pressure, so the coordinated cache purge can be exercised
+        // and measured without waiting for jetsam to take an interest. The
+        // simulator never generates the real signal on its own.
+        if ([contents hasPrefix:@"memwarn"]) {
+            ApolloMemoryLogFootprint(@"memwarn requested");
+            [NSNotificationCenter.defaultCenter
+                postNotificationName:UIApplicationDidReceiveMemoryWarningNotification
+                              object:UIApplication.sharedApplication];
+            return;
+        }
         if ([contents hasPrefix:@"crash "]) {
             NSString *payload = [[contents substringFromIndex:6] stringByTrimmingCharactersInSet:
                 NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -865,8 +877,10 @@ static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *
         ApolloSimDebugTapNotification, CFSTR("apollofix.debugtap"), NULL,
         CFNotificationSuspensionBehaviorDeliverImmediately);
     ApolloLog(@"[SimDebugTap] listening for apollofix.debugtap");
-    ApolloLog(@"[CommentInsights][parser] self-tests %@",
-              ApolloCommentVoteInsightsRunParserSelfTests() ? @"passed" : @"FAILED");
+    // Both self-tests have to run whether or not the line is emitted — the log
+    // macro no longer evaluates its arguments when verbose logging is off.
+    BOOL parserOK = ApolloCommentVoteInsightsRunParserSelfTests();
+    ApolloLog(@"[CommentInsights][parser] self-tests %@", parserOK ? @"passed" : @"FAILED");
     NSString *charsetFailure = nil;
     BOOL charsetOK = ApolloWebTextDecodingRunSelfTests(&charsetFailure);
     ApolloLog(@"[WebTextDecoding] self-tests %@", charsetOK ? @"passed"

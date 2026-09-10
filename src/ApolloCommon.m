@@ -1,6 +1,7 @@
 #import "ApolloCommon.h"
 #import "ApolloState.h"
 #import "ApolloThemeRuntime.h"
+#import "UserDefaultConstants.h"
 #import <QuartzCore/QuartzCore.h>
 #import <mach-o/dyld.h>
 #import <mach-o/loader.h>
@@ -72,6 +73,37 @@ OSStatus ApolloUpsertGenericPasswordData(CFStringRef service,
 #pragma mark - Logging
 
 static NSDate *sProcessStartDate = nil;
+
+BOOL ApolloVerboseLoggingEnabled = NO;
+
+// The gate must be published before the first module logs. A priority
+// constructor is not enough: the linker emits this image's initializers as a
+// flat __init_offsets table and the earliest %ctors still ran first, losing the
+// first nine lines of the launch burst when verbose logging was ON. +load runs
+// before any initializer in the same image, so it is the only ordering that
+// holds. Running before Tweak.xm registers its defaults is fine: an
+// unregistered key reads NO, which is this key's default anyway.
+@interface ApolloLoggingGateLoader : NSObject
+@end
+
+@implementation ApolloLoggingGateLoader
++ (void)load {
+    @autoreleasepool {
+        BOOL enabled = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyVerboseLogging];
+        __atomic_store_n(&ApolloVerboseLoggingEnabled, enabled, __ATOMIC_RELAXED);
+    }
+}
+@end
+
+BOOL ApolloVerboseLoggingIsEnabled(void) {
+    return __atomic_load_n(&ApolloVerboseLoggingEnabled, __ATOMIC_RELAXED);
+}
+
+void ApolloSetVerboseLoggingEnabled(BOOL enabled) {
+    [[NSUserDefaults standardUserDefaults] setBool:enabled forKey:UDKeyVerboseLogging];
+    __atomic_store_n(&ApolloVerboseLoggingEnabled, enabled, __ATOMIC_RELAXED);
+    ApolloLogAlways(@"[Logging] verbose logging %@", enabled ? @"ON" : @"OFF");
+}
 
 os_log_t ApolloFixLog(void) {
     static os_log_t log = nil;
@@ -335,13 +367,25 @@ static NSString *ApolloCollectLogsFiltered(BOOL aiOnly) {
         NSString *persistentLogin = aiOnly ? @"" : ApolloPersistentLoginDiagnostics();
         NSString *persistentListLayout = aiOnly ? @"" : ApolloPersistentListLayoutDiagnostics();
 
+        // With verbose logging off almost nothing reaches os_log, so a short
+        // export is expected rather than evidence that nothing happened. Say so,
+        // and say how to capture a full one.
+        NSString *verboseHint = ApolloVerboseLoggingIsEnabled() ? @"" :
+            @"Verbose Logging is OFF, so most [ApolloFix] lines were never recorded. "
+             "Turn it on in Settings > Apollo Reborn > Advanced, reproduce the problem, then export again.\n";
+
         if (filteredEntries.count == 0 && persistentLogin.length == 0 && persistentListLayout.length == 0) {
-            return aiOnly
+            NSString *empty = aiOnly
                 ? @"No Apollo AI log entries found since app launch."
                 : @"No [ApolloFix] log entries found since app launch.";
+            return verboseHint.length ? [NSString stringWithFormat:@"%@\n%@", empty, verboseHint] : empty;
         }
 
         NSMutableString *output = [NSMutableString new];
+        if (verboseHint.length) {
+            [output appendString:verboseHint];
+            [output appendString:@"\n"];
+        }
         if (persistentListLayout.length) {
             [output appendString:@"===== Persistent list/tab-bar diagnostics (spans previous sessions; survives force-quit) =====\n"];
             [output appendString:persistentListLayout];
@@ -1397,6 +1441,22 @@ double ApolloPerfNowMs(void) {
     return CACurrentMediaTime() * 1000.0;
 }
 
+NSUInteger ApolloImageByteCost(UIImage *image) {
+    if (![image isKindOfClass:[UIImage class]]) return 0;
+    CGImageRef cgImage = image.CGImage;
+    if (cgImage) {
+        size_t bytesPerRow = CGImageGetBytesPerRow(cgImage);
+        size_t height = CGImageGetHeight(cgImage);
+        if (height == 0 || bytesPerRow == 0) return 0;
+        if (bytesPerRow > NSUIntegerMax / height) return NSUIntegerMax;
+        return (NSUInteger)(bytesPerRow * height);
+    }
+    CGFloat scale = image.scale > 0.0 ? image.scale : 1.0;
+    double pixels = (double)image.size.width * scale * (double)image.size.height * scale * 4.0;
+    if (pixels <= 0.0) return 0;
+    return pixels >= (double)NSUIntegerMax ? NSUIntegerMax : (NSUInteger)pixels;
+}
+
 // --- Tweak-UI text node marker -------------------------------------------
 // Content scans (translation's post-body candidate walk, etc.) must never
 // treat tweak-drawn text as user content. One shared assoc key, set at node
@@ -1411,4 +1471,20 @@ void ApolloMarkTweakUITextNode(id node) {
 BOOL ApolloTextNodeIsTweakUI(id node) {
     if (!node) return NO;
     return [objc_getAssociatedObject(node, &kApolloTweakUITextNodeKey) boolValue];
+}
+
+NSRegularExpression *ApolloCachedRegex(NSString *pattern, NSRegularExpressionOptions options) {
+    if (pattern.length == 0) return nil;
+    static NSCache<NSString *, NSRegularExpression *> *cache;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        cache = [NSCache new];
+        cache.countLimit = 64;
+    });
+    NSString *key = [NSString stringWithFormat:@"%lu\n%@", (unsigned long)options, pattern];
+    NSRegularExpression *regex = [cache objectForKey:key];
+    if (regex) return regex;
+    regex = [NSRegularExpression regularExpressionWithPattern:pattern options:options error:NULL];
+    if (regex) [cache setObject:regex forKey:key];
+    return regex;
 }

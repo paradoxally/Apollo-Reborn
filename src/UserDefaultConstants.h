@@ -17,6 +17,13 @@ static NSString *const UDKeyUseCustomOAuthSignIn = @"UseCustomOAuthSignIn";
 static NSString *const UDKeyUserAgent = @"UserAgent";
 static NSString *const UDKeyBlockAnnouncements = @"DisableApollonouncements";
 static NSString *const UDKeyEnableFLEX = @"EnableFlexDebugging";
+// Verbose diagnostic logging into the "apollofix" os_log subsystem. Default NO.
+// With it off the ApolloLog macro returns before it formats anything, so a
+// normal session neither builds the string nor asks logd to persist the line.
+// The launch banner and the login-persistence diagnostics still emit (they use
+// ApolloLogAlways), and the cross-launch diag files are untouched — turning this
+// on is only needed to capture a full Export Debug Logs for a bug report.
+static NSString *const UDKeyVerboseLogging = @"VerboseLogging";
 // Version stamps for Apollo's own sideload-unlock flags, which the constructor
 // writes into two preference domains. Each stamp lives in the SAME domain as
 // the flags it guards, so anything that resets a domain (fresh install, a

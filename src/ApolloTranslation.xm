@@ -9824,6 +9824,26 @@ static NSString *ApolloCurrentTranslationTag(void) {
     return [NSString stringWithFormat:@"%@|%@", provider, language];
 }
 
+// Every touch of the cache file goes through one serial queue: the hydrate's
+// read at launch, and each background's write-or-delete. Two background
+// transitions close together used to be impossible to interleave because the
+// persist ran inline on main; now that it is asynchronous, a concurrent queue
+// would let one job unlink the file another had just written, or let an older
+// snapshot land after a newer one. Serial submission also means each job takes
+// its mirror snapshot after the previous job finished, so the last write always
+// reflects the newest state.
+static dispatch_queue_t ApolloTranslationDiskQueue(void) {
+    static dispatch_queue_t queue;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        queue = dispatch_queue_create_with_target(
+            "com.apolloreborn.translation-disk-cache",
+            DISPATCH_QUEUE_SERIAL_WITH_AUTORELEASE_POOL,
+            dispatch_get_global_queue(QOS_CLASS_UTILITY, 0));
+    });
+    return queue;
+}
+
 static void ApolloPersistTranslationCachesToDisk(void) {
     NSURL *url = ApolloTranslationDiskCacheURL();
     if (!url) return;
@@ -9899,7 +9919,7 @@ static void ApolloPersistTranslationCachesInBackground(void) {
     // Expiration handlers are delivered on the main thread, so ending from a
     // main hop too keeps `task` single-threaded without a lock.
     task = [app beginBackgroundTaskWithName:@"ApolloTranslationPersist" expirationHandler:endTask];
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    dispatch_async(ApolloTranslationDiskQueue(), ^{
         ApolloPersistTranslationCachesToDisk();
         dispatch_async(dispatch_get_main_queue(), endTask);
     });
@@ -9936,7 +9956,7 @@ static void ApolloHydrateTranslationCachesFromDisk(void) {
     NSString *currentTag = ApolloCurrentTranslationTag();
     uint32_t generation = sTranslationCacheGeneration;
 
-    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+    dispatch_async(ApolloTranslationDiskQueue(), ^{
         NSData *data = [NSData dataWithContentsOfURL:url];
         if (!data) return;
 

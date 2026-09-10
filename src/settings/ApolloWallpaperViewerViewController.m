@@ -15,19 +15,25 @@ static void ApolloWallpaperCacheImage(NSCache<NSURL *, UIImage *> *cache,
 // Without this, choosing a different device (or reopening the same album)
 // starts from an empty per-viewer cache and its first page must visibly load.
 //
-// A full-screen decode is ~14MB and -prefetchNearbyWallpapers reaches four
-// pages ahead and two back, so these two budgets deliberately disagree about
-// how deep to hold: BYTES for the whole prefetch window, DECODES only for the
-// visible page, its two neighbours and one spare. A page that falls out of the
-// image cache is then re-decoded from bytes already in memory rather than
-// re-downloaded, which is what makes the deeper prefetch worth running without
-// pinning seven full-screen bitmaps for one settings screen.
+// A full-screen decode is 13.76MB (measured: the wallpapers are served at
+// 1290x2796) and -prefetchNearbyWallpapers reaches four pages ahead and two
+// back, so these two budgets deliberately disagree about how deep to hold:
+// BYTES for the whole prefetch window, DECODES only for the visible page and
+// its two neighbours. A page that falls out of the image cache is then
+// re-decoded from bytes already in memory rather than re-downloaded, which is
+// what makes the deeper prefetch worth running without pinning seven
+// full-screen bitmaps for one settings screen.
+//
+// Three, not four: over a 32-page sweep, holding a fourth measured 31.7MB more
+// resident footprint to save 30 of 383 decodes. Paging needs the page you are
+// on and the one either way; a spare beyond that is not worth a third of the
+// saving this whole change is for.
 static NSCache<NSURL *, UIImage *> *ApolloWallpaperSharedImageCache(void) {
     static NSCache<NSURL *, UIImage *> *cache;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         cache = [[NSCache alloc] init];
-        cache.countLimit = 4;
+        cache.countLimit = 3;
         cache.totalCostLimit = 48 * 1024 * 1024;
         ApolloMemoryRegisterPurgableCache(@"wallpaper-images", cache);
     });

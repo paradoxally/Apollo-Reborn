@@ -197,6 +197,24 @@ BOOL ApolloColorIsLight(UIColor *color);
 // free-form hex color the first time a user runs a build with the picker.
 UIColor *ApolloLinkPreviewPresetColor(NSInteger preset);
 
+// Compiles a constant pattern once per call site and shares the immutable,
+// thread-safe NSRegularExpression across every later call. nil when the
+// pattern does not compile, exactly like the per-call constructor.
+#define ApolloStaticRegex(pattern, opts) ({ \
+    static NSRegularExpression *_apolloStaticRegex; \
+    static dispatch_once_t _apolloStaticRegexOnce; \
+    dispatch_once(&_apolloStaticRegexOnce, ^{ \
+        _apolloStaticRegex = [NSRegularExpression regularExpressionWithPattern:(pattern) options:(opts) error:NULL]; \
+    }); \
+    _apolloStaticRegex; \
+})
+
+// Same sharing for patterns built at runtime from a small set of inputs
+// (an escaped attribute name, a tag name): a bounded cache keyed by
+// pattern + options, so a helper called once per match inside a parse loop
+// compiles each distinct pattern once per process rather than once per call.
+NSRegularExpression *ApolloCachedRegex(NSString *pattern, NSRegularExpressionOptions options);
+
 // Packs a hex color into the render-safe snapshot format used by
 // sLinkPreviewCardColorPacked: 0 for nil/invalid/empty, otherwise
 // (1<<24) | (R<<16) | (G<<8) | B.

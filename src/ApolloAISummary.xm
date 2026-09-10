@@ -981,12 +981,8 @@ static NSString *ApolloAICleanInputText(NSString *text, NSUInteger maxLength) {
     }
 
     NSString *clean = [keptLines componentsJoinedByString:@" "];
-    NSError *regexError = nil;
-    NSRegularExpression *urlRegex =
-        [NSRegularExpression regularExpressionWithPattern:@"https?://\\S+"
-                                                  options:NSRegularExpressionCaseInsensitive
-                                                    error:&regexError];
-    if (!regexError) {
+    NSRegularExpression *urlRegex = ApolloStaticRegex(@"https?://\\S+", NSRegularExpressionCaseInsensitive);
+    if (urlRegex) {
         clean = [urlRegex stringByReplacingMatchesInString:clean
                                                    options:0
                                                      range:NSMakeRange(0, clean.length)
@@ -1423,12 +1419,12 @@ static NSString *ApolloAIFirstArticleURLInSelfText(id link) {
 
     NSMutableArray<NSString *> *candidates = [NSMutableArray array];
     // Markdown links [text](url) first — the explicit "here's the article" shares.
-    NSRegularExpression *md = [NSRegularExpression regularExpressionWithPattern:@"\\]\\((https?://[^)\\s]+)\\)" options:0 error:nil];
+    NSRegularExpression *md = ApolloStaticRegex(@"\\]\\((https?://[^)\\s]+)\\)", 0);
     for (NSTextCheckingResult *m in [md matchesInString:selfText options:0 range:NSMakeRange(0, selfText.length)]) {
         [candidates addObject:[selfText substringWithRange:[m rangeAtIndex:1]]];
     }
     // Then any bare URLs.
-    NSRegularExpression *bare = [NSRegularExpression regularExpressionWithPattern:@"https?://[^\\s)\\]]+" options:0 error:nil];
+    NSRegularExpression *bare = ApolloStaticRegex(@"https?://[^\\s)\\]]+", 0);
     for (NSTextCheckingResult *m in [bare matchesInString:selfText options:0 range:NSMakeRange(0, selfText.length)]) {
         [candidates addObject:[selfText substringWithRange:m.range]];
     }
@@ -1464,7 +1460,7 @@ static NSString *ApolloAIDecodeHTMLEntities(NSString *s) {
     };
     for (NSString *k in named) s = [s stringByReplacingOccurrencesOfString:k withString:named[k]];
     // Numeric decimal entities (&#160; etc.).
-    NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:@"&#(\\d{2,7});" options:0 error:nil];
+    NSRegularExpression *re = ApolloStaticRegex(@"&#(\\d{2,7});", 0);
     NSArray<NSTextCheckingResult *> *matches = [re matchesInString:s options:0 range:NSMakeRange(0, s.length)];
     if (matches.count > 0) {
         NSMutableString *out = [s mutableCopy];
@@ -1491,9 +1487,7 @@ static NSString *ApolloAIExtractJSONLD(NSString *html) {
     if (html.length == 0) return nil;
     NSRegularExpressionOptions dotAll =
         NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators;
-    NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:
-        @"<script[^>]*type\\s*=\\s*[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>"
-        options:dotAll error:nil];
+    NSRegularExpression *re = ApolloStaticRegex(@"<script[^>]*type\\s*=\\s*[\"']application/ld\\+json[\"'][^>]*>(.*?)</script>", dotAll);
     NSString *bestBody = nil;
     NSString *bestDesc = nil;
     for (NSTextCheckingResult *m in [re matchesInString:html options:0 range:NSMakeRange(0, html.length)]) {
@@ -1531,7 +1525,7 @@ static NSString *ApolloAIExtractJSONLD(NSString *html) {
                      : (bestBody.length >= bestDesc.length ? bestBody : bestDesc);
     if (chosen.length == 0) return nil;
     // articleBody is usually plain text but can carry inline HTML; clean it.
-    NSRegularExpression *tagRe = [NSRegularExpression regularExpressionWithPattern:@"<[^>]+>" options:0 error:nil];
+    NSRegularExpression *tagRe = ApolloStaticRegex(@"<[^>]+>", 0);
     chosen = [tagRe stringByReplacingMatchesInString:chosen options:0 range:NSMakeRange(0, chosen.length) withTemplate:@" "];
     return ApolloAIDecodeHTMLEntities(chosen);
 }
@@ -1551,8 +1545,7 @@ static NSString *ApolloAIMetaContent(NSString *html, NSString *key) {
     ];
     NSRange scan = NSMakeRange(0, MIN(html.length, (NSUInteger)200000));
     for (NSString *pat in patterns) {
-        NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:pat
-            options:NSRegularExpressionCaseInsensitive error:nil];
+        NSRegularExpression *re = ApolloCachedRegex(pat, NSRegularExpressionCaseInsensitive);
         NSTextCheckingResult *m = [re firstMatchInString:html options:0 range:scan];
         if (m) {
             NSString *c = [ApolloAIDecodeHTMLEntities([html substringWithRange:[m rangeAtIndex:2]])
@@ -1586,8 +1579,7 @@ static NSString *ApolloAIFindAMPURL(NSString *html, NSURL *base) {
     ];
     NSRange scan = NSMakeRange(0, MIN(html.length, (NSUInteger)200000));
     for (NSString *pat in patterns) {
-        NSRegularExpression *re = [NSRegularExpression regularExpressionWithPattern:pat
-            options:NSRegularExpressionCaseInsensitive error:nil];
+        NSRegularExpression *re = ApolloCachedRegex(pat, NSRegularExpressionCaseInsensitive);
         NSTextCheckingResult *m = [re firstMatchInString:html options:0 range:scan];
         if (m) {
             NSString *href = ApolloAIDecodeHTMLEntities([html substringWithRange:[m rangeAtIndex:2]]);
@@ -1614,17 +1606,15 @@ static NSString *ApolloAIExtractArticleText(NSString *html) {
     NSRegularExpressionOptions dotAll =
         NSRegularExpressionCaseInsensitive | NSRegularExpressionDotMatchesLineSeparators;
 
-    NSRegularExpression *noise = [NSRegularExpression regularExpressionWithPattern:
-        @"<(script|style|noscript|template|svg|head|nav|header|footer|aside|form|figure)\\b[^>]*>.*?</\\1>"
-        options:dotAll error:nil];
+    NSRegularExpression *noise = ApolloStaticRegex(@"<(script|style|noscript|template|svg|head|nav|header|footer|aside|form|figure)\\b[^>]*>.*?</\\1>", dotAll);
     NSString *s = [noise stringByReplacingMatchesInString:capped options:0
                                                     range:NSMakeRange(0, capped.length) withTemplate:@" "];
 
     // Narrow to the main article region if the page marks one.
     NSString *scope = s;
     for (NSString *tag in @[@"article", @"main"]) {
-        NSRegularExpression *open = [NSRegularExpression regularExpressionWithPattern:
-            [NSString stringWithFormat:@"<%@\\b[^>]*>", tag] options:NSRegularExpressionCaseInsensitive error:nil];
+        NSRegularExpression *open = ApolloCachedRegex([NSString stringWithFormat:@"<%@\\b[^>]*>", tag],
+                                                      NSRegularExpressionCaseInsensitive);
         NSTextCheckingResult *o = [open firstMatchInString:s options:0 range:NSMakeRange(0, s.length)];
         if (!o) continue;
         NSUInteger start = NSMaxRange(o.range);
@@ -1637,8 +1627,8 @@ static NSString *ApolloAIExtractArticleText(NSString *html) {
 
     // Source #2: articles put body text in <p> tags; menus/chrome rarely do.
     NSMutableString *prose = [NSMutableString string];
-    NSRegularExpression *pRe = [NSRegularExpression regularExpressionWithPattern:@"<p\\b[^>]*>(.*?)</p>" options:dotAll error:nil];
-    NSRegularExpression *tagRe = [NSRegularExpression regularExpressionWithPattern:@"<[^>]+>" options:0 error:nil];
+    NSRegularExpression *pRe = ApolloStaticRegex(@"<p\\b[^>]*>(.*?)</p>", dotAll);
+    NSRegularExpression *tagRe = ApolloStaticRegex(@"<[^>]+>", 0);
     for (NSTextCheckingResult *m in [pRe matchesInString:scope options:0 range:NSMakeRange(0, scope.length)]) {
         NSString *frag = [scope substringWithRange:[m rangeAtIndex:1]];
         frag = [tagRe stringByReplacingMatchesInString:frag options:0 range:NSMakeRange(0, frag.length) withTemplate:@" "];
@@ -1665,7 +1655,7 @@ static NSString *ApolloAIExtractArticleText(NSString *html) {
         if (meta.length > text.length) { text = meta; source = @"meta"; }
     }
 
-    NSRegularExpression *ws = [NSRegularExpression regularExpressionWithPattern:@"\\s+" options:0 error:nil];
+    NSRegularExpression *ws = ApolloStaticRegex(@"\\s+", 0);
     text = [ws stringByReplacingMatchesInString:text options:0 range:NSMakeRange(0, text.length) withTemplate:@" "];
     text = [text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
     if (text.length == 0) return nil;

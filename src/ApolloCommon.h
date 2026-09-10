@@ -8,13 +8,16 @@
 // On iOS 26, NSLog redacts strings, so use os_log: https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-26-release-notes#NSLog
 // Uses a dedicated subsystem so OSLogStore can efficiently filter our entries.
 
-// Emits unconditionally. Reserved for the few lines that have to survive in the
-// os_log export with verbose logging off: the launch banner and every
-// login-persistence diagnostic, which are how an account-loss report is read.
-#define ApolloLogAlways(fmt, ...) do { \
+// Formats and emits unconditionally at the given level.
+#define ApolloLogAlwaysWithType(type, fmt, ...) do { \
     NSString *logMessage = [NSString stringWithFormat:@"[ApolloFix] " fmt, ##__VA_ARGS__]; \
-    os_log_with_type(ApolloFixLog(), OS_LOG_TYPE_DEFAULT, "%{public}s", [logMessage UTF8String]); \
+    os_log_with_type(ApolloFixLog(), type, "%{public}s", [logMessage UTF8String]); \
 } while(0)
+
+// Reserved for the few lines that have to survive in the os_log export with
+// verbose logging off: the launch banner and every login-persistence
+// diagnostic, which are how an account-loss report is read.
+#define ApolloLogAlways(fmt, ...) ApolloLogAlwaysWithType(OS_LOG_TYPE_DEFAULT, fmt, ##__VA_ARGS__)
 
 // Everything else runs through the process-wide verbose gate, which is OFF
 // unless the user turns it on (Settings > Apollo Reborn > Advanced). Handing
@@ -26,7 +29,7 @@
 // main thread and a reader that is a few microseconds stale just drops one line.
 #define ApolloLogWithType(type, fmt, ...) do { \
     if (__builtin_expect(__atomic_load_n(&ApolloVerboseLoggingEnabled, __ATOMIC_RELAXED), 0)) { \
-        ApolloLogAlways(fmt, ##__VA_ARGS__); \
+        ApolloLogAlwaysWithType(type, fmt, ##__VA_ARGS__); \
     } \
 } while(0)
 #define ApolloLog(fmt, ...) ApolloLogWithType(OS_LOG_TYPE_DEFAULT, fmt, ##__VA_ARGS__)

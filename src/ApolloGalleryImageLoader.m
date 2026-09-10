@@ -2,17 +2,22 @@
 
 #import "ApolloGalleryImageLoader.h"
 #import "ApolloCommon.h"
+#import "ApolloMemoryDiagnostics.h"
 #import "ApolloState.h"
 
 #import <ImageIO/ImageIO.h>
 #import <objc/message.h>
 
 // Decoded-image cache budget, in bytes of backing store. Grid thumbnails are
-// small; a handful of fullscreen originals is what actually fills this.
-static NSUInteger const kApolloGalleryImageCacheCostLimit = 96 * 1024 * 1024;
+// small; a handful of fullscreen originals is what actually fills this. The
+// floor here is one entry: a full-tier still is only downsampled past
+// kApolloGalleryStillMaxPixels (24MP), so a single large original can be tens
+// of MB, and a budget under that would evict every one on insertion and make
+// the pager re-decode on every flip.
+static NSUInteger const kApolloGalleryImageCacheCostLimit = 40 * 1024 * 1024;
 // Original-bytes cache. Smaller: it only has to survive long enough for the
 // user to hit Save/Share on something they're looking at.
-static NSUInteger const kApolloGalleryDataCacheCostLimit = 32 * 1024 * 1024;
+static NSUInteger const kApolloGalleryDataCacheCostLimit = 8 * 1024 * 1024;
 
 static NSTimeInterval const kApolloGalleryImageTimeout = 30.0;
 
@@ -266,20 +271,10 @@ static ApolloGalleryDecodedImage *ApolloGalleryDecodeFullTier(NSData *data) {
         configuration.timeoutIntervalForRequest = kApolloGalleryImageTimeout;
         _session = [NSURLSession sessionWithConfiguration:configuration];
 
-        [[NSNotificationCenter defaultCenter] addObserver:self
-                                                 selector:@selector(apollo_didReceiveMemoryWarning)
-                                                     name:UIApplicationDidReceiveMemoryWarningNotification
-                                                   object:nil];
+        ApolloMemoryRegisterPurgableCache(@"gallery-images", _imageCache);
+        ApolloMemoryRegisterPurgableCache(@"gallery-data", _dataCache);
     }
     return self;
-}
-
-- (void)dealloc {
-    [[NSNotificationCenter defaultCenter] removeObserver:self];
-}
-
-- (void)apollo_didReceiveMemoryWarning {
-    [self purge];
 }
 
 - (void)purge {

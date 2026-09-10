@@ -1,45 +1,45 @@
 #import "settings/ApolloWallpaperViewerViewController.h"
 
 #import "ApolloCommon.h"
+#import "ApolloMemoryDiagnostics.h"
 #import <Photos/Photos.h>
-
-static NSUInteger ApolloWallpaperDecodedImageCost(UIImage *image) {
-    CGImageRef CGImage = image.CGImage;
-    if (!CGImage) return 0;
-    size_t bytesPerRow = CGImageGetBytesPerRow(CGImage);
-    size_t height = CGImageGetHeight(CGImage);
-    if (height > 0 && bytesPerRow > NSUIntegerMax / height) return NSUIntegerMax;
-    return bytesPerRow * height;
-}
 
 static void ApolloWallpaperCacheImage(NSCache<NSURL *, UIImage *> *cache,
                                       NSURL *URL,
                                       UIImage *image) {
     if (!cache || !URL || !image) return;
-    [cache setObject:image forKey:URL cost:ApolloWallpaperDecodedImageCost(image)];
+    [cache setObject:image forKey:URL cost:ApolloImageByteCost(image)];
 }
 
 // Keep decoded and original wallpaper data alive across viewer presentations.
 // Without this, choosing a different device (or reopening the same album)
 // starts from an empty per-viewer cache and its first page must visibly load.
+//
+// One wallpaper is on screen at a time and a full-screen decode is ~14MB, so
+// the budget only has to cover the visible page plus the neighbour the pager
+// prefetches. Everything else re-reads from the data cache below.
 static NSCache<NSURL *, UIImage *> *ApolloWallpaperSharedImageCache(void) {
     static NSCache<NSURL *, UIImage *> *cache;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         cache = [[NSCache alloc] init];
-        cache.countLimit = 7;
-        cache.totalCostLimit = 160 * 1024 * 1024;
+        cache.countLimit = 3;
+        cache.totalCostLimit = 16 * 1024 * 1024;
+        ApolloMemoryRegisterPurgableCache(@"wallpaper-images", cache);
     });
     return cache;
 }
 
+// Compressed originals, held only so a Save/Share tap on the visible wallpaper
+// doesn't have to re-download it.
 static NSCache<NSURL *, NSData *> *ApolloWallpaperSharedDataCache(void) {
     static NSCache<NSURL *, NSData *> *cache;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
         cache = [[NSCache alloc] init];
-        cache.countLimit = 16;
-        cache.totalCostLimit = 64 * 1024 * 1024;
+        cache.countLimit = 6;
+        cache.totalCostLimit = 6 * 1024 * 1024;
+        ApolloMemoryRegisterPurgableCache(@"wallpaper-data", cache);
     });
     return cache;
 }

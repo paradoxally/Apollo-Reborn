@@ -112,6 +112,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloDeletedCommentsMenu.xm \
     $(SRC_DIR)/ApolloState.m \
     $(SRC_DIR)/ApolloShareLinks.xm \
+    $(SRC_DIR)/ApolloSafariDarkLoading.xm \
     $(SRC_DIR)/ApolloMedia.xm \
     $(SRC_DIR)/ApolloFeedGalleryCarousel.xm \
     $(SRC_DIR)/ApolloSwipeUpComments.xm \
@@ -154,6 +155,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloUserFlair.xm \
     $(SRC_DIR)/ApolloOwnCommentFlair.xm \
     $(SRC_DIR)/ApolloFlairColors.xm \
+    $(SRC_DIR)/ApolloBoldPostTitles.xm \
     $(SRC_DIR)/ApolloNativeActionMenus.xm \
     $(SRC_DIR)/ApolloContextMenuPreviewTheme.xm \
     $(SRC_DIR)/ApolloActionMenu.xm \
@@ -177,6 +179,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloVideoHoldSpeed.xm \
     $(SRC_DIR)/ApolloPictureInPicture.xm \
     $(SRC_DIR)/ApolloFloatingTabs.xm \
+    $(SRC_DIR)/ApolloFloatingTabsCrests.m \
     $(SRC_DIR)/ApolloMediaPreviewErrorFix.xm \
     $(SRC_DIR)/ApolloFeedShortcutsAppearance.m \
     $(SRC_DIR)/ApolloSubredditIndexPolish.xm \
@@ -241,6 +244,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloManualSignInViewController.m \
     $(SRC_DIR)/ApolloAccountCredentials.m \
     $(SRC_DIR)/ApolloPerAccountFavorites.m \
+    $(SRC_DIR)/ApolloFavoritesSorting.m \
     $(SRC_DIR)/ApolloAccountSwitcherViewController.xm \
     $(SRC_DIR)/ApolloSignInSplash.xm \
     $(SRC_DIR)/ApolloHideSubscribePrompt.xm \
@@ -250,6 +254,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/settings/ApolloAISettingsViewController.m \
     $(SRC_DIR)/settings/ApolloDeletedCommentsSettingsViewController.m \
     $(SRC_DIR)/settings/ApolloProfileLayoutViewController.m \
+    $(SRC_DIR)/settings/ApolloLayoutPreviewCard.m \
     $(SRC_DIR)/settings/ApolloLinkPreviewSettingsViewController.m \
     $(SRC_DIR)/settings/InlineMediaSettingsViewController.m \
     $(SRC_DIR)/settings/InfoRowSettingsViewController.m \
@@ -332,7 +337,8 @@ ApolloReborn_LIBRARIES += c++
 ApolloReborn_BUNDLE_RESOURCE_DIRS = resources
 ApolloReborn_BUNDLE_RESOURCES = \
     assets/bark-icons/low-battery.png \
-    assets/bark-icons/palette.png
+    assets/bark-icons/palette.png \
+    widgets/Sources/Assets.xcassets/ApolloAvatar.imageset/apollo-avatar@3x.png
 
 # Temporary theme-RE instrumentation (theme builder spike). Opt-in only:
 #   APOLLO_THEME_RE=1 scripts/run-in-sim.sh

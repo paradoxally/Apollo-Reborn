@@ -3634,6 +3634,54 @@ static BOOL ApolloDefaultsKeyChangesAccountCollection(NSString *key) {
     return [key isEqualToString:@"RedditAccounts2"];
 }
 
+// Apollo's group-suite unlock flags. One table so the launch verification and
+// the launch write cannot drift apart — a key present in only one of them would
+// either be written and never checked, or checked and never written.
+static NSString *const kApolloGroupUnlockFlags[] = {
+    // Ultra/Pro flags
+    @"UMigrationOccurred",
+    @"ProMigrationOccurred",
+    @"SPMigrationOccurred",
+    @"CommMigrationOccurred",
+    // Secret icon flags
+    @"HasUnlockedBeanVault",  // Beans (Black Friday 2022)
+    @"SlothkunUnlocked",      // Slothkun
+    @"iJustineUnlocked",      // iJustine (sekrit: wrappingpaper)
+    @"UnitedStatesUnlocked",  // America! (sekrit: america)
+    @"UnitedStates2Unlocked", // Super America (sekrit: superamerica)
+    @"UnitedKingdomUnlocked", // UK (sekrit: hughlaurie)
+    @"TLDTodayUnlocked",      // Yo. Jonathan Here. (sekrit: tld/jellyfish/crispy)
+    @"ApolloBookProUnlocked", // ApolloBook Pro (sekrit: apollobookpro)
+    @"UnlockedWallpapers",    // Wallpapers
+    @"ATPUnlocked",           // ATP (sekrit: atp)
+    @"PhilUnlocked",          // Phil Schiller (sekrit: phil/throatpunch)
+    @"CanadaUnlocked",        // Canada D'Eh (sekrit: canadadeh)
+    @"UkraineUnlocked",       // Ukraine (sekrit: ukraine)
+    @"ErnestUnlocked",        // Ernest (sekrit: ernest)
+    @"SusUnlocked",           // Sus/Among Us (sekrit: sus)
+    @"Dave2DUnlocked",        // Dave2D (sekrit: dave2d)
+    @"MKBHDUnlocked",         // MKBHD (sekrit: keith)
+    @"PeachyUnlocked",        // Peachy (sekrit: neonpeach)
+    @"LinusUnlocked",         // Linus Tech Tips (sekrit: livelaughliao)
+    @"AndruUnlocked",         // Andru Edwards (sekrit: andru/prowrestler)
+    @"EAPUnlocked",           // Icons Drop Test (sekrit: everythingapplepro)
+    @"ReneUnlocked",          // Rene Ritchie (sekrit: rene/montrealbagels)
+    @"SnazzyUnlocked",        // Snazzy Labs (sekrit: margaret)
+};
+static const size_t kApolloGroupUnlockFlagCount =
+    sizeof(kApolloGroupUnlockFlags) / sizeof(kApolloGroupUnlockFlags[0]);
+
+// The version stamp alone is not enough to skip the writes: anything that clears
+// one flag without clearing the stamp would leave that unlock off until the next
+// tweak version. Reads of an already-loaded preferences domain are cheap, so
+// verify every flag and let a cleared one heal itself on the next launch.
+static BOOL ApolloGroupUnlockFlagsAllSet(NSUserDefaults *suite) {
+    for (size_t i = 0; i < kApolloGroupUnlockFlagCount; i++) {
+        if (![suite boolForKey:kApolloGroupUnlockFlags[i]]) return NO;
+    }
+    return YES;
+}
+
 static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
     return [key isEqualToString:UDKeyApolloFavoriteSubreddits];
 }
@@ -4372,7 +4420,9 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
     // which is the only way the flags can go missing again.
     NSString *sideloadStamp = @TWEAK_VERSION;
     NSUserDefaults *appDefaults = [NSUserDefaults standardUserDefaults];
-    if (![[appDefaults stringForKey:UDKeySideloadFlagsStamp] isEqualToString:sideloadStamp]) {
+    if (![[appDefaults stringForKey:UDKeySideloadFlagsStamp] isEqualToString:sideloadStamp] ||
+        ![@"ya" isEqual:[appDefaults objectForKey:@"awesome_notifications"]] ||
+        ![appDefaults boolForKey:@"airprint-active"]) {
         // Ultra pre-migration
         [appDefaults setObject:@"ya" forKey:@"awesome_notifications"];
         // Unlock Chumbus theme (normally requires 1000 boop button taps in Theme Settings)
@@ -4381,37 +4431,11 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
     }
 
     NSUserDefaults *sharedSuite = [[NSUserDefaults alloc] initWithSuiteName:@"group.com.christianselig.apollo"];
-    if (sharedSuite && ![[sharedSuite stringForKey:UDKeyGroupUnlockFlagsStamp] isEqualToString:sideloadStamp]) {
-        // Ultra/Pro flags
-        [sharedSuite setBool:YES forKey:@"UMigrationOccurred"];
-        [sharedSuite setBool:YES forKey:@"ProMigrationOccurred"];
-        [sharedSuite setBool:YES forKey:@"SPMigrationOccurred"];
-        [sharedSuite setBool:YES forKey:@"CommMigrationOccurred"];
-
-        // Secret icon flags
-        [sharedSuite setBool:YES forKey:@"HasUnlockedBeanVault"];  // Beans (Black Friday 2022)
-        [sharedSuite setBool:YES forKey:@"SlothkunUnlocked"];      // Slothkun
-        [sharedSuite setBool:YES forKey:@"iJustineUnlocked"];      // iJustine (sekrit: wrappingpaper)
-        [sharedSuite setBool:YES forKey:@"UnitedStatesUnlocked"];  // America! (sekrit: america)
-        [sharedSuite setBool:YES forKey:@"UnitedStates2Unlocked"]; // Super America (sekrit: superamerica)
-        [sharedSuite setBool:YES forKey:@"UnitedKingdomUnlocked"]; // UK (sekrit: hughlaurie)
-        [sharedSuite setBool:YES forKey:@"TLDTodayUnlocked"];      // Yo. Jonathan Here. (sekrit: tld/jellyfish/crispy)
-        [sharedSuite setBool:YES forKey:@"ApolloBookProUnlocked"]; // ApolloBook Pro (sekrit: apollobookpro)
-        [sharedSuite setBool:YES forKey:@"UnlockedWallpapers"];    // Wallpapers
-        [sharedSuite setBool:YES forKey:@"ATPUnlocked"];           // ATP (sekrit: atp)
-        [sharedSuite setBool:YES forKey:@"PhilUnlocked"];          // Phil Schiller (sekrit: phil/throatpunch)
-        [sharedSuite setBool:YES forKey:@"CanadaUnlocked"];        // Canada D'Eh (sekrit: canadadeh)
-        [sharedSuite setBool:YES forKey:@"UkraineUnlocked"];       // Ukraine (sekrit: ukraine)
-        [sharedSuite setBool:YES forKey:@"ErnestUnlocked"];        // Ernest (sekrit: ernest)
-        [sharedSuite setBool:YES forKey:@"SusUnlocked"];           // Sus/Among Us (sekrit: sus)
-        [sharedSuite setBool:YES forKey:@"Dave2DUnlocked"];        // Dave2D (sekrit: dave2d)
-        [sharedSuite setBool:YES forKey:@"MKBHDUnlocked"];         // MKBHD (sekrit: keith)
-        [sharedSuite setBool:YES forKey:@"PeachyUnlocked"];        // Peachy (sekrit: neonpeach)
-        [sharedSuite setBool:YES forKey:@"LinusUnlocked"];         // Linus Tech Tips (sekrit: livelaughliao)
-        [sharedSuite setBool:YES forKey:@"AndruUnlocked"];         // Andru Edwards (sekrit: andru/prowrestler)
-        [sharedSuite setBool:YES forKey:@"EAPUnlocked"];           // Icons Drop Test (sekrit: everythingapplepro)
-        [sharedSuite setBool:YES forKey:@"ReneUnlocked"];          // Rene Ritchie (sekrit: rene/montrealbagels)
-        [sharedSuite setBool:YES forKey:@"SnazzyUnlocked"];        // Snazzy Labs (sekrit: margaret)
+    if (sharedSuite && (![[sharedSuite stringForKey:UDKeyGroupUnlockFlagsStamp] isEqualToString:sideloadStamp] ||
+                        !ApolloGroupUnlockFlagsAllSet(sharedSuite))) {
+        for (size_t i = 0; i < kApolloGroupUnlockFlagCount; i++) {
+            [sharedSuite setBool:YES forKey:kApolloGroupUnlockFlags[i]];
+        }
         [sharedSuite setObject:sideloadStamp forKey:UDKeyGroupUnlockFlagsStamp];
     }
 

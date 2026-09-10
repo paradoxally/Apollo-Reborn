@@ -375,6 +375,64 @@ static id ApolloWebJSONUnarchive(NSData *data) {
     return obj;
 }
 
+// Launch-scoped decode of the persisted account blobs.
+//
+// The constructor runs poisoned-blob repair, the bearer-registry seed and one
+// synthesis pass per stored web session back to back, and each of those used to
+// re-decode `RedditAccounts2` for itself. Decoding it rebuilds every persisted
+// RDKClient together with its AFHTTPSessionManager/CFNetwork graph (see the
+// cost note in ApolloAccountCredentials.m), so the repeat decodes — not the
+// defaults read — are what makes the block expensive, and it all happens on the
+// main thread before main() returns.
+//
+// Only the constructor opens the window, so no lock is needed; outside it every
+// accessor decodes exactly as it did before. The two writers below hand their
+// post-write arrays back so a later reader in the same window still sees what is
+// on disk.
+static BOOL sLaunchSnapshotActive = NO;
+static NSArray *sLaunchSnapshotAccounts = nil;
+static BOOL sLaunchSnapshotAccountsValid = NO;
+static NSArray<NSDictionary *> *sLaunchSnapshotValet = nil;
+static BOOL sLaunchSnapshotValetValid = NO;
+static BOOL sLaunchSnapshotValetReadFailed = NO;
+
+void ApolloWebJSONBeginLaunchAccountSnapshot(void) {
+    sLaunchSnapshotActive = YES;
+}
+
+void ApolloWebJSONEndLaunchAccountSnapshot(void) {
+    sLaunchSnapshotActive = NO;
+    sLaunchSnapshotAccounts = nil;
+    sLaunchSnapshotAccountsValid = NO;
+    sLaunchSnapshotValet = nil;
+    sLaunchSnapshotValetValid = NO;
+    sLaunchSnapshotValetReadFailed = NO;
+}
+
+static NSArray *ApolloWebJSONDecodedAccounts(NSUserDefaults *group) {
+    if (sLaunchSnapshotActive && sLaunchSnapshotAccountsValid) return sLaunchSnapshotAccounts;
+    id decoded = ApolloWebJSONUnarchive([group objectForKey:@"RedditAccounts2"]);
+    NSArray *accounts = [decoded isKindOfClass:[NSArray class]] ? decoded : @[];
+    if (sLaunchSnapshotActive) {
+        sLaunchSnapshotAccounts = accounts;
+        sLaunchSnapshotAccountsValid = YES;
+    }
+    return accounts;
+}
+
+static void ApolloWebJSONNoteAccountsWritten(NSArray *accounts) {
+    if (!sLaunchSnapshotActive) return;
+    sLaunchSnapshotAccounts = accounts;
+    sLaunchSnapshotAccountsValid = YES;
+}
+
+static void ApolloWebJSONNoteValetAccountsWritten(NSArray<NSDictionary *> *valet) {
+    if (!sLaunchSnapshotActive) return;
+    sLaunchSnapshotValet = valet;
+    sLaunchSnapshotValetValid = YES;
+    sLaunchSnapshotValetReadFailed = NO;
+}
+
 // Backfills the logged-in username onto a live RDKMe/RDKUser when it has none.
 //
 // Why this is needed: when the current account's currentUser is archived WITHOUT
@@ -423,7 +481,7 @@ static void ApolloWebJSONBackfillUsernameOnUser(id user) {
 // Reads the Valet `2RedditAccounts2` array ([[String:String]]) — the per-index
 // sensitive dicts paired with the `RedditAccounts2` ([RDKClient]) array. Used so
 // append can read-modify-write rather than clobber existing accounts' secrets.
-static NSArray<NSDictionary *> *ApolloWebJSONReadValetAccountsArray(BOOL *outReadFailed) {
+static NSArray<NSDictionary *> *ApolloWebJSONReadValetAccountsArrayUncached(BOOL *outReadFailed) {
     if (outReadFailed) *outReadFailed = NO;
     CFDictionaryRef query =
         ApolloCreateGenericPasswordDataQuery(kApolloValetAccountsService,
@@ -451,6 +509,22 @@ static NSArray<NSDictionary *> *ApolloWebJSONReadValetAccountsArray(BOOL *outRea
     return [obj isKindOfClass:[NSArray class]] ? obj : @[];
 }
 
+static NSArray<NSDictionary *> *ApolloWebJSONReadValetAccountsArray(BOOL *outReadFailed) {
+    if (sLaunchSnapshotActive && sLaunchSnapshotValetValid) {
+        if (outReadFailed) *outReadFailed = sLaunchSnapshotValetReadFailed;
+        return sLaunchSnapshotValet;
+    }
+    BOOL readFailed = NO;
+    NSArray<NSDictionary *> *valet = ApolloWebJSONReadValetAccountsArrayUncached(&readFailed);
+    if (outReadFailed) *outReadFailed = readFailed;
+    if (sLaunchSnapshotActive) {
+        sLaunchSnapshotValet = valet;
+        sLaunchSnapshotValetValid = YES;
+        sLaunchSnapshotValetReadFailed = readFailed;
+    }
+    return valet;
+}
+
 // Returns the lowercased username for the account at `index` in RedditAccounts2,
 // or nil if absent/unreadable. Used to detect "this username already has an
 // account" so re-synthesis for the same user is a no-op rather than a duplicate.
@@ -476,8 +550,7 @@ BOOL ApolloWebJSONSynthesizeSignedInAccount(NSString *username) {
     NSUserDefaults *group = [[NSUserDefaults alloc] initWithSuiteName:kApolloGroupSuite];
     NSString *lowerUsername = username.lowercaseString;
 
-    id existingAccountsObj = ApolloWebJSONUnarchive([group objectForKey:@"RedditAccounts2"]);
-    NSArray *existingAccounts = [existingAccountsObj isKindOfClass:[NSArray class]] ? existingAccountsObj : @[];
+    NSArray *existingAccounts = ApolloWebJSONDecodedAccounts(group);
 
     // Never clobber an already-loaded account for THIS username. A present
     // account whose currentUser lacks a username is fixed at runtime by
@@ -492,7 +565,9 @@ BOOL ApolloWebJSONSynthesizeSignedInAccount(NSString *username) {
     }
 
     // Template: reuse the app-only RDKClient archive (a known-good object graph
-    // Apollo itself produced), falling back to a fresh instance.
+    // Apollo itself produced), falling back to a fresh instance. Decoded per
+    // call rather than shared through the launch snapshot — two web-session
+    // usernames must not end up appending the same client object twice.
     id client = ApolloWebJSONUnarchive([group objectForKey:@"RedditApplicationOnlyAccount2"]);
     if (![client isMemberOfClass:clientClass]) client = [[clientClass alloc] init];
     if (!client) return NO;
@@ -566,6 +641,8 @@ BOOL ApolloWebJSONSynthesizeSignedInAccount(NSString *username) {
     ApolloWebJSONWriteValetItem(kApolloAccountsKeychainKey, sensitiveData);
     [group setInteger:(NSInteger)newIndex forKey:@"CurrentRedditAccountIndex"];
     [group synchronize];
+    ApolloWebJSONNoteAccountsWritten(newAccounts);
+    ApolloWebJSONNoteValetAccountsWritten(newValet);
     ApolloLog(@"[WebJSON][identity] Synthesized signed-in account for u/%@ at index %lu (restart to load)",
               username, (unsigned long)newIndex);
     return YES;
@@ -584,8 +661,7 @@ BOOL ApolloWebJSONSynthesizeSignedInAccount(NSString *username) {
 void ApolloWebJSONSeedBearerRegistryFromDisk(void) {
     if (!sWebJSONEnabled) return;
     NSUserDefaults *group = [[NSUserDefaults alloc] initWithSuiteName:kApolloGroupSuite];
-    id accountsObj = ApolloWebJSONUnarchive([group objectForKey:@"RedditAccounts2"]);
-    NSArray *accounts = [accountsObj isKindOfClass:[NSArray class]] ? accountsObj : @[];
+    NSArray *accounts = ApolloWebJSONDecodedAccounts(group);
     if (accounts.count == 0) return;
     NSArray<NSDictionary *> *valet = ApolloWebJSONReadValetAccountsArray(NULL) ?: @[];
 
@@ -605,8 +681,7 @@ BOOL ApolloWebJSONDiskAccountHasRealCredential(NSString *username) {
     if (username.length == 0) return NO;
     NSString *lowerUsername = username.lowercaseString;
     NSUserDefaults *group = [[NSUserDefaults alloc] initWithSuiteName:kApolloGroupSuite];
-    id accountsObj = ApolloWebJSONUnarchive([group objectForKey:@"RedditAccounts2"]);
-    NSArray *accounts = [accountsObj isKindOfClass:[NSArray class]] ? accountsObj : @[];
+    NSArray *accounts = ApolloWebJSONDecodedAccounts(group);
     if (accounts.count == 0) return NO;
     NSArray<NSDictionary *> *valet = ApolloWebJSONReadValetAccountsArray(NULL) ?: @[];
 
@@ -650,8 +725,7 @@ BOOL ApolloWebJSONDiskAccountHasRealCredential(NSString *username) {
 void ApolloWebJSONRepairPoisonedAccountBlobs(void) {
     if (!sWebJSONEnabled) return;
     NSUserDefaults *group = [[NSUserDefaults alloc] initWithSuiteName:kApolloGroupSuite];
-    id accountsObj = ApolloWebJSONUnarchive([group objectForKey:@"RedditAccounts2"]);
-    NSArray *accounts = [accountsObj isKindOfClass:[NSArray class]] ? accountsObj : @[];
+    NSArray *accounts = ApolloWebJSONDecodedAccounts(group);
     if (accounts.count < 2) return;
 
     // Group indexes by username; only web-session usernames can be poison.
@@ -716,6 +790,9 @@ void ApolloWebJSONRepairPoisonedAccountBlobs(void) {
         ApolloLog(@"[WebJSON][repair] failed to re-archive repaired accounts array: %@ — leaving blob unchanged", err);
         return;
     }
+    // No snapshot refresh: the victims were cleared in place on the very array
+    // the launch snapshot holds, so a later reader in this window already sees
+    // the repaired state.
     [group setObject:accountsData forKey:@"RedditAccounts2"];
     [group synchronize];
     ApolloLog(@"[WebJSON][repair] Cleared poisoned currentUser on %lu account(s); their real identity reloads on next selection",

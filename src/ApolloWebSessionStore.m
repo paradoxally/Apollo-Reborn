@@ -4,6 +4,7 @@
 #import "UserDefaultConstants.h"
 
 #import <Security/Security.h>
+#import <os/lock.h>
 
 @implementation ApolloWebSessionEntry
 @end
@@ -110,12 +111,70 @@ static BOOL ApolloWebSessionIsPrimary(NSString *key) {
     return ApolloWebSessionIndexContains(kUDKeyWebSessionUsernameIndex, key);
 }
 
+#pragma mark - In-memory session cache
+
+// One resolved session per normalized username, kept until a write changes it.
+//
+// Resolving a session costs two SecItemCopyMatching calls plus a defaults array
+// scan, and nothing used to reuse the result: the request rewrite resolves the
+// session twice for every Reddit API request, on whichever thread created the
+// task, and the identity hooks, poll/chat pollers and switcher rows each resolve
+// it again. The keychain is now read once per username per launch, and again
+// only after a write. A generation counter, bumped by every writer, keeps a read
+// that raced a write from publishing a stale entry — the same shape as the
+// active-username cache in ApolloAccountCredentials.m.
+//
+// Only this file writes these items, so invalidation is complete. A settings
+// restore replays the keychain behind our back but then force-exits, so the
+// cache never outlives the state it describes.
+static os_unfair_lock sSessionCacheLock = OS_UNFAIR_LOCK_INIT;
+static NSMutableDictionary<NSString *, id> *sSessionCache = nil; // NSNull = known to have no session
+static uint64_t sSessionCacheGeneration = 1;
+
+// Callers get their own object: the cached entry is shared across threads and
+// must stay immutable after publication.
+static ApolloWebSessionEntry *ApolloWebSessionCopyEntry(ApolloWebSessionEntry *entry) {
+    if (!entry) return nil;
+    ApolloWebSessionEntry *copy = [ApolloWebSessionEntry new];
+    copy.cookieHeader = entry.cookieHeader;
+    copy.modhash = entry.modhash;
+    copy.pollOnly = entry.pollOnly;
+    return copy;
+}
+
+static BOOL ApolloWebSessionCacheLookup(NSString *key, ApolloWebSessionEntry **outEntry, uint64_t *outGeneration) {
+    os_unfair_lock_lock(&sSessionCacheLock);
+    id cached = sSessionCache[key];
+    uint64_t generation = sSessionCacheGeneration;
+    os_unfair_lock_unlock(&sSessionCacheLock);
+    if (outGeneration) *outGeneration = generation;
+    if (!cached) return NO;
+    if (outEntry) *outEntry = [cached isKindOfClass:[ApolloWebSessionEntry class]] ? cached : nil;
+    return YES;
+}
+
+static void ApolloWebSessionCachePublish(NSString *key, ApolloWebSessionEntry *entry, uint64_t generation) {
+    os_unfair_lock_lock(&sSessionCacheLock);
+    if (generation == sSessionCacheGeneration) {
+        if (!sSessionCache) sSessionCache = [NSMutableDictionary dictionary];
+        sSessionCache[key] = entry ?: (id)[NSNull null];
+    }
+    os_unfair_lock_unlock(&sSessionCacheLock);
+}
+
+static void ApolloWebSessionCacheInvalidate(void) {
+    os_unfair_lock_lock(&sSessionCacheLock);
+    [sSessionCache removeAllObjects];
+    sSessionCacheGeneration++;
+    os_unfair_lock_unlock(&sSessionCacheLock);
+}
+
 #pragma mark - Public API
 
 // Reads the raw keychain-backed session (cookie + modhash) for a normalized key,
 // with pollOnly resolved from the poll-only index. Returns nil when no cookie is
-// stored. Shared by the primary-only and poll-inclusive public accessors.
-static ApolloWebSessionEntry *ApolloWebSessionReadEntry(NSString *key) {
+// stored.
+static ApolloWebSessionEntry *ApolloWebSessionDecodeEntry(NSString *key) {
     NSString *cookie = ApolloWebSessionKeychainRead(ApolloWebSessionKeychainAccountName(@"cookie", key));
     if (cookie.length == 0) return nil;
     ApolloWebSessionEntry *entry = [ApolloWebSessionEntry new];
@@ -125,13 +184,23 @@ static ApolloWebSessionEntry *ApolloWebSessionReadEntry(NSString *key) {
     return entry;
 }
 
+// Cache-fronted resolution. Shared by the primary-only and poll-inclusive
+// public accessors.
+static ApolloWebSessionEntry *ApolloWebSessionReadEntry(NSString *key) {
+    ApolloWebSessionEntry *cached = nil;
+    uint64_t generation = 0;
+    if (ApolloWebSessionCacheLookup(key, &cached, &generation)) return ApolloWebSessionCopyEntry(cached);
+    ApolloWebSessionEntry *entry = ApolloWebSessionDecodeEntry(key);
+    ApolloWebSessionCachePublish(key, entry, generation);
+    return ApolloWebSessionCopyEntry(entry);
+}
+
 ApolloWebSessionEntry *ApolloWebSessionFor(NSString *username) {
     NSString *key = ApolloWebSessionNormalizeUsername(username);
     if (key.length == 0) return nil;
-    // A poll-only session is invisible to the transport/identity spine. Check the
-    // (fast, defaults-backed) index before touching the keychain.
-    if (ApolloWebSessionIsPollOnly(key)) return nil;
-    return ApolloWebSessionReadEntry(key);
+    // A poll-only session is invisible to the transport/identity spine.
+    ApolloWebSessionEntry *entry = ApolloWebSessionReadEntry(key);
+    return entry.pollOnly ? nil : entry;
 }
 
 ApolloWebSessionEntry *ApolloWebSessionPollFor(NSString *username) {
@@ -149,6 +218,7 @@ void ApolloWebSessionSet(NSString *username, NSString *cookieHeader, NSString *m
     // Promote to primary: in the primary index, out of the poll-only one.
     ApolloWebSessionUpdateIndexNamed(kUDKeyWebSessionPollOnlyIndex, key, NO);
     ApolloWebSessionUpdateIndex(key, YES);
+    ApolloWebSessionCacheInvalidate();
     ApolloLogDebug(@"[WebSessionStore] Stored web session for u/%@ (%lu cookie bytes, modhash %@)",
                    username, (unsigned long)cookieHeader.length, modhash.length > 0 ? @"present" : @"absent");
 }
@@ -168,6 +238,7 @@ void ApolloWebSessionSetPollOnly(NSString *username, NSString *cookieHeader, NSS
     ApolloWebSessionKeychainWrite(ApolloWebSessionKeychainAccountName(@"modhash", key), modhash ?: @"");
     ApolloWebSessionUpdateIndex(key, NO);
     ApolloWebSessionUpdateIndexNamed(kUDKeyWebSessionPollOnlyIndex, key, YES);
+    ApolloWebSessionCacheInvalidate();
     ApolloLogDebug(@"[WebSessionStore] Stored poll-only web session for u/%@ (%lu cookie bytes, modhash %@)",
                    username, (unsigned long)cookieHeader.length, modhash.length > 0 ? @"present" : @"absent");
 }
@@ -179,6 +250,7 @@ void ApolloWebSessionRemove(NSString *username) {
     ApolloWebSessionKeychainWrite(ApolloWebSessionKeychainAccountName(@"modhash", key), nil);
     ApolloWebSessionUpdateIndex(key, NO);
     ApolloWebSessionUpdateIndexNamed(kUDKeyWebSessionPollOnlyIndex, key, NO);
+    ApolloWebSessionCacheInvalidate();
     ApolloLog(@"[WebSessionStore] Removed web session for u/%@", username);
 }
 

@@ -8,28 +8,14 @@ All notable changes to this project will be documented in this file.
 
 ### Performance
 
-This release is mostly about speed and memory. Everything below is Apollo-Reborn's own work and applies to every user, with no settings to change.
+Apollo-Reborn now launches quicker, holds less memory and does less work during a scroll. Every number below was measured before and after the change, and none of them need a setting turned on.
 
-- Make the app **start faster** — the tweak did a pile of setup work on every launch that it never needed to do, and now it does it once or not at all (#49: @paradoxally)
-  - The startup work the tweak is responsible for went from **237 ms to 134 ms**, a little over a 40% cut
-  - Your saved translations are no longer read from disk at launch unless you actually use Translation, and they are saved in the background instead of freezing the app for a moment when you switch away
-  - Settings the tweak used to rewrite on every single launch are now written once, and four separate scans of the app's libraries became one
-- Use **less memory, and give it back when the phone asks** (#50: @paradoxally)
-  - Apollo-Reborn's image caches could grow to a combined **690 MB**; they are now capped at **314 MB** in total, sized per feature
-  - In a repeatable test (browsing all 32 wallpapers), memory sat **66 MB lower** and the peak was **61 MB lower**
-  - All 23 image caches now empty themselves when iOS warns the app about memory, instead of only one doing so — this is the situation that used to end in a crash
-- Stop **editing a comment from hanging the app** — a repair step for Reddit's reply format used to make a second request and wait for it, for as long as 20 seconds, before your edit could finish (#51: @paradoxally)
-  - The edit is now rebuilt from the comment already on screen, so nothing waits on the network. In testing the same step went from **1 to 8 seconds down to under 40 milliseconds**
-- Make **signing in with a Reddit account snappier throughout the app** for accounts that use the web sign-in (#44: @paradoxally)
-  - Your saved accounts were being decoded three times at every launch; now once
-  - Your session is kept in memory instead of being read from the keychain on every request — about **645 keychain reads per minute of browsing became 5**
-- Do **less work while you scroll** (#45, #47: @paradoxally)
-  - Text-matching patterns used for translation, link previews, summaries and flair are now built once instead of for every item — one helper went from about **1.5 ms to 20 µs** per comment
-  - Two features that check every piece of text on screen now step aside instantly when they are switched off, which removed roughly **7 locks per line of text** in comment threads
-- Keep **diagnostic logging off unless you ask for it** (#46: @paradoxally)
-  - The tweak wrote every internal log line to disk even with nothing enabled; the first minute after launch went from **134 written lines to 4**
-  - Turn it back on any time with **Verbose Logging** in **Settings > Apollo Reborn > Advanced**
-- Reduce the **keychain chatter** behind account sign-in — a duplicate read used only for a log line is gone, and a broad keychain scan now runs only for account keys instead of any lookup that misses (#48: @paradoxally)
+- Improve **launch time** — the tweak's share of startup is down from **237 ms to 134 ms**, a little over a 40% cut, and leaving the app no longer pauses to save translations (#49: @paradoxally)
+- Improve **memory use** — the 23 image caches for wallpapers, subreddit banners and icons, avatars, link previews, gallery photos, chat images and badges now share a **314 MB** budget instead of a possible **690 MB**, and all of them empty on a low-memory warning rather than just one. Browsing all 32 wallpapers holds **66 MB less**, with a **61 MB lower peak** (#50: @paradoxally)
+- Improve **comment editing** — an edit that Reddit answers with an incomplete copy is now repaired from the comment already on screen instead of waiting on a second request, so the step that could take **up to 20 seconds** finishes in **under 40 milliseconds** (#51: @paradoxally)
+- Improve **web-session sign-ins** — the session is kept in memory rather than fetched from the keychain for every request, which turns roughly **645 keychain reads per minute of browsing into 5**, and the saved account list is unpacked once per launch instead of three times (#44: @paradoxally)
+- Improve **scrolling** — the patterns that find links, images, flair and article text are built once instead of per item, taking the link scan in a translated comment from about **1.5 ms to 20 µs**, and Deleted Comments and the sidebar's duplicate-section trimmer now cost nothing while they are switched off (#45, #47: @paradoxally)
+- Improve **background overhead** — diagnostic logging is off unless **Verbose Logging** in **Settings > Apollo Reborn > Advanced** is on, down from **134 log lines in the first minute** to **4**, and reading a stored sign-in no longer triggers a duplicate read or a scan of every saved password (#46, #48: @paradoxally)
 
 ### Features
 

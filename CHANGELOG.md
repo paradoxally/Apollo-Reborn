@@ -19,6 +19,10 @@ Apollo-Reborn now launches quicker, holds less memory and does less work during 
 
 ### Features
 
+- Add pinned live previews to **Subreddit Layout** — a header preview for the Immersive, Compact and Native **Header Style**, a Community Highlights preview for Full, Partial and Off, and separate User Flair, Sidebar, Subtitle and Description toggles that update open subreddits without reopening them ([#1019](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1019): @IllIIllIllIllII)
+- Add a **Source** picker to the Feed and Post **widgets** — Home, Popular, All or a subreddit — and let every widget's subreddit field take several subreddits at once, a pasted link, or a multireddit ([#1051](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1051): @icpryde)
+- Show each **Chat** conversation once on the Inbox's Notifications side, and open it in modern Chat rather than Apollo's legacy thread when Use Modern Reddit Chat is on, with the Inbox badge no longer counting an unread chat twice ([#1038](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1038): @icpryde)
+- Improve **Find in Comments** on Liquid Glass — it is now the same native search bar the feed uses, activating in place with the match count inside the field ([#1036](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1036): @icpryde)
 - Add **read state and new-comment indicators to Community Highlights** — highlighted posts you have already opened are dimmed, and ones with replies since your last visit are marked ([#1041](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1041): @IllIIllIllIllII)
 - Add a **Profile Layout Preview** so you can see a profile layout before committing to it ([#1034](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1034): @IllIIllIllIllII)
 - Add **per-account alphabetical sorting for favorites**, so each account can order its favorites its own way ([#1042](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1042): @IllIIllIllIllII)
@@ -28,6 +32,8 @@ Apollo-Reborn now launches quicker, holds less memory and does less work during 
 
 ### Fixes
 
+- Fix **Live Interactive Posts** — post-match threads render as normal text posts instead of an endless spinner, finished match threads no longer leave a hole in feed cards, the external-link confirmation works, and rotation relays out ([#1046](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1046): @icpryde)
+- Fix the **What's New** sheet dimming its last row behind the bottom fade when the content scrolls (#53: @paradoxally)
 - Fix the **Posts tab not returning to the subreddit list** after visiting a followed user's profile ([#1040](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1040): @IllIIllIllIllII)
 - Fix the **in-app browser flashing white** while a link loads in dark mode — the page stays black until it is ready ([#1052](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1052): @icpryde)
 - Fix the **feed search bar disappearing** when a feed re-appears already scrolled to its top ([#1026](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1026): @icpryde)

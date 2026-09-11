@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.16.0] - 2026-09-11
+
+### Performance
+
+This release is mostly about speed and memory. Everything below is Apollo-Reborn's own work and applies to every user, with no settings to change.
+
+- Make the app **start faster** — the tweak did a pile of setup work on every launch that it never needed to do, and now it does it once or not at all (#49: @paradoxally)
+  - The startup work the tweak is responsible for went from **237 ms to 134 ms**, a little over a 40% cut
+  - Your saved translations are no longer read from disk at launch unless you actually use Translation, and they are saved in the background instead of freezing the app for a moment when you switch away
+  - Settings the tweak used to rewrite on every single launch are now written once, and four separate scans of the app's libraries became one
+- Use **less memory, and give it back when the phone asks** (#50: @paradoxally)
+  - Apollo-Reborn's image caches could grow to a combined **690 MB**; they are now capped at **314 MB** in total, sized per feature
+  - In a repeatable test (browsing all 32 wallpapers), memory sat **66 MB lower** and the peak was **61 MB lower**
+  - All 23 image caches now empty themselves when iOS warns the app about memory, instead of only one doing so — this is the situation that used to end in a crash
+- Stop **editing a comment from hanging the app** — a repair step for Reddit's reply format used to make a second request and wait for it, for as long as 20 seconds, before your edit could finish (#51: @paradoxally)
+  - The edit is now rebuilt from the comment already on screen, so nothing waits on the network. In testing the same step went from **1 to 8 seconds down to under 40 milliseconds**
+- Make **signing in with a Reddit account snappier throughout the app** for accounts that use the web sign-in (#44: @paradoxally)
+  - Your saved accounts were being decoded three times at every launch; now once
+  - Your session is kept in memory instead of being read from the keychain on every request — about **645 keychain reads per minute of browsing became 5**
+- Do **less work while you scroll** (#45, #47: @paradoxally)
+  - Text-matching patterns used for translation, link previews, summaries and flair are now built once instead of for every item — one helper went from about **1.5 ms to 20 µs** per comment
+  - Two features that check every piece of text on screen now step aside instantly when they are switched off, which removed roughly **7 locks per line of text** in comment threads
+- Keep **diagnostic logging off unless you ask for it** (#46: @paradoxally)
+  - The tweak wrote every internal log line to disk even with nothing enabled; the first minute after launch went from **134 written lines to 4**
+  - Turn it back on any time with **Verbose Logging** in **Settings > Apollo Reborn > Advanced**
+- Reduce the **keychain chatter** behind account sign-in — a duplicate read used only for a log line is gone, and a broad keychain scan now runs only for account keys instead of any lookup that misses (#48: @paradoxally)
+
+### Features
+
+- Add **read state and new-comment indicators to Community Highlights** — highlighted posts you have already opened are dimmed, and ones with replies since your last visit are marked ([#1041](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1041): @IllIIllIllIllII)
+- Add a **Profile Layout Preview** so you can see a profile layout before committing to it ([#1034](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1034): @IllIIllIllIllII)
+- Add **per-account alphabetical sorting for favorites**, so each account can order its favorites its own way ([#1042](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1042): @IllIIllIllIllII)
+- Add **Bold Post Titles** — a toggle under **Settings > Appearance > Posts** that renders feed titles in Semibold ([#1033](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1033): @icpryde)
+- Improve **Floating Tabs** with crest faces for match threads and letter faces for text posts from the same subreddit ([#1061](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1061): @icpryde)
+- Improve the **Liquid Glass navigation and Moderator UI** with a round of polish ([#1047](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1047): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix the **Posts tab not returning to the subreddit list** after visiting a followed user's profile ([#1040](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1040): @IllIIllIllIllII)
+- Fix the **in-app browser flashing white** while a link loads in dark mode — the page stays black until it is ready ([#1052](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1052): @icpryde)
+- Fix the **feed search bar disappearing** when a feed re-appears already scrolled to its top ([#1026](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1026): @icpryde)
+- Fix the **Theme Manager label** vanishing after the Post Size action sheet, and drop its bold weight ([#1032](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1032): @icpryde)
+- Fix the **empty gap in comment bodies** left behind when a hidden character is stripped ([#1050](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1050): @icpryde)
+
 ## [v3.15.0] - 2026-09-07
 
 ### Features
@@ -1186,6 +1230,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.16.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.15.0...v1.15.11_3.16.0
 [v3.15.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.14.0...v1.15.11_3.15.0
 [v3.14.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.2...v1.15.11_3.14.0
 [v3.13.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.1...v1.15.11_3.13.2

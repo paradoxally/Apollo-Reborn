@@ -64,6 +64,20 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
 - (instancetype)initWithHeadline:(NSString *)headline items:(NSArray<NSDictionary *> *)items;
 @end
 
+// Bottom-chrome geometry. The fade is anchored to the Continue button's top
+// rather than to the scroll view's bottom, so these three together decide where
+// a fully-scrolled last row lands relative to the ramp.
+static const CGFloat kContinueButtonGap = 12.0;
+static const CGFloat kBottomFadeHeight = 104.0;
+static const CGFloat kRowsBottomPadding = 24.0;
+
+// Room reserved below the content once it scrolls, so the last row comes to rest
+// at the fade's fully-transparent top edge instead of inside the ramp. Applied
+// as a content inset rather than as more bottom padding: contentSize stays
+// independent of it, so the does-it-scroll test below can't be flipped by it and
+// a sheet whose content already fits keeps exactly the layout it has.
+static const CGFloat kScrolledBottomClearance = kBottomFadeHeight - kContinueButtonGap - kRowsBottomPadding;
+
 @implementation ApolloWhatsNewViewController {
     NSString *_headline;
     NSArray<NSDictionary *> *_items;
@@ -114,7 +128,7 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
         [_scrollView.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
         [_scrollView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [_scrollView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
-        [_scrollView.bottomAnchor constraintEqualToAnchor:_continueButton.topAnchor constant:-12],
+        [_scrollView.bottomAnchor constraintEqualToAnchor:_continueButton.topAnchor constant:-kContinueButtonGap],
     ]];
 
     // A gradient strip pinned above the button, independent of scroll
@@ -154,7 +168,7 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
         // seamed cutoff right before the button instead of blending into it.
         [_bottomFadeView.bottomAnchor constraintEqualToAnchor:_continueButton.topAnchor],
         // Taller than the old 68pt strip so the eased ramp has room to finish.
-        [_bottomFadeView.heightAnchor constraintEqualToConstant:104],
+        [_bottomFadeView.heightAnchor constraintEqualToConstant:kBottomFadeHeight],
     ]];
 
     UIView *content = [[UIView alloc] init];
@@ -225,7 +239,7 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
         [rowsStack.topAnchor constraintEqualToAnchor:_headerStack.bottomAnchor constant:40],
         [rowsStack.leadingAnchor constraintEqualToAnchor:content.leadingAnchor constant:28],
         [rowsStack.trailingAnchor constraintEqualToAnchor:content.trailingAnchor constant:-28],
-        [rowsStack.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-24],
+        [rowsStack.bottomAnchor constraintEqualToAnchor:content.bottomAnchor constant:-kRowsBottomPadding],
     ]];
 
     _continueButton.alpha = 0.0;
@@ -333,6 +347,13 @@ static UIImage *ApolloWhatsNewCurrentAppIcon(void);
 - (void)apollo_updateBottomFadeVisibility {
     BOOL hasOverflow = _scrollView.contentSize.height > CGRectGetHeight(_scrollView.bounds) + 1.0;
     _bottomFadeView.hidden = !hasOverflow;
+
+    CGFloat clearance = hasOverflow ? kScrolledBottomClearance : 0.0;
+    UIEdgeInsets insets = _scrollView.contentInset;
+    if (insets.bottom != clearance) {
+        insets.bottom = clearance;
+        _scrollView.contentInset = insets;
+    }
 }
 
 - (UIView *)apollo_makeRowForItem:(NSDictionary *)item accent:(UIColor *)accent {

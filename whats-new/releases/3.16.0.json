@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "version": "3.16.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "bolt.fill", "title": "Faster Launches", "subtitle": "The tweak's share of startup is down from 237 ms to 134 ms, and leaving the app no longer pauses to save translations." },
+    { "icon": "memorychip", "title": "Lighter on Memory", "subtitle": "The image caches share a 314 MB budget instead of a possible 690 MB, and all of them empty when iOS warns the app it is low. Browsing wallpapers holds 66 MB less." },
+    { "icon": "square.and.pencil", "title": "Instant Comment Edits", "subtitle": "Saving an edit no longer waits on a second request, so a step that could take up to 20 seconds finishes in under 40 milliseconds." },
+    { "icon": "eye.fill", "title": "Community Highlights", "subtitle": "Highlights you have already opened are dimmed, and ones with new replies since your last visit are marked." },
+    { "icon": "person.crop.rectangle.fill", "title": "Profile Layout Preview", "subtitle": "See what a profile layout looks like before you commit to it." }
+  ]
+}

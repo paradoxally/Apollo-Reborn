@@ -21,6 +21,7 @@ static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "3.15.0", "What's New in Apollo Reborn" },
     { "3.16.0", "What's New in Apollo Reborn" },
     { "3.5.0", "What's New in Apollo Reborn" },
+    { "3.7.0", "What's New in Apollo Reborn" },
     { "3.9.0", "What's New in Apollo Reborn" },
 };
 
@@ -70,6 +71,14 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "3.5.0", "bubble.left.and.bubble.right.fill", "Native Chat", "A modern chat experience, built right in." },
     { "3.5.0", "app.badge", "New Icon Picker", "Browse and apply app icons in a redesigned picker." },
     { "3.5.0", "star.circle.fill", "Reddit Awards", "Give and see awards on posts and comments." },
+    { "3.7.0", "bubble.left.and.bubble.right.fill", "Floating Post Tabs", "Keep up to five posts open as draggable bubbles and jump back to exactly where you left off." },
+    { "3.7.0", "list.bullet.rectangle", "Feed Shortcuts & Sections", "Restyle the feed shortcuts, give followed users their own section, reorder sections, and keep favorites per account." },
+    { "3.7.0", "dock.rectangle", "Tab Bar Hide Styles", "Hide the tab bar with Left, Right, Fade, or Down, and bring back Apollo's classic one-gesture scroll behavior." },
+    { "3.7.0", "ellipsis.circle.fill", "Tidier Glass Navigation", "Actions collapse into one pill so titles stay centered, with brighter, easier-to-read moderator controls." },
+    { "3.7.0", "magnifyingglass.circle.fill", "Native Glass Search", "The feed search bar is now the real Liquid Glass pill: it activates in place and tucks away as you scroll." },
+    { "3.7.0", "text.bubble.fill", "Smarter Highlights", "Unread dots, New badges, and +N counts show which Community Highlights you haven't read or that picked up comments." },
+    { "3.7.0", "apps.iphone", "Widgets for Any Feed", "Point the Feed and Post widgets at Home, Popular, All, several subreddits, or a multireddit." },
+    { "3.7.0", "checkmark.shield.fill", "Stability & Fixes", "Fixes for freezes, GIF memory crashes, launch crashes, duplicate saved items, and translation going quiet." },
     { "3.9.0", "bubble.left.and.bubble.right.fill", "Modern Chat & Modmail", "Opt into Reddit's current Chat and Modmail, with requests, group chats, and media." },
     { "3.9.0", "rosette", "Badge Book", "Reddit achievements and a Trophy Case, right on any profile." },
     { "3.9.0", "person.crop.rectangle.fill", "Immersive Headers", "Redesigned subreddit and profile headers, with bands you can turn off." },

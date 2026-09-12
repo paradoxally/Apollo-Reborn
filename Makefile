@@ -50,6 +50,7 @@ ApolloReborn_FILES = \
     $(WHATS_NEW_GEN_M) \
     $(SRC_DIR)/Tweak.xm \
     $(SRC_DIR)/ApolloCommon.m \
+    $(SRC_DIR)/ApolloProfilePagination.xm \
     $(SRC_DIR)/ApolloWebTextDecoding.m \
     $(SRC_DIR)/ApolloMemoryDiagnostics.m \
     $(SRC_DIR)/settings/ApolloSettingsTableViewController.m \
@@ -116,6 +117,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloShareLinks.xm \
     $(SRC_DIR)/ApolloSafariDarkLoading.xm \
     $(SRC_DIR)/ApolloMedia.xm \
+    $(SRC_DIR)/ApolloAsyncDisplayGuard.xm \
     $(SRC_DIR)/ApolloFeedGalleryCarousel.xm \
     $(SRC_DIR)/ApolloSwipeUpComments.xm \
     $(SRC_DIR)/ApolloMediaMetadata.m \
@@ -140,6 +142,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloModmailLayout.xm \
     $(SRC_DIR)/ApolloModmailSubjectCounter.xm \
     $(SRC_DIR)/ApolloAutoHideTabBar.xm \
+    $(SRC_DIR)/ApolloTopBarScrollPresentation.m \
     $(SRC_DIR)/ApolloListBottomInsetGuard.xm \
     $(SRC_DIR)/ApolloTabBarHideStyle.xm \
     $(SRC_DIR)/ApolloIPadTabBarBottom.xm \

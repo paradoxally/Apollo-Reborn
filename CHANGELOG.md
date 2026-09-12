@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.16.1] - 2026-09-12
+
+### Features
+
+- Add **Hide Header on Scroll** on Liquid Glass — the top navigation bar and its header material now hide and return alongside the tab bar, in both **Two-Gesture** and **Classic** scroll behaviour ([#1079](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1079): @IllIIllIllIllII)
+  - **Settings > Apollo Reborn > Interface** splits the related controls apart: **Hide Bars on Scroll** is its own toggle, with **Hide Style**, **Hide Header on Scroll** and **Scroll Behavior** beneath it; they stay out of the way while hiding is off and keep their saved values
+  - Hide Style, Scroll Behavior and Header Style now use native Liquid Glass menus that show the current value in the row
+  - Gallery View keeps the Header Style you picked while scrolling and after the bar reappears, instead of leaving an opaque Hard strip behind
+- Restore **Hidden** as a **Header Style** on Liquid Glass — it removes the top scroll-edge effect without putting a blur in its place, and preferences and backups that already used it work again ([#1074](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1074): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix several **crashes** reported against 3.7.0 ([#1089](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1089): @IllIIllIllIllII)
+  - A launch crash on TrollStore and ElleKit installs while Find in Comments started up
+  - A notification crash from background requests reading settings that had already been replaced
+  - Stale profile responses disrupting the list after an account switch or a refresh
+  - A crash when expanding or collapsing a multireddit changed more rows than Apollo expected; the list now refreshes afterwards, including with reordered sections
+  - Classic Apollo builds under LiveContainer turning on Liquid Glass features they should not have
+- Fix **Liquid Glass** builds aborting when AsyncDisplayKit cannot allocate a node's bitmap, seen when tapping the Posts tab to return to the top of a long Popular feed; the node is left blank instead ([#1099](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1099): @icpryde)
+- Fix **sluggish swipe navigation** introduced in 3.7.0 — pages settle with Apollo's original release easing again after you lift your finger ([#1073](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1073): @IllIIllIllIllII)
+- Fix the **comment jump button** stopping after the first jump — consecutive taps now advance without scrolling by hand, and long-pressing to jump backward lands correctly ([#1094](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1094): @IllIIllIllIllII)
+- Fix a **crash when tapping an injected row** in the legacy ••• sheet with another tweak loaded — Keep in Floating Tab, Show Deleted Comments, Gallery View and Public Sticky are handled before the tap reaches a third-party hook ([#1076](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1076): @icpryde)
+- Fix **fullscreen video going quiet on rotation** — rotating with the viewer open no longer lets the feed underneath mute, unmute or reset the audio session on the video you are watching ([#1080](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1080): @icpryde)
+- Fix **"Error adding to multireddit"** showing on every successful add, and the multireddit row's subtitle staying stale afterwards ([#1081](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1081): @icpryde)
+- Fix the **+N new-comment count** missing from Community Highlights on an explicit refresh ([#1098](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1098): @IllIIllIllIllII)
+- Fix the **Two-Gesture tab bar reveal** opening and snapping back on iOS 27 with the Left or Right hide style ([#1078](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1078): @IllIIllIllIllII)
+
 ## [v3.16.0] - 2026-09-11
 
 ### Performance
@@ -1222,6 +1249,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.16.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.0...v1.15.11_3.16.1
 [v3.16.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.15.0...v1.15.11_3.16.0
 [v3.15.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.14.0...v1.15.11_3.15.0
 [v3.14.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.13.2...v1.15.11_3.14.0

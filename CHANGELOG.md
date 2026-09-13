@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.16.2] - 2026-09-13
+
+### Features
+
+- Add **Collapse Navigation Actions** and **Center Title Between Buttons** to **Settings > Apollo Reborn > Interface > Display & Navigation**, both off by default — with collapse off the Liquid Glass action pill stays expanded, and centering places the title midway between the back button and the actions ([#1105](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1105): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix the **comment sort** on posts opened from anywhere but a feed tap — Community Highlights cards, deep links, Recently Read, Floating Post Tabs and AI summary links now follow the same chain a feed tap does: the subreddit's suggested sort, Remember Subreddit Sort, Remember Post Sort, then your Default Sort ([#1102](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1102): @icpryde)
+- Fix the **comments count title** flashing on every thread refresh — the two-line "N Comments / N New" header now updates in place in the theme's text colour, instead of blinking through white and blank for about 600 ms before landing back on the accent colour (#55: @paradoxally)
+- Fix the **navigation pill** flashing when the subreddit picker opens or closes, and a launch-time loop in the always-expanded path ([#1105](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1105): @IllIIllIllIllII)
+
 ## [v3.16.1] - 2026-09-12
 
 ### Features
@@ -1249,6 +1261,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.16.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.1...v1.15.11_3.16.2
 [v3.16.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.0...v1.15.11_3.16.1
 [v3.16.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.15.0...v1.15.11_3.16.0
 [v3.15.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.14.0...v1.15.11_3.15.0

@@ -40,9 +40,11 @@
 // - The initial sort is computed in the VC's Swift init (before viewDidLoad). viewDidLoad
 //   kicks the first fetch, which uses a non-nil currentSort AS-IS — so writing the ivar
 //   before %orig in viewDidLoad both overrides the init-time chain and feeds the first
-//   fetch AND the sort-button icon setup. On URL-scheme/inbox/Floating-Tab opens
-//   (init(linkID:...)) the `link` ivar is nil until the first fetch returns; the id
-//   comes from the `linkID` Swift ivar there instead — see PPCSPostID.
+//   fetch AND the sort-button icon setup. On URL-scheme/inbox opens (init(linkID:...))
+//   the `link` ivar is nil until the first fetch returns, so this write cannot look the
+//   post up; ApolloURLOpenCommentSort.xm covers those opens (it evaluates the same chain,
+//   per-post memory first, once the first response carries the link). Recording works
+//   either way because the user can only change sort after the load populates `link`.
 // - Every user sort pick funnels through sortBarButtonItemTappedWithSender: -> option
 //   closure -> currentSort ivar write -> reload via -[RDKClient
 //   linkAndCommentsForLinkWithIdentifier:commentSort:pagination:completion:] (bare post
@@ -69,8 +71,8 @@
 
 #import "ApolloCommon.h"
 #import "ApolloState.h"
-#import "ApolloSwiftRuntime.h"
 #import "ApolloThemeRuntime.h"
+#import "ApolloPerPostCommentSort.h"
 #import "UserDefaultConstants.h"
 #import "settings/ApolloSettingsGeneralTable.h"
 
@@ -131,20 +133,12 @@ static BOOL PPCSWriteCurrentSort(id vc, int64_t raw) {
 
 // Bare post id (e.g. "1abcde") from the VC's `link` ivar (RDKLink, a plain ObjC pointer
 // per the class dump). This is the exact identifier the reload fetch is keyed with.
-//
-// `link` is nil until the first fetch returns on every open that starts from a URL
-// rather than a feed cell: the URL scheme, inbox, and — the one that made this matter
-// — a Floating Tab restored after a relaunch, which reopens cold through Apollo's URL
-// router (ApolloFloatingTabs.xm's openTab:). Those opens carry the id in the `linkID`
-// Swift ivar instead, in the same bare form, so the sort still restores.
+// nil on URL-scheme/inbox opens until the first fetch populates `link`.
 static NSString *PPCSPostID(id vc) {
     id link = PPCSObjectIvar(vc, "link");
-    if (link && [link respondsToSelector:@selector(identifier)]) {
-        NSString *identifier = ((NSString *(*)(id, SEL))objc_msgSend)(link, @selector(identifier));
-        if ([identifier isKindOfClass:[NSString class]] && identifier.length > 0) return identifier;
-    }
-    NSString *linkID = ApolloReadSwiftStringIvar(vc, "linkID");
-    return linkID.length > 0 ? linkID : nil;
+    if (!link || ![link respondsToSelector:@selector(identifier)]) return nil;
+    NSString *identifier = ((NSString *(*)(id, SEL))objc_msgSend)(link, @selector(identifier));
+    return ([identifier isKindOfClass:[NSString class]] && identifier.length > 0) ? identifier : nil;
 }
 
 static NSString *PPCSSortName(int64_t raw) {
@@ -293,6 +287,17 @@ static void PPCSDisarm(void) {
 }
 
 %end
+
+// MARK: - exports (ApolloPerPostCommentSort.h)
+//
+// Thin wrappers so ApolloURLOpenCommentSort.xm can reuse the ivar-layout knowledge above
+// without a second copy of it.
+
+BOOL ApolloCommentsVCReadCurrentSort(id vc, int64_t *outRaw) { return PPCSReadCurrentSort(vc, outRaw); }
+BOOL ApolloCommentsVCWriteCurrentSort(id vc, int64_t raw) { return PPCSWriteCurrentSort(vc, raw); }
+id ApolloCommentsVCLink(id vc) { return PPCSObjectIvar(vc, "link"); }
+NSString *ApolloCommentSortName(int64_t raw) { return PPCSSortName(raw); }
+int64_t ApolloPerPostCommentSortSavedSort(NSString *postID) { return postID.length ? PPCSSavedSortForPost(postID) : 0; }
 
 // MARK: - Settings row (registered with ApolloSettingsGeneralTable)
 //

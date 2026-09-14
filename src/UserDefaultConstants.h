@@ -356,7 +356,7 @@ static NSString *const UDKeyApolloRememberSubredditCommentsSort = @"RememberRedd
 // Navigation actions collapse and between-buttons title centering are opt-in (default off).
 static NSString *const UDKeyCollapseNavigationActions = @"CollapseNavigationActions";
 // Show the return button (and the navigation-bar tap) after a status bar tap
-// scrolls a feed or comment thread to the top. Default YES; the second
+// scrolls a feed or comment thread to the top. Default NO; the second
 // status bar tap returns to the saved position regardless.
 static NSString *const UDKeyScrollReturnButton = @"ScrollReturnButton";
 static NSString *const UDKeyCenterTitleBetweenButtons = @"CenterTitleBetweenButtons";

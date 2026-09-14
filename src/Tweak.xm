@@ -3881,7 +3881,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
                                     UDKeyInfoRowPopupMode: @YES,
                                     UDKeyInfoRowOverlayMode: @NO,
                                     UDKeyCollapseNavigationActions: @NO,
-                                    UDKeyScrollReturnButton: @YES,
+                                    UDKeyScrollReturnButton: @NO,
                                     UDKeyCenterTitleBetweenButtons: @NO,
                                     UDKeyInfoRowTapTranslation: @YES,
                                     UDKeyLiveCommentsFollow: @YES,

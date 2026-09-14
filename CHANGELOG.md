@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.16.3] - 2026-09-14
+
+### Features
+
+- Add **Return Button** to **Settings > Apollo Reborn > Interface > Display & Navigation**, off by default — after a status bar tap scrolls a feed or comment thread to the top, an arrow appears beside Back, and tapping it or the navigation bar takes you back to where you were reading ([#1116](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1116): @icpryde, building on [#1115](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1115): @IllIIllIllIllII)
+  - Off by default in this fork, because tapping the status bar a second time already does the same thing; that tap returns you whether the button is on or off
+
+### Fixes
+
+- Fix **tapping the status bar again** not taking you back to where you were on Liquid Glass — the return is Apollo's own feature and never went away, but the native search bar's tables moved the inset it measures against, so a tap at the top was read as a tap away from it and overwrote the saved position instead of returning to it ([#1116](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1116): @icpryde, building on [#1115](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1115): @IllIIllIllIllII)
+  - The saved position is now the post or comment you were looking at and where the viewport sat within its row, re-resolved on the way back, so rows and images that measure asynchronously can't land the return somewhere else
+  - The jump runs on an interruptible display link, so starting a drag cancels it instead of fighting it
+  - The saved position clears when it stops meaning anything: refresh, sort change, switching feeds from the title dropdown, search, account change, and leaving the screen
+  - A header and tab bar hidden by scrolling reveal themselves when the jump reaches the top
+
 ## [v3.16.2] - 2026-09-13
 
 ### Features
@@ -1261,6 +1276,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.16.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.2...v1.15.11_3.16.3
 [v3.16.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.1...v1.15.11_3.16.2
 [v3.16.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.0...v1.15.11_3.16.1
 [v3.16.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.15.0...v1.15.11_3.16.0

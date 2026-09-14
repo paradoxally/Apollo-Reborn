@@ -9,7 +9,7 @@ All notable changes to this project will be documented in this file.
 ### Features
 
 - Add **Return Button** to **Settings > Apollo Reborn > Interface > Display & Navigation**, off by default — after a status bar tap scrolls a feed or comment thread to the top, an arrow appears beside Back, and tapping it or the navigation bar takes you back to where you were reading ([#1116](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1116): @icpryde, building on [#1115](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1115): @IllIIllIllIllII)
-  - Off by default in this fork, because tapping the status bar a second time already does the same thing; that tap returns you whether the button is on or off
+  - Off by default in this fork, because tapping the status bar a second time already does the same thing; that tap returns you whether the button is on or off (#57: @paradoxally)
 
 ### Fixes
 

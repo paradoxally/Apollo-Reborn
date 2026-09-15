@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "3.17.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "clock.arrow.circlepath", "title": "Automatic Backups", "subtitle": "Apollo can write a settings backup to a folder you pick in Files every day, every three days or every seven days. Off by default, under Settings > Apollo Reborn > Backup Settings." },
+    { "icon": "folder.fill", "title": "Manage Backups", "subtitle": "See every backup on the device, split into Automatic and Manual. The newest ten automatic backups are kept; manual ones stay until you delete them." },
+    { "icon": "hand.draw.fill", "title": "Smoother Scrolling", "subtitle": "Scrolling back down right after reaching the top of a post no longer pauses while Find in Comments settles." },
+    { "icon": "checkmark.circle.fill", "title": "Header Stays Put While Editing", "subtitle": "With Hide Header on Scroll enabled, the checkmark stays reachable while you reorder the subreddit list or use the alphabet index." }
+  ]
+}

@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.17.0] - 2026-09-15
+
+### Features
+
+- Add **Automatic Backups** to **Settings > Apollo Reborn > Backup Settings**, off by default — Apollo can write a settings backup to a folder you pick in Files every day, every three days or every seven days, and the countdown runs from the last successful backup, manual ones included ([#1060](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1060): @IllIIllIllIllII)
+  - **Backup Settings** is now its own screen holding Back Up Now, the destination folder and the schedule; Restore Settings stays in Data and opens in the saved folder
+  - **Manage Backups** lists what is on the device, split into Automatic and Manual — the newest ten automatic backups are kept, and manual ones stay until you delete them
+  - A due backup runs while Apollo is open, or the next time you come back to it; a failure shows what went wrong and retries after 15 minutes
+  - The destination folder and its permission live outside the backup itself, so exporting or restoring settings never carries them to another install
+
+### Fixes
+
+- Fix the **pause when you scroll back down** right after reaching the top of a post — Find in Comments was still animating the list upward as the new drag began, so a drag now cancels that animation and the list follows your finger straight away ([#1119](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1119): @IllIIllIllIllII)
+  - Also fixes a stutter with **Hide Header on Scroll** on, where search bar layout changes could hide and reveal the header over and over
+- Fix **Hide Header on Scroll** hiding the header while you edit the subreddit list — the checkmark stays reachable through reordering rows and using the alphabet index ([#1120](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1120): @IllIIllIllIllII)
+  - Tapping the status bar to jump to the top brings the header and tab bar back immediately and keeps them visible for the jump; normal hiding resumes when you scroll down again
+
 ## [v3.16.3] - 2026-09-14
 
 ### Features
@@ -1276,6 +1293,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.17.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.3...v1.15.11_3.17.0
 [v3.16.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.2...v1.15.11_3.16.3
 [v3.16.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.1...v1.15.11_3.16.2
 [v3.16.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.0...v1.15.11_3.16.1

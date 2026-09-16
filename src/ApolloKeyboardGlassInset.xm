@@ -74,9 +74,21 @@ static CGFloat sApolloKeyboardGlassLoggedDelta = -1.0;
 // UIWindow subclass (Apollo.ThemeableWindow), so this cannot test for an exact
 // class. The bar itself lives in UITextEffectsWindow, which is why the guide
 // has to be read from the app's side and converted across.
-static UIWindow *ApolloKeyboardGlassAppWindow(void) {
+//
+// Scoped to the bar's OWN scene. Apollo runs multi-window on iPad and visionOS,
+// where a scene-blind walk can hand back a window from a different scene and
+// measure a keyboard that is not the one covering this bar — either missing a
+// real overlap or inventing one.
+//
+// A nil scene falls back to the scene-blind walk rather than declining to
+// measure. The bar lives in UITextEffectsWindow, and refusing to correct
+// wherever that window turns out to have no scene would trade a verified fix
+// for an unverified assumption; with no scene there is also nothing to
+// disambiguate, so the blind walk is the best answer available.
+static UIWindow *ApolloKeyboardGlassAppWindow(UIWindowScene *scene) {
     UIWindow *fallback = nil;
     for (UIWindow *window in ApolloAllWindows()) {
+        if (scene && window.windowScene != scene) continue;
         if (window.hidden || window.alpha < 0.01) continue;
         NSString *name = NSStringFromClass(window.class);
         if ([name containsString:@"Keyboard"] || [name containsString:@"TextEffects"]) continue;
@@ -90,20 +102,37 @@ static UIWindow *ApolloKeyboardGlassAppWindow(void) {
 // CGFLOAT_MAX when UIKit has no opinion yet. Window coordinates are shared
 // across the app and text-effects windows even while the app is
 // compatibility-scaled, which is what makes this comparable with the bar.
-static CGFloat ApolloKeyboardGlassGuideTopInWindow(void) {
+static CGFloat ApolloKeyboardGlassGuideTopInWindow(UIWindowScene *scene) {
     if (@available(iOS 15.0, *)) {
-        UIWindow *window = ApolloKeyboardGlassAppWindow();
+        UIWindow *window = ApolloKeyboardGlassAppWindow(scene);
         UIView *view = window.rootViewController.view ?: window;
         if (!view) return CGFLOAT_MAX;
-        // layoutFrame only resolves after a layout pass; the guide otherwise
-        // still reads zero on the very event that created it.
         UILayoutGuide *guide = view.keyboardLayoutGuide;
-        [view layoutIfNeeded];
         CGRect frame = guide.layoutFrame;
-        if (CGRectIsEmpty(frame)) return CGFLOAT_MAX;
+        // The guide reads back zero until the first layout pass resolves it, so
+        // one pass is forced to prime it and never again. Forcing it on every
+        // read would put a full root-view layout inside UIKit's keyboard
+        // animation, which is the whole frame budget; -didMoveToWindow primes
+        // it earlier anyway, so this is a fallback rather than the usual path.
+        if (CGRectIsEmpty(frame)) {
+            [view layoutIfNeeded];
+            frame = guide.layoutFrame;
+            if (CGRectIsEmpty(frame)) return CGFLOAT_MAX;
+        }
         return CGRectGetMinY([view convertRect:frame toView:nil]);
     }
     return CGFLOAT_MAX;
+}
+
+// Resolve the guide once the bar joins a window, so the priming layout pass
+// above happens off the keyboard animation's critical path.
+static void ApolloKeyboardGlassPrimeGuide(UIView *bar) {
+    if (@available(iOS 15.0, *)) {
+        UIWindow *window = ApolloKeyboardGlassAppWindow(bar.window.windowScene);
+        UIView *view = window.rootViewController.view ?: window;
+        if (!view) return;
+        if (CGRectIsEmpty(view.keyboardLayoutGuide.layoutFrame)) [view layoutIfNeeded];
+    }
 }
 
 // How far UIKit has parked the bar inside the keyboard's own area, or 0 when it
@@ -112,7 +141,7 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
     UIView *superview = bar.superview;
     if (!superview || !bar.window) return 0.0;
 
-    CGFloat guideTop = ApolloKeyboardGlassGuideTopInWindow();
+    CGFloat guideTop = ApolloKeyboardGlassGuideTopInWindow(bar.window.windowScene);
     if (guideTop == CGFLOAT_MAX) return 0.0;
 
     CGRect inWindow = [superview convertRect:frame toView:nil];
@@ -134,6 +163,11 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
 #pragma mark - Hooks
 
 %hook _TtC6Apollo20QuickBarKeyboardView
+
+- (void)didMoveToWindow {
+    %orig;
+    ApolloKeyboardGlassPrimeGuide((UIView *)self);
+}
 
 - (void)setFrame:(CGRect)frame {
     CGFloat delta = ApolloKeyboardGlassOverlapForFrame((UIView *)self, frame);

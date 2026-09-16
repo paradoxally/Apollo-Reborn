@@ -63,9 +63,70 @@
 
 // Sub-point overlap is rounding, not coverage.
 static const CGFloat kApolloKeyboardGlassEpsilon = 0.5;
+
+// A MEASURED CONSTANT, and the one number here that is not derived at runtime.
+//
+// keyboardLayoutGuide describes a logical box, not where a keyboard actually
+// paints, and third-party keyboards miss by more than Apple's does. Measured on
+// an iPhone 17 Pro Max, same composer, same build: Apple's keyboard leaves
+// 6.3pt between the toolbar glyphs and the panel, Microsoft SwiftKey leaves
+// 3.0pt. The icons are fully drawn either way — this is the bar's background
+// padding being eaten, not its contents — but the bar reads noticeably thinner.
+//
+// There is no in-process way to derive it. The keyboard renders out of process:
+// there is no UIRemoteKeyboardWindow to measure, and Apple's own panel paints
+// full width (1.0 -> 439.0) while its guide claims a 20pt inset, so even the
+// guide's shape cannot stand in for the paint. So this is a deliberate magic
+// number, applied ONLY to non-Apple keyboards and only on top of an already
+// armed correction. A different third-party keyboard may want a different
+// value; re-measure rather than assuming this one transfers.
+static const CGFloat kApolloKeyboardGlassThirdPartyExtraLift = 3.3;
 // Last delta reported to the log, so a settled bar does not reprint the same
 // line on every layout pass.
 static CGFloat sApolloKeyboardGlassLoggedDelta = -1.0;
+
+#pragma mark - Keyboard identity
+
+// sendAction:to:nil walks the responder chain, so this is the supported way to
+// reach the first responder without a private API.
+static __weak UIResponder *sApolloKeyboardGlassFoundResponder = nil;
+
+@interface UIResponder (ApolloKeyboardGlass)
+- (void)apolloKeyboardGlassCaptureResponder:(id)sender;
+@end
+
+@implementation UIResponder (ApolloKeyboardGlass)
+- (void)apolloKeyboardGlassCaptureResponder:(__unused id)sender {
+    sApolloKeyboardGlassFoundResponder = self;
+}
+@end
+
+// Whether the keyboard on screen is a third-party extension rather than Apple's.
+// Apple's input modes carry a locale-shaped identifier ("en_US@sw=QWERTY;hw=Automatic");
+// a keyboard extension's is its bundle identifier, so the "@sw=" marker separates
+// them. Unknown means "assume Apple" — the extra lift is opt-in, and guessing the
+// other way would move the one configuration already confirmed correct.
+static BOOL ApolloKeyboardGlassThirdPartyKeyboardActive(void) {
+    sApolloKeyboardGlassFoundResponder = nil;
+    [UIApplication.sharedApplication sendAction:@selector(apolloKeyboardGlassCaptureResponder:)
+                                             to:nil
+                                           from:nil
+                                       forEvent:nil];
+    UITextInputMode *mode = sApolloKeyboardGlassFoundResponder.textInputMode;
+    if (!mode) return NO;
+    NSString *identifier = nil;
+    @try {
+        identifier = [mode valueForKey:@"identifier"];
+    } @catch (__unused NSException *exception) {
+        return NO;
+    }
+    if (![identifier isKindOfClass:NSString.class] || identifier.length == 0) return NO;
+    return ![identifier containsString:@"@sw="];
+}
+
+// Resolved once per keyboard appearance: the responder walk is far too costly to
+// repeat inside -setFrame:, which runs on every frame of the keyboard transition.
+static BOOL sApolloKeyboardGlassThirdParty = NO;
 
 #pragma mark - Measurement
 
@@ -157,6 +218,12 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
     // A delta at or beyond the bar's own height would mean the bar is entirely
     // swallowed, which is a bad reading rather than a keyboard.
     if (delta < kApolloKeyboardGlassEpsilon || delta >= CGRectGetHeight(inWindow)) return 0.0;
+    // Rides on top of an armed correction rather than arming one of its own, so a
+    // keyboard this tweak has no quarrel with is never nudged.
+    if (sApolloKeyboardGlassThirdParty) {
+        CGFloat padded = delta + kApolloKeyboardGlassThirdPartyExtraLift;
+        if (padded < CGRectGetHeight(inWindow)) delta = padded;
+    }
     return delta;
 }
 
@@ -167,6 +234,7 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
 - (void)didMoveToWindow {
     %orig;
     ApolloKeyboardGlassPrimeGuide((UIView *)self);
+    if (self.window) sApolloKeyboardGlassThirdParty = ApolloKeyboardGlassThirdPartyKeyboardActive();
 }
 
 - (void)setFrame:(CGRect)frame {
@@ -177,9 +245,10 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
             // Always-on: this is the one line that explains a mis-placed bar in
             // a user's log export without needing verbose logging turned on.
             ApolloLogAlways(@"[KeyboardGlass] lifted quick bar by %.1fpt "
-                             "(bar %.1f-%.1f, keyboard top %.1f)",
+                             "(bar %.1f-%.1f, keyboard top %.1f, third-party kb %@)",
                             delta, CGRectGetMinY(frame), CGRectGetMaxY(frame),
-                            CGRectGetMaxY(frame) - delta);
+                            CGRectGetMaxY(frame) - delta,
+                            sApolloKeyboardGlassThirdParty ? @"yes" : @"no");
         }
         frame.origin.y -= delta;
     } else if (sApolloKeyboardGlassLoggedDelta > 0.0) {
@@ -189,3 +258,15 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
 }
 
 %end
+
+%ctor {
+    // The globe key swaps keyboards without the bar leaving its window, so the
+    // cached answer has to follow the input mode as well as the bar's lifecycle.
+    [NSNotificationCenter.defaultCenter
+        addObserverForName:UITextInputCurrentInputModeDidChangeNotification
+                    object:nil
+                     queue:NSOperationQueue.mainQueue
+                usingBlock:^(__unused NSNotification *note) {
+        sApolloKeyboardGlassThirdParty = ApolloKeyboardGlassThirdPartyKeyboardActive();
+    }];
+}

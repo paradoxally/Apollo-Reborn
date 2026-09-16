@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.18.0] - 2026-09-16
+
+### Features
+
+- Redesign the **Account Switcher** into a full-width bottom sheet that opens at half height and grows when more accounts need the room, in the theme's own colours ([#1077](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1077): @IllIIllIllIllII)
+  - Avatars and account rows are larger, Add Account moved to a leading + button, Edit sits top-right, and each account's menu now opens from its own ellipsis
+  - Reordering runs off a drag handle instead of the native lift, so rows no longer resize, snap left or flash their avatars mid-drag, and the active account keeps its place without refreshing the feed behind the sheet
+  - Fixes a crash on switching accounts, caused by Apollo asking for a feed shortcut row that no longer exists on the account you moved to
+- Add **Profile Picture Shape** to **Settings > Apollo Reborn > Interface**, below Show User Profile Pictures — Full, Circle or rounded Square, applied to posts, comments, messages, the profile tab and the account switcher ([#1136](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1136): @IllIIllIllIllII)
+  - The same preference lives in Profile Layout; changing it in either place refreshes every avatar on screen, and subreddit icons keep their own shape
+- Add **Swipe Tab Bar to Navigate** to **Settings > Apollo Reborn > Interface > Tab Bar** on Liquid Glass, off by default — swiping the tab bar goes back and forward again, in exchange for the system's drag-to-switch-tab gesture, which claims the same touch ([#1075](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1075): @DeltAndy123)
+  - The two cannot coexist, and the wiring happens once at launch, so the toggle takes effect on the next restart
+- **Floating Post Tabs** now remember how you sorted a thread — reopening a tab from its bubble brings it back on the sort you left it on, Live Update included, instead of the default sort ([#1125](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1125): @icpryde)
+  - A tab kept from a feed menu, or restored after a relaunch, now also holds its scroll position and collapsed comments from the first reopen onward
+- Settings backups now carry the **Apollo icon with a ZIP label** in Files — new backups use the `.apollobackup` extension while staying ZIP archives inside, and existing `.zip` backups still restore, list and rotate as before ([#1148](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1148): @IllIIllIllIllII)
+- **Swipe Up for Comments** is now off on a fresh install — fullscreen media keeps Apollo's stock behaviour until you turn it on under **Settings > Apollo Reborn > Media > Browsing**, and a choice already saved either way is left alone ([#1134](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1134): @icpryde)
+
+### Fixes
+
+- Fix the **composer quick bar** sitting under the keyboard on iOS 27 — the photo, GIF, link and formatting icons had their bottom edge covered in every composer (#59: @paradoxally)
+  - iOS 27 runs the classic build scaled, so the keyboard frame Apollo is handed is measured in a different space than the screen it draws on; the bar now takes the keyboard's real top from the system's own layout guide and lifts by the difference, which comes to nothing on iOS 26 and on Liquid Glass builds
+  - Third-party keyboards paint a little higher than they report, so the bar gets a measured extra lift on those; Apple's keyboard is unchanged
+- Fix **image and album transitions** so media opens and closes faster and more evenly — albums now zoom straight from the feed thumbnail like single images, instead of fading through black first ([#1143](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1143): @IllIIllIllIllII)
+  - The background fades with the swipe in any direction, and the lingering dark overlay and brightness jump after dismissal are gone
+  - With Swipe through feed galleries on, closing an album returns the feed carousel to the image you were last looking at
+- Fix **forward swipes** stopping after a cancelled one — cancelling the swipe no longer erases the navigation history, so posts, subreddits and profiles can still be swiped forward again ([#1128](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1128): @IllIIllIllIllII)
+- Fix the **glass search bar** hanging in the navigation bar after you cancel a subreddit search — it now compresses with the first frame of the drag, instead of sitting still for a beat and then vanishing in one jump ([#1130](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1130): @icpryde)
+
 ## [v3.17.0] - 2026-09-15
 
 ### Features
@@ -1293,6 +1321,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.18.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.17.0...v1.15.11_3.18.0
 [v3.17.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.3...v1.15.11_3.17.0
 [v3.16.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.2...v1.15.11_3.16.3
 [v3.16.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.1...v1.15.11_3.16.2

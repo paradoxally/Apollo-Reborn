@@ -3817,7 +3817,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
                                     UDKeyFeedGalleryCarousel: @YES,
                                     UDKeyFeedGalleryEdgeSwipeNav: @NO,
                                     UDKeyForwardSwipeForgetAfterScrolling: @NO,
-                                    UDKeySwipeUpForComments: @YES,
+                                    UDKeySwipeUpForComments: @NO,
                                     UDKeySportsClipsInlineVideo: @YES,
                                     UDKeyDevvitInteractivePosts: @NO,
                                     UDKeyDevvitFeedWidgets: @YES,
@@ -3859,7 +3859,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
                                     UDKeyProfileShowStatCards: @YES,
                                     UDKeyProfileShowSocialLinks: @YES,
                                     UDKeyProfileShowActions: @YES,
-                                    UDKeyProfileAvatarStyle: @0,
+                                    UDKeyProfileAvatarStyle: @1, // Circle; registered defaults preserve saved choices.
                                     UDKeyProfileLayoutPreviewPinned: @NO,
                                     UDKeyShowSubredditHeaders: @NO,
                                     UDKeySubredditHeaderImmersive: @YES,
@@ -3879,6 +3879,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
                                     UDKeyTabBarCollapseSide: @0,
                                     UDKeyKeepSearchBarInPlace: @NO,
                                     UDKeyIPadTabBarBottom: @NO,
+                                    UDKeyTabBarSwipeNavigation: @NO,
                                     UDKeyIconRowMagnifier: @YES,
                                     UDKeyInfoRowTapUpvote: @YES,
                                     UDKeyInfoRowTapComments: @YES,
@@ -4132,10 +4133,18 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
     sProfileShowStatCards = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyProfileShowStatCards];
     sProfileShowSocialLinks = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyProfileShowSocialLinks];
     sProfileShowActions = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyProfileShowActions];
+    // Start the shared avatar-shape feature on Circle for every installation,
+    // including users with an older Profile Layout choice. Run once so later
+    // explicit shape selections remain intact across launches.
+    NSString *sharedAvatarShapeDefaultMigration = @"SharedAvatarShapeCircleDefaultApplied";
+    if (![standardDefaults boolForKey:sharedAvatarShapeDefaultMigration]) {
+        [standardDefaults setInteger:1 forKey:UDKeyProfileAvatarStyle];
+        [standardDefaults setBool:YES forKey:sharedAvatarShapeDefaultMigration];
+    }
     sProfileAvatarStyle = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyProfileAvatarStyle];
     if (sProfileAvatarStyle < 0 || sProfileAvatarStyle > 2) {
-        sProfileAvatarStyle = 0;
-        [standardDefaults setInteger:0 forKey:UDKeyProfileAvatarStyle];
+        sProfileAvatarStyle = 1;
+        [standardDefaults setInteger:1 forKey:UDKeyProfileAvatarStyle];
     }
     sShowSubredditHeaders = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyShowSubredditHeaders];
     sSubredditHeaderImmersive = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySubredditHeaderImmersive];
@@ -4166,6 +4175,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
     sTabBarHideStyle = (ApolloTabBarHideStyle)storedTabBarHideStyle;
     sKeepSearchBarInPlace = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyKeepSearchBarInPlace];
     sIPadTabBarBottom = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyIPadTabBarBottom];
+    sTabBarSwipeNavigation = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyTabBarSwipeNavigation];
     sIconRowMagnifier = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyIconRowMagnifier];
     sInfoRowTapUpvote = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyInfoRowTapUpvote];
     sInfoRowTapComments = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyInfoRowTapComments];

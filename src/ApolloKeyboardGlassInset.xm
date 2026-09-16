@@ -55,6 +55,7 @@
 
 #import <UIKit/UIKit.h>
 #import <math.h>
+#import <objc/runtime.h>
 
 #import "ApolloCommon.h"
 
@@ -124,9 +125,33 @@ static BOOL ApolloKeyboardGlassThirdPartyKeyboardActive(void) {
     return ![identifier containsString:@"@sw="];
 }
 
-// Resolved once per keyboard appearance: the responder walk is far too costly to
-// repeat inside -setFrame:, which runs on every frame of the keyboard transition.
-static BOOL sApolloKeyboardGlassThirdParty = NO;
+// The classification is kept PER BAR, not in one process-global flag: on iPad and
+// visionOS several scenes are live at once, and a global would let a bar
+// attaching in one scene restamp the answer another scene is about to use.
+//
+// It is still resolved at most once per bar per keyboard change — the responder
+// walk is far too costly to repeat inside -setFrame:, which runs on every frame
+// of the keyboard transition. A generation counter, bumped when the input mode
+// changes, is what invalidates the cache without needing to enumerate live bars.
+static char kApolloKeyboardGlassThirdPartyKey;
+static char kApolloKeyboardGlassGenerationKey;
+static NSUInteger sApolloKeyboardGlassInputModeGeneration = 1;
+
+static BOOL ApolloKeyboardGlassBarIsThirdParty(UIView *bar) {
+    if (!bar) return NO;
+    NSNumber *cached = objc_getAssociatedObject(bar, &kApolloKeyboardGlassThirdPartyKey);
+    NSNumber *generation = objc_getAssociatedObject(bar, &kApolloKeyboardGlassGenerationKey);
+    if (cached && generation.unsignedIntegerValue == sApolloKeyboardGlassInputModeGeneration) {
+        return cached.boolValue;
+    }
+    BOOL thirdParty = ApolloKeyboardGlassThirdPartyKeyboardActive();
+    objc_setAssociatedObject(bar, &kApolloKeyboardGlassThirdPartyKey, @(thirdParty),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    objc_setAssociatedObject(bar, &kApolloKeyboardGlassGenerationKey,
+                             @(sApolloKeyboardGlassInputModeGeneration),
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    return thirdParty;
+}
 
 #pragma mark - Measurement
 
@@ -220,7 +245,7 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
     if (delta < kApolloKeyboardGlassEpsilon || delta >= CGRectGetHeight(inWindow)) return 0.0;
     // Rides on top of an armed correction rather than arming one of its own, so a
     // keyboard this tweak has no quarrel with is never nudged.
-    if (sApolloKeyboardGlassThirdParty) {
+    if (ApolloKeyboardGlassBarIsThirdParty(bar)) {
         CGFloat padded = delta + kApolloKeyboardGlassThirdPartyExtraLift;
         if (padded < CGRectGetHeight(inWindow)) delta = padded;
     }
@@ -234,7 +259,11 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
 - (void)didMoveToWindow {
     %orig;
     ApolloKeyboardGlassPrimeGuide((UIView *)self);
-    if (self.window) sApolloKeyboardGlassThirdParty = ApolloKeyboardGlassThirdPartyKeyboardActive();
+    // A reused bar can come back attached to a different composer under a
+    // different keyboard, so drop the cached answer and let the next frame
+    // resolve it once.
+    objc_setAssociatedObject(self, &kApolloKeyboardGlassThirdPartyKey, nil,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 }
 
 - (void)setFrame:(CGRect)frame {
@@ -248,7 +277,7 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
                              "(bar %.1f-%.1f, keyboard top %.1f, third-party kb %@)",
                             delta, CGRectGetMinY(frame), CGRectGetMaxY(frame),
                             CGRectGetMaxY(frame) - delta,
-                            sApolloKeyboardGlassThirdParty ? @"yes" : @"no");
+                            ApolloKeyboardGlassBarIsThirdParty((UIView *)self) ? @"yes" : @"no");
         }
         frame.origin.y -= delta;
     } else if (sApolloKeyboardGlassLoggedDelta > 0.0) {
@@ -267,6 +296,6 @@ static CGFloat ApolloKeyboardGlassOverlapForFrame(UIView *bar, CGRect frame) {
                     object:nil
                      queue:NSOperationQueue.mainQueue
                 usingBlock:^(__unused NSNotification *note) {
-        sApolloKeyboardGlassThirdParty = ApolloKeyboardGlassThirdPartyKeyboardActive();
+        sApolloKeyboardGlassInputModeGeneration++;
     }];
 }

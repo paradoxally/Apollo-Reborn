@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "version": "3.18.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "person.2.fill", "title": "Redesigned Account Switcher", "subtitle": "A full-width bottom sheet in your theme's colours, with larger avatars, a drag handle for reordering and each account's menu on its own ellipsis." },
+    { "icon": "square.on.circle", "title": "Profile Picture Shape", "subtitle": "Choose Full, Circle or rounded Square for user pictures across posts, comments, messages and the profile tab. Under Settings > Apollo Reborn > Interface." },
+    { "icon": "hand.draw.fill", "title": "Swipe Tab Bar to Navigate", "subtitle": "On Liquid Glass, swiping the tab bar goes back and forward again, in exchange for the system's drag-to-switch-tab gesture. Off by default, under Interface > Tab Bar." },
+    { "icon": "arrow.up.arrow.down", "title": "Tabs Remember Their Sort", "subtitle": "Reopening a Floating Post Tab from its bubble brings the thread back on the sort you left it on, Live Update included." },
+    { "icon": "keyboard", "title": "iOS 27 Composer Fix", "subtitle": "The formatting bar above the keyboard no longer sits under it, so the photo, GIF, link and text icons are whole again." }
+  ]
+}

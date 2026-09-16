@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.18.1] - 2026-09-16
+
+### Features
+
+- Add **Play Videos in Gallery View** and **Play GIFs in Gallery View** to **Settings > Apollo Reborn > Media > Browsing**, both on by default — video and GIF tiles in the **Gallery View** grid play silently on a loop while they are on screen, and tapping one still opens the full-size viewer with sound ([#1142](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1142): @icpryde)
+  - GIF tiles play the mp4 copy Reddit keeps of each GIF, so a whole screen of them moves at once; the viewer and Save/Share still use the original `.gif`
+  - Up to 12 tiles play at a time and stop when they scroll off screen, when the viewer opens or when Apollo goes to the background; Low Power Mode pauses them
+
+### Fixes
+
+- Fix a **crash loop at launch** after adding an account while Reddit was rate-limiting it — when Reddit answers a feed or subreddit list with something other than a listing, Apollo now treats it as a failed load instead of crashing ([#1147](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1147): @icpryde)
+- Fix **Gallery View** opening with its first row of tiles hidden behind the status bar and navigation bar — the grid starts just below the bar again, and tiles still pass underneath it as you scroll ([#1140](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1140): @icpryde)
+- Fix a **crash on cancelling a subreddit search** in classic builds — with **Subreddit Layout > Header Style** set to Compact or Immersive, typing a query in a subreddit's search bar and tapping Cancel closed the app ([#1133](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1133): @icpryde)
+
 ## [v3.18.0] - 2026-09-16
 
 ### Features
@@ -1321,6 +1335,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.18.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.0...v1.15.11_3.18.1
 [v3.18.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.17.0...v1.15.11_3.18.0
 [v3.17.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.3...v1.15.11_3.17.0
 [v3.16.3]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.2...v1.15.11_3.16.3

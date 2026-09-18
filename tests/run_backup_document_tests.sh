@@ -25,10 +25,18 @@ with open(sys.argv[1], 'wb') as output:
             'UISceneConfigurations': {'UIWindowSceneSessionRoleApplication': [{
                 'UISceneConfigurationName': 'Default', 'UISceneDelegateClassName': 'Test'}]}}), output)
 PY
+# ApolloReborn's ApolloLog is gated on a process-wide flag that lives in
+# ApolloCommon.m alongside Security helpers and link-preview state this harness
+# has no use for. Define the one symbol so the real source under test links.
+cat > "$WORK/LogStub.m" <<'OBJC'
+#import <Foundation/Foundation.h>
+BOOL ApolloVerboseLoggingEnabled = NO;
+OBJC
 xcrun clang -target arm64-apple-ios15.0-simulator \
     -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)" -fobjc-arc \
     -I "$ROOT/src" -framework UIKit -framework Foundation \
     "$ROOT/tests/backup_document_tests.m" "$ROOT/src/settings/ApolloBackupDocument.m" \
+    "$WORK/LogStub.m" \
     -o "$WORK/Test.app/Test"
 codesign -f -s - "$WORK/Test.app" >/dev/null
 xcrun simctl install "$DEVICE" "$WORK/Test.app"

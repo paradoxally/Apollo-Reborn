@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.18.2] - 2026-09-19
+
+### Fixes
+
+- Fix **backup files** showing a question-mark icon in the Files app's folder views and in Apollo's own restore picker, even though Recents and Get Info already showed the Apollo icon — Apollo now registers itself as the owner of its `.apollobackup` format, and opening one from Files asks for confirmation before it changes any settings or accounts ([#1152](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1152): @IllIIllIllIllII)
+  - Regular ZIP files are unaffected; for backups made before this build, set Get Info > Always Open With > Apollo once
+- Fix the **Settings search bar** sliding up over the "Settings" title on Liquid Glass and hiding it while you typed — the title now stays put and the field only gains its cancel button, the way the feed search bars already behave ([#1156](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1156): @icpryde)
+- Fix builds shipping a **CydiaSubstrate arm64e slice** that iOS 26's dyld rejects at launch — Xcode 27's `lipo` does not recognise the bundled 2021 slice under the plain `arm64e` name, and the strip step treated its own failure as a warning; it now removes the slice under either name and fails the build outright if it cannot ([#1155](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1155): @nickclyde)
+
 ## [v3.18.1] - 2026-09-16
 
 ### Features
@@ -1335,6 +1344,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.18.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.1...v1.15.11_3.18.2
 [v3.18.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.0...v1.15.11_3.18.1
 [v3.18.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.17.0...v1.15.11_3.18.0
 [v3.17.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.16.3...v1.15.11_3.17.0

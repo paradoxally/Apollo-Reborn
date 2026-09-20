@@ -4,10 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [v3.18.2] - 2026-09-19
+## [v3.18.2] - 2026-09-21
 
 ### Fixes
 
+- Fix **Apollo Reborn's own settings screens** ignoring Apollo's text size and drawing their labels brighter than the native rows — the Appearance setting now drives them too, matching native weights and font sizes at every step, and primary text uses Apollo's palette including the softer grey of Pure Black mode ([#1165](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1165): @IllIIllIllIllII)
+  - Row heights and footer measurements grow with the text, so nothing clips at the largest sizes
+- Fix **subreddit list rows** flashing a strong accent-coloured highlight when tapped — the subreddit list painted its own overlay instead of using Apollo's stock tap feedback, and the earlier switch to UIKit's system grey still did not match; stock themes are back to Apollo's original `#F0F1F3` light and `#34373F` dark ([#1166](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1166): @IllIIllIllIllII)
 - Fix **backup files** showing a question-mark icon in the Files app's folder views and in Apollo's own restore picker, even though Recents and Get Info already showed the Apollo icon — Apollo now registers itself as the owner of its `.apollobackup` format, and opening one from Files asks for confirmation before it changes any settings or accounts ([#1152](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1152): @IllIIllIllIllII)
   - Regular ZIP files are unaffected; for backups made before this build, set Get Info > Always Open With > Apollo once
 - Fix the **Settings search bar** sliding up over the "Settings" title on Liquid Glass and hiding it while you typed — the title now stays put and the field only gains its cancel button, the way the feed search bars already behave ([#1156](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1156): @icpryde)

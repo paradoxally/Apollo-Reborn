@@ -992,9 +992,10 @@ static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSStr
         NSDictionary *current = state.overrides ?: @{};
         NSMutableDictionary *merged = [current mutableCopy];
         [merged addEntriesFromDictionary:fix];
-        if ([merged isEqualToDictionary:current]) {
+        if ([merged isEqualToDictionary:current] || [current[kCloudOverrideFullStrip] boolValue]) {
             // The provider rejected an adjustment already applied; re-sending
-            // it would loop on the same 400.
+            // it would loop on the same 400. A full-strip body ignores every
+            // other override, so after it any new fix re-sends identical bytes.
             ApolloLog(@"[AICloud][wire] request %@ param-retry stopped: HTTP 400 param=%@ repeats applied=%@",
                       state.identifier, param ?: @"(none)", CloudOverrideNames(current));
         } else {

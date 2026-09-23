@@ -10,7 +10,8 @@
 //  (max_completion_tokens + a reasoning_effort floor for gpt-5*/o-series,
 //  temperature=0 otherwise), because OpenAI's reasoning models reject
 //  `max_tokens` outright and self-hosted servers vary. Anything the shaping
-//  gets wrong is repaired by the one-shot targeted 400 retry.
+//  gets wrong is repaired by the targeted 400 retries, and the repaired shape
+//  is remembered per model for the rest of the app session.
 //
 //  Privacy: never log the API key, the request body, or any streamed text —
 //  diagnostics are identifier/status/byte-count only, matching the
@@ -18,6 +19,7 @@
 //
 
 #import "ApolloAICloudBridge.h"
+#import <os/lock.h>
 #import "ApolloCommon.h"
 #import "ApolloState.h"
 #import "UserDefaultConstants.h"
@@ -238,11 +240,20 @@ static NSString *CloudBareModelName(NSString *model) {
     return slash.location == NSNotFound ? model : [model substringFromIndex:NSMaxRange(slash)];
 }
 
+static NSInteger CloudGPTMajorVersion(NSString *bare) {
+    if (![bare hasPrefix:@"gpt-"]) return 0;
+    NSScanner *scanner = [NSScanner scannerWithString:[bare substringFromIndex:4]];
+    NSInteger major = 0;
+    return [scanner scanInteger:&major] ? major : 0;
+}
+
 // Reasoning-model families spend "thinking" tokens before the first streamed
-// byte and reject sampling params: gpt-5*, and o<digit>* (o1/o3/o4-mini...).
+// byte and reject sampling params: gpt-5 and every later major, and o<digit>*
+// (o1/o3/o4-mini...). A newer major sent the non-reasoning shape 400s twice
+// (max_tokens, then temperature 0); predicting it here saves those round-trips.
 static BOOL CloudIsReasoningModel(NSString *model) {
     NSString *bare = CloudBareModelName(model).lowercaseString;
-    if ([bare hasPrefix:@"gpt-5"]) return YES;
+    if (CloudGPTMajorVersion(bare) >= 5) return YES;
     // Explicit '0'..'9' bounds: characterAtIndex returns a unichar, and passing
     // values outside unsigned char to isdigit() is undefined behavior.
     unichar second = bare.length >= 2 ? [bare characterAtIndex:1] : 0;
@@ -256,11 +267,12 @@ static BOOL CloudIsReasoningModel(NSString *model) {
 // "minimal" to "none"; the original gpt-5 family only knows "minimal"; the
 // o-series (o1/o3/o4-mini) never had either, so "low" is its floor. Predicting
 // this correctly avoids a wasted 400+retry roundtrip on every request for the
-// default model; the one-shot retry stays as the net for models it mispredicts.
+// default model; the 400 retry stays as the net for models it mispredicts.
 static NSString *CloudDefaultReasoningEffort(NSString *model) {
     NSString *bare = CloudBareModelName(model).lowercaseString;
     if ([bare hasPrefix:@"gpt-5."]) return @"none";
     if ([bare hasPrefix:@"gpt-5"]) return @"minimal";
+    if (CloudGPTMajorVersion(bare) >= 6) return @"none";
     return @"low";
 }
 
@@ -277,7 +289,7 @@ static NSString *const kCloudOverrideDropTemperature = @"dropTemperature";
 static NSString *const kCloudOverrideFullStrip = @"fullStrip";
 
 // Maps a parsed 400 ("param" + message, both optional) to targeted overrides
-// for the one-shot retry. Returns the full-strip fallback when the offending
+// for one parameter-adjust retry. Returns the full-strip fallback when the offending
 // parameter can't be identified. Fixing ONLY what the provider complained
 // about keeps the rest of the tuning intact (a blind full-strip swapped the
 // token key too, which itself 400s on newer models that reject max_tokens).
@@ -294,10 +306,16 @@ static NSDictionary *CloudRetryOverridesForError(NSString *param, NSString *mess
         return @{kCloudOverrideSwapTokenKey: @YES};
     }
     if ([subject containsString:@"reasoning_effort"] || [lowerMessage containsString:@"reasoning_effort"]) {
-        // Newer models renamed the lowest effort "minimal" -> "none"; use it
-        // when the error's supported-values list offers it, else drop the knob.
-        if ([lowerMessage containsString:@"'none'"]) {
+        // Read only the supported-values list: the rejection names the refused
+        // value first ("does not support 'none' ... Supported values are:
+        // 'low', ..."), so matching the whole message retries the same value.
+        NSRange supported = [lowerMessage rangeOfString:@"supported values"];
+        NSString *offered = supported.location == NSNotFound ? @"" : [lowerMessage substringFromIndex:supported.location];
+        if ([offered containsString:@"'none'"]) {
             return @{kCloudOverrideReasoningEffort: @"none"};
+        }
+        if ([offered containsString:@"'low'"]) {
+            return @{kCloudOverrideReasoningEffort: @"low"};
         }
         return @{kCloudOverrideReasoningEffort: [NSNull null]};
     }
@@ -305,6 +323,19 @@ static NSDictionary *CloudRetryOverridesForError(NSString *param, NSString *mess
         return @{kCloudOverrideDropTemperature: @YES};
     }
     return @{kCloudOverrideFullStrip: @YES};
+}
+
+// A model needing more than one adjustment (token key + temperature + effort)
+// gets one retry per adjustment, each stacked on the ones before it.
+static const NSInteger kCloudMaxParameterRetries = 3;
+
+static NSString *CloudOverrideNames(NSDictionary *overrides) {
+    if (overrides.count == 0) return @"(none)";
+    return [[overrides.allKeys sortedArrayUsingSelector:@selector(compare:)] componentsJoinedByString:@","];
+}
+
+static NSString *CloudShapeKey(NSString *provider, NSURL *endpoint, NSString *model) {
+    return [NSString stringWithFormat:@"%@|%@|%@", provider ?: @"", endpoint.absoluteString ?: @"", model ?: @""];
 }
 
 #pragma mark - Per-request state
@@ -322,7 +353,7 @@ static NSDictionary *CloudRetryOverridesForError(NSString *param, NSString *mess
 @property (nonatomic, assign) BOOL sawDone;               // saw `data: [DONE]`
 @property (nonatomic, assign) BOOL droppedOversizedLine;  // an SSE line blew past the cap and was discarded
 @property (nonatomic, assign) BOOL retriedTransient;      // the 429/5xx re-issue was used
-@property (nonatomic, assign) BOOL retriedParameters;     // the 400 parameter-adjust re-issue was used
+@property (nonatomic, assign) NSInteger parameterRetryCount; // 400 parameter-adjust re-issues used
 @property (nonatomic, assign) BOOL finished;
 // Privacy-safe wire diagnostics. These record shapes/counts only — never the
 // API key, prompt text, response text, or full request/response bodies.
@@ -340,6 +371,8 @@ static NSDictionary *CloudRetryOverridesForError(NSString *param, NSString *mess
 @property (nonatomic, copy) NSString *instructions;
 @property (nonatomic, assign) NSInteger maximumResponseTokens;
 @property (nonatomic, strong) NSDictionary *overrides; // current parameter overrides, nil = primary shape
+@property (nonatomic, copy) NSString *shapeKey;         // learned-shape cache key (provider|endpoint|model)
+@property (nonatomic, assign) BOOL usingLearnedShape;   // overrides are still exactly the learned entry
 // Provider configuration SNAPSHOT, frozen when the request was created. Both
 // retries rebuild the request from this rather than from the sVar globals: a
 // provider/key/model change while a request is in flight must not redirect its
@@ -364,6 +397,11 @@ static NSDictionary *CloudRetryOverridesForError(NSString *param, NSString *mess
     dispatch_queue_t _stateQueue; // serial; also the session delegate queue's underlying queue
     NSMutableDictionary<NSString *, ApolloAICloudRequest *> *_requestsByIdentifier;
     NSMutableDictionary<NSNumber *, ApolloAICloudRequest *> *_requestsByTask;
+    // Overrides that made a model succeed, keyed by CloudShapeKey, for this app
+    // session only. Read on the caller's thread when a request is created and
+    // written on _stateQueue, hence the lock.
+    NSMutableDictionary<NSString *, NSDictionary *> *_learnedOverridesByShape;
+    os_unfair_lock _learnedLock;
 }
 
 + (instancetype)shared {
@@ -394,8 +432,30 @@ static NSDictionary *CloudRetryOverridesForError(NSString *param, NSString *mess
         _session = [NSURLSession sessionWithConfiguration:config delegate:self delegateQueue:delegateQueue];
         _requestsByIdentifier = [NSMutableDictionary dictionary];
         _requestsByTask = [NSMutableDictionary dictionary];
+        _learnedOverridesByShape = [NSMutableDictionary dictionary];
+        _learnedLock = OS_UNFAIR_LOCK_INIT;
     }
     return self;
+}
+
+#pragma mark Learned request shapes
+
+- (NSDictionary *)learnedOverridesForKey:(NSString *)key {
+    os_unfair_lock_lock(&_learnedLock);
+    NSDictionary *overrides = _learnedOverridesByShape[key];
+    os_unfair_lock_unlock(&_learnedLock);
+    return overrides;
+}
+
+- (void)setLearnedOverrides:(NSDictionary *)overrides forKey:(NSString *)key {
+    if (key.length == 0) return;
+    os_unfair_lock_lock(&_learnedLock);
+    if (overrides.count > 0) {
+        _learnedOverridesByShape[key] = [overrides copy];
+    } else {
+        [_learnedOverridesByShape removeObjectForKey:key];
+    }
+    os_unfair_lock_unlock(&_learnedLock);
 }
 
 #pragma mark Availability
@@ -560,6 +620,12 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     state.apiKey = CloudAPIKey();
     state.model = ApolloAICloudEffectiveModel();
     state.endpoint = CloudEndpointURL();
+    // Start from the shape this model last succeeded with, so a model the
+    // family shaping mispredicts pays its failed round-trips once per session
+    // rather than on every summary.
+    state.shapeKey = CloudShapeKey(state.provider, state.endpoint, state.model);
+    state.overrides = [self learnedOverridesForKey:state.shapeKey];
+    state.usingLearnedShape = state.overrides != nil;
     state.accumulated = [NSMutableString string];
     state.lineBuffer = [NSMutableData data];
     state.rawBody = [NSMutableData data];
@@ -601,6 +667,8 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
                   state.identifier, provider, model, state.endpoint.host ?: @"?",
                   (unsigned long)inputChars, (unsigned long)instructions.length,
                   (unsigned long)request.HTTPBody.length);
+        ApolloLog(@"[AICloud][wire] request %@ learned-shape %@ params=%@", state.identifier,
+                  state.usingLearnedShape ? @"hit" : @"miss", CloudOverrideNames(state.overrides));
     });
 }
 
@@ -639,6 +707,11 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     [_requestsByTask removeObjectForKey:@(state.task.taskIdentifier)];
     if (_requestsByIdentifier[state.identifier] == state) {
         [_requestsByIdentifier removeObjectForKey:state.identifier];
+    }
+    if (final && !state.usingLearnedShape && state.overrides.count > 0) {
+        [self setLearnedOverrides:state.overrides forKey:state.shapeKey];
+        ApolloLog(@"[AICloud][wire] request %@ learned-shape stored params=%@",
+                  state.identifier, CloudOverrideNames(state.overrides));
     }
     void (^onComplete)(NSString *, NSError *) = state.onComplete;
     state.onComplete = nil;
@@ -695,7 +768,7 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
 // one-element top-level array, even though its successful OpenAI-compat
 // responses are ordinary dictionaries.
 //
-// outParam is what makes the one-shot 400 retry targeted rather than a blind
+// outParam is what makes the 400 retry targeted rather than a blind
 // full-strip, so it is captured on every shape that carries it.
 static NSString *CloudErrorMessageFromJSONObject(id json, NSString **outParam) {
     if ([json isKindOfClass:[NSArray class]]) {
@@ -863,7 +936,28 @@ static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSStr
     NSString *param = nil;
     NSString *message = CloudErrorMessageFromBody(state.rawBody, &param)
         ?: [NSString stringWithFormat:@"HTTP %ld", (long)status];
-    BOOL contextOverflow = CloudMessageSuggestsContextOverflow(message);
+    NSDictionary *fix = status == 400 ? CloudRetryOverridesForError(param, message) : nil;
+    // The broad overflow needles ("token", "maximum") also match shaping
+    // rejections such as "'max_tokens' is not supported with this model", which
+    // must be retried, so they only count for a 400 naming no shaping parameter.
+    // Explicit overflow phrases also count: local servers report overflow as
+    // "'max_tokens' is too large ... maximum context length is 4096 tokens",
+    // sometimes with param "max_tokens", and no token-key swap can fix that.
+    // When param names a shaping parameter the phrase must come with
+    // "maximum", so a shape rejection that merely says "too long" is retried.
+    NSString *lowerParam = param.lowercaseString ?: @"";
+    BOOL paramNamesShapingParameter = [lowerParam containsString:@"max_tokens"] ||
+                                      [lowerParam containsString:@"max_completion_tokens"] ||
+                                      [lowerParam containsString:@"reasoning_effort"] ||
+                                      [lowerParam containsString:@"temperature"];
+    BOOL messageStatesOverflow = [message localizedCaseInsensitiveContainsString:@"context length"] ||
+                                 [message localizedCaseInsensitiveContainsString:@"context window"] ||
+                                 [message localizedCaseInsensitiveContainsString:@"too long"];
+    BOOL explicitOverflow = messageStatesOverflow &&
+                            (!paramNamesShapingParameter ||
+                             [message localizedCaseInsensitiveContainsString:@"maximum"]);
+    BOOL contextOverflow = explicitOverflow ||
+                           (fix[kCloudOverrideFullStrip] != nil && CloudMessageSuggestsContextOverflow(message));
 
     // Transient: one re-issue of the SAME request, honoring Retry-After up to 5s.
     if ((status == 429 || status == 500 || status == 502 || status == 503) && !state.retriedTransient) {
@@ -876,17 +970,41 @@ static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSStr
         if ([self retryState:state after:delay overrides:state.overrides]) return;
     }
 
+    // The learned shape no longer fits this model (the provider changed what
+    // it accepts). The learned overrides may themselves be what it rejects, so
+    // forget them and relearn from the primary shape rather than stacking the
+    // new fix on top of them. A context overflow says nothing about the shape,
+    // so it keeps the learned entry.
+    if (status == 400 && state.usingLearnedShape && !contextOverflow) {
+        state.usingLearnedShape = NO;
+        [self setLearnedOverrides:nil forKey:state.shapeKey];
+        ApolloLog(@"[AICloud][wire] request %@ learned-shape rejected (HTTP 400 param=%@); relearning from primary shape",
+                  state.identifier, param ?: @"(none)");
+        if ([self retryState:state after:0 overrides:nil]) return;
+    }
+
     // A 400 that names a parameter is a shape rejection, not a real failure:
-    // re-issue once with only that parameter adjusted. This is what lets
-    // OpenAI's reasoning models and arbitrary self-hosted servers work without
-    // the user having to tune anything. A context-window 400 is a genuine
-    // failure and must NOT be retried.
-    if (status == 400 && !state.retriedParameters && !contextOverflow) {
-        state.retriedParameters = YES;
-        NSDictionary *overrides = CloudRetryOverridesForError(param, message);
-        ApolloLog(@"[AICloud] request %@ rejected (HTTP 400); retrying with adjusted parameters (%@)",
-                  state.identifier, [overrides.allKeys componentsJoinedByString:@","]);
-        if ([self retryState:state after:0 overrides:overrides]) return;
+    // re-issue with only that parameter adjusted, on top of the adjustments
+    // already made. This is what lets OpenAI's reasoning models and arbitrary
+    // self-hosted servers work without the user having to tune anything. A
+    // context-window 400 is a genuine failure and must NOT be retried.
+    if (status == 400 && !contextOverflow && state.parameterRetryCount < kCloudMaxParameterRetries) {
+        NSDictionary *current = state.overrides ?: @{};
+        NSMutableDictionary *merged = [current mutableCopy];
+        [merged addEntriesFromDictionary:fix];
+        if ([merged isEqualToDictionary:current] || [current[kCloudOverrideFullStrip] boolValue]) {
+            // The provider rejected an adjustment already applied; re-sending
+            // it would loop on the same 400. A full-strip body ignores every
+            // other override, so after it any new fix re-sends identical bytes.
+            ApolloLog(@"[AICloud][wire] request %@ param-retry stopped: HTTP 400 param=%@ repeats applied=%@",
+                      state.identifier, param ?: @"(none)", CloudOverrideNames(current));
+        } else {
+            state.parameterRetryCount += 1;
+            ApolloLog(@"[AICloud][wire] request %@ param-retry %ld/%ld HTTP 400 param=%@ adding=%@ applied=%@",
+                      state.identifier, (long)state.parameterRetryCount, (long)kCloudMaxParameterRetries,
+                      param ?: @"(none)", CloudOverrideNames(fix), CloudOverrideNames(merged));
+            if ([self retryState:state after:0 overrides:merged]) return;
+        }
     }
 
     NSInteger code = CloudMappedErrorCode(status, message, state.provider);

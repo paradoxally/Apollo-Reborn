@@ -940,11 +940,14 @@ static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSStr
     // The broad overflow needles ("token", "maximum") also match shaping
     // rejections such as "'max_tokens' is not supported with this model", which
     // must be retried, so they only count for a 400 naming no shaping parameter.
-    // Explicit overflow phrases count regardless: local servers report overflow
-    // as "'max_tokens' is too large ... maximum context length is 4096 tokens".
-    BOOL explicitOverflow = [message localizedCaseInsensitiveContainsString:@"context length"] ||
-                            [message localizedCaseInsensitiveContainsString:@"context window"] ||
-                            [message localizedCaseInsensitiveContainsString:@"too long"];
+    // Explicit overflow phrases also count when the error carries no "param":
+    // local servers report overflow as "'max_tokens' is too large ... maximum
+    // context length is 4096 tokens" with param null. A "param" naming a shaping
+    // parameter outranks the prose, so that 400 still gets its targeted retry.
+    BOOL explicitOverflow = param.length == 0 &&
+                            ([message localizedCaseInsensitiveContainsString:@"context length"] ||
+                             [message localizedCaseInsensitiveContainsString:@"context window"] ||
+                             [message localizedCaseInsensitiveContainsString:@"too long"]);
     BOOL contextOverflow = explicitOverflow ||
                            (fix[kCloudOverrideFullStrip] != nil && CloudMessageSuggestsContextOverflow(message));
 

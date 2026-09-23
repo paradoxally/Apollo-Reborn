@@ -97,6 +97,10 @@ static ApolloFollowingMap *ApolloFollowingPresentedMapForTable(__unused UITableV
 static ApolloFollowingMap *ApolloFollowingActiveMapForTable(__unused UITableView *table) { return nil; }
 static NSIndexPath *ApolloFollowingVisiblePathForNative(__unused ApolloFollowingMap *map, NSIndexPath *path) { return path; }
 static BOOL ApolloFollowingCallerIsApolloBinary(__unused void *address) { return NO; }
+// No list-editing removal spring is in flight in any scenario here.
+static __unused __thread __unsafe_unretained UITableView *sApolloVisibleRemovalTable;
+static char kApolloRemovalTransition;
+static BOOL ApolloFollowingApplyRemovalAnimation(__unused UITableView *table) { return NO; }
 
 #include "ApolloMultiredditExpansion.h"
 

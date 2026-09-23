@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.19.0] - 2026-09-23
+
+### Features
+
+- Add **Save All Media** to albums — one action saves every image, GIF and video in a Reddit gallery, Imgur album or ImageChest post, with a progress ring, a Cancel button and a **Saved All # Items!** banner when it finishes ([#1048](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1048): @IllIIllIllIllII)
+  - It sits in full-screen media's Share, More and long-press menus, and in the long-press menu of albums in the feed, whether gallery swiping is on or off
+  - Full-screen images gain **Copy Image** and **Save Image** on long-press and on the Share button, instead of jumping straight to the system share sheet
+- Add **Settings Shortcuts** — press and hold the Settings tab for a menu of up to 15 settings pages, from Theme Manager and Backup Settings to Appearance and App Icon, without leaving the tab you are on ([#1150](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1150): @IllIIllIllIllII)
+  - Pick, remove and reorder them under **Settings > Apollo Reborn > Interface > Tab Bar > Settings Shortcuts**, or from the customise button above the menu
+- Redesign **Hidden & Deleted** into a native feed that mixes archived posts and comments, with colour-coded HIDDEN, REMOVED and DELETED flairs, who removed it when known, and short timestamps ([#1137](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1137): @IllIIllIllIllII)
+  - It now has its own row in the profile, below Saved on yours and below Comments on anyone else's
+  - Archived images and albums show inline at their real shape, page sideways in the feed, and open in Apollo's full-screen viewer at the image you tapped
+- Polish **subreddit list editing** — the red minus buttons animate in, Unfavorite, Unsubscribe and Hide slide over the reorder handle, and removed rows shrink and fade out while the rest move up into place ([#1174](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1174): @IllIIllIllIllII)
+  - Favourite stars line up across rows, long names truncate before reaching the star, and tapped rows no longer stay highlighted in Edit mode
+
+### Fixes
+
+- Fix **Cloud AI summaries** falling back to Apple Intelligence on the new `gpt-6` models — Apollo sent them the older request shape, OpenAI rejected two of its settings, and the single retry could only fix one (#64: @paradoxally)
+  - A model Apollo does not recognise by name now fixes each setting the provider rejects, up to three retries, and remembers what worked for the rest of the session, so a future model or custom provider works without an update
+- Fix **full-screen media saving** — Save GIF from the share sheet keeps its animation and honours Save to Apollo Album, Download Video works when only Reddit's cached copy is left, and album links opened from a post's text get their vote, comment, Share and More buttons back ([#1048](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1048): @IllIIllIllIllII)
+- Fix **collapsing a comment thread** sliding its replies downward before the rest of the comments moved up — the thread now closes upward in one motion ([#1180](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1180): @IllIIllIllIllII)
+- Fix a **crash when loading older comments in Live Update mode**, and another when choosing Open in Safari on a GIF or video saved on the device ([#1171](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1171): @IllIIllIllIllII)
+- Fix the **Posts tab** doing nothing on profiles, trophies, multireddits and posts opened from a profile — tapping it scrolls to the top, and tapping again at the top goes back one page, like everywhere else ([#1153](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1153): @IllIIllIllIllII)
+- Fix the **composer GIF button** staying on screen over username and subreddit suggestions — it now hides and returns with the other shortcuts ([#1164](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1164): @IllIIllIllIllII)
+  - The standard composer also places its toolbar from the keyboard's own layout guide, a second safeguard for the iOS 27 fix in 3.18.0
+
 ## [v3.18.2] - 2026-09-21
 
 ### Fixes
@@ -1347,6 +1373,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.19.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.2...v1.15.11_3.19.0
 [v3.18.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.1...v1.15.11_3.18.2
 [v3.18.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.0...v1.15.11_3.18.1
 [v3.18.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.17.0...v1.15.11_3.18.0

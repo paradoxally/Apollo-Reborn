@@ -940,19 +940,22 @@ static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSStr
     // The broad overflow needles ("token", "maximum") also match shaping
     // rejections such as "'max_tokens' is not supported with this model", which
     // must be retried, so they only count for a 400 naming no shaping parameter.
-    // Explicit overflow phrases also count unless "param" names a shaping
-    // parameter: local servers report overflow as "'max_tokens' is too large ...
-    // maximum context length is 4096 tokens" with param null, while a param
-    // naming a shaping parameter outranks the prose and keeps its targeted retry.
+    // Explicit overflow phrases also count: local servers report overflow as
+    // "'max_tokens' is too large ... maximum context length is 4096 tokens",
+    // sometimes with param "max_tokens", and no token-key swap can fix that.
+    // When param names a shaping parameter the phrase must come with
+    // "maximum", so a shape rejection that merely says "too long" is retried.
     NSString *lowerParam = param.lowercaseString ?: @"";
     BOOL paramNamesShapingParameter = [lowerParam containsString:@"max_tokens"] ||
                                       [lowerParam containsString:@"max_completion_tokens"] ||
                                       [lowerParam containsString:@"reasoning_effort"] ||
                                       [lowerParam containsString:@"temperature"];
-    BOOL explicitOverflow = !paramNamesShapingParameter &&
-                            ([message localizedCaseInsensitiveContainsString:@"context length"] ||
-                             [message localizedCaseInsensitiveContainsString:@"context window"] ||
-                             [message localizedCaseInsensitiveContainsString:@"too long"]);
+    BOOL messageStatesOverflow = [message localizedCaseInsensitiveContainsString:@"context length"] ||
+                                 [message localizedCaseInsensitiveContainsString:@"context window"] ||
+                                 [message localizedCaseInsensitiveContainsString:@"too long"];
+    BOOL explicitOverflow = messageStatesOverflow &&
+                            (!paramNamesShapingParameter ||
+                             [message localizedCaseInsensitiveContainsString:@"maximum"]);
     BOOL contextOverflow = explicitOverflow ||
                            (fix[kCloudOverrideFullStrip] != nil && CloudMessageSuggestsContextOverflow(message));
 

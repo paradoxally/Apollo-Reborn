@@ -937,10 +937,16 @@ static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSStr
     NSString *message = CloudErrorMessageFromBody(state.rawBody, &param)
         ?: [NSString stringWithFormat:@"HTTP %ld", (long)status];
     NSDictionary *fix = status == 400 ? CloudRetryOverridesForError(param, message) : nil;
-    // Only an unidentified 400 can be a context overflow: the overflow needles
-    // ("token", "maximum") also match shaping rejections such as "'max_tokens'
-    // is not supported with this model", which must be retried, not reported.
-    BOOL contextOverflow = fix[kCloudOverrideFullStrip] != nil && CloudMessageSuggestsContextOverflow(message);
+    // The broad overflow needles ("token", "maximum") also match shaping
+    // rejections such as "'max_tokens' is not supported with this model", which
+    // must be retried, so they only count for a 400 naming no shaping parameter.
+    // Explicit overflow phrases count regardless: local servers report overflow
+    // as "'max_tokens' is too large ... maximum context length is 4096 tokens".
+    BOOL explicitOverflow = [message localizedCaseInsensitiveContainsString:@"context length"] ||
+                            [message localizedCaseInsensitiveContainsString:@"context window"] ||
+                            [message localizedCaseInsensitiveContainsString:@"too long"];
+    BOOL contextOverflow = explicitOverflow ||
+                           (fix[kCloudOverrideFullStrip] != nil && CloudMessageSuggestsContextOverflow(message));
 
     // Transient: one re-issue of the SAME request, honoring Retry-After up to 5s.
     if ((status == 429 || status == 500 || status == 502 || status == 503) && !state.retriedTransient) {
@@ -956,13 +962,14 @@ static NSInteger CloudMappedErrorCode(NSInteger status, NSString *message, NSStr
     // The learned shape no longer fits this model (the provider changed what
     // it accepts). The learned overrides may themselves be what it rejects, so
     // forget them and relearn from the primary shape rather than stacking the
-    // new fix on top of them.
-    if (status == 400 && state.usingLearnedShape) {
+    // new fix on top of them. A context overflow says nothing about the shape,
+    // so it keeps the learned entry.
+    if (status == 400 && state.usingLearnedShape && !contextOverflow) {
         state.usingLearnedShape = NO;
         [self setLearnedOverrides:nil forKey:state.shapeKey];
         ApolloLog(@"[AICloud][wire] request %@ learned-shape rejected (HTTP 400 param=%@); relearning from primary shape",
                   state.identifier, param ?: @"(none)");
-        if (!contextOverflow && [self retryState:state after:0 overrides:nil]) return;
+        if ([self retryState:state after:0 overrides:nil]) return;
     }
 
     // A 400 that names a parameter is a shape rejection, not a real failure:

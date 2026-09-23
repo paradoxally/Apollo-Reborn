@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "version": "3.19.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "square.and.arrow.down.on.square", "title": "Save All Media", "subtitle": "Save every image, GIF and video in a gallery, Imgur album or ImageChest post at once, from the full-screen and long-press menus." },
+    { "icon": "gearshape.fill", "title": "Settings Shortcuts", "subtitle": "Press and hold the Settings tab to jump straight to up to 15 settings pages. Choose them under Interface > Tab Bar." },
+    { "icon": "eye.slash.fill", "title": "Redesigned Hidden & Deleted", "subtitle": "A native feed of archived posts and comments, with status flairs, inline albums and its own row on the profile." },
+    { "icon": "list.bullet", "title": "Smoother List Editing", "subtitle": "Animated edit controls, aligned favourite stars and rows that shrink away when you remove them." },
+    { "icon": "sparkles", "title": "Cloud AI on GPT-6", "subtitle": "Summaries work on the new gpt-6 models, and adapt on their own to models Apollo doesn't know yet." }
+  ]
+}

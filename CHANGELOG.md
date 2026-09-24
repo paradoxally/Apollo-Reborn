@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.19.1] - 2026-09-24
+
+### Features
+
+- Improve **immersive profile headers** — the banner artwork now runs up behind the status and navigation bars with a wider crop and fades into the page to suit the theme, and the stat cards use native Liquid Glass ([#1186](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1186): @IllIIllIllIllII)
+  - Long-press a banner for **View Banner**, which opens the original full-screen, ready to save to Photos with Apollo's own **Saved!** confirmation
+  - A **Hard** header stays out of the way while the artwork is on screen and returns once it scrolls off, and profiles repaint when you switch Apollo themes
+
+### Fixes
+
+- Fix **Apollo Reborn's settings screens** stalling or refusing to scroll back up on Apollo AI, Media and Posts & Feeds, and footer text drawing over the rows above it — each footer now keeps the height it measured, and swiping back to the hub no longer slides the list into place ([#1170](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1170): @icpryde)
+- Fix the **Liquid Glass feed search bar** springing back open after you scroll it away, and a **Hard** header cutting off the top of the search field — plus smoother Find in Comments icons, no jump when collapsing a comment near the top, and the field's glass surviving a cancelled swipe back ([#1146](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1146): @icpryde)
+- Fix **comment ages** being pushed off screen by long usernames — the username now shortens with an ellipsis so the age stays visible ([#1162](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1162): @IllIIllIllIllII)
+- Fix **double-tapping Search** sometimes failing to reopen the keyboard ([#1190](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1190): @IllIIllIllIllII)
+- Fix the **gallery counter** on iPhone 18 Pro and Pro Max showing "1 of 5" in the middle — it is back to "1 / 5" in the top-right corner ([#1189](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1189): @IllIIllIllIllII)
+- Fix **chat rooms in the Inbox** turning unread again after a refresh — tapping one now marks it read on Reddit through your signed-in account, so the row and the badge stay cleared ([#1141](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1141): @icpryde)
+
 ## [v3.19.0] - 2026-09-23
 
 ### Features
@@ -1373,6 +1390,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.19.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.19.0...v1.15.11_3.19.1
 [v3.19.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.2...v1.15.11_3.19.0
 [v3.18.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.1...v1.15.11_3.18.2
 [v3.18.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.0...v1.15.11_3.18.1

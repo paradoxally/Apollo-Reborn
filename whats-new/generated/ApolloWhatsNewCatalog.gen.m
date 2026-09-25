@@ -25,6 +25,7 @@ static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "3.19.0", "What's New in Apollo Reborn" },
     { "3.5.0", "What's New in Apollo Reborn" },
     { "3.7.0", "What's New in Apollo Reborn" },
+    { "3.8.0", "What's New in Apollo Reborn" },
     { "3.9.0", "What's New in Apollo Reborn" },
 };
 
@@ -96,6 +97,14 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "3.7.0", "text.bubble.fill", "Smarter Highlights", "Unread dots, New badges, and +N counts show which Community Highlights you haven't read or that picked up comments." },
     { "3.7.0", "apps.iphone", "Widgets for Any Feed", "Point the Feed and Post widgets at Home, Popular, All, several subreddits, or a multireddit." },
     { "3.7.0", "checkmark.shield.fill", "Stability & Fixes", "Fixes for freezes, GIF memory crashes, launch crashes, duplicate saved items, and translation going quiet." },
+    { "3.8.0", "square.and.arrow.down.on.square.fill", "Save All Media", "Save every image, GIF, and video in a gallery or album at once, with a progress ring and Cancel." },
+    { "3.8.0", "ellipsis.circle.fill", "Action Menus", "Reorder or hide the actions in each \342\200\242\342\200\242\342\200\242 and moderator menu, with a live preview as you go." },
+    { "3.8.0", "person.2.circle.fill", "New Account Switcher", "A themed bottom sheet with bigger avatars, Add Account and Edit up top, and smoother reordering." },
+    { "3.8.0", "clock.arrow.circlepath", "Automatic Backups", "Back up your settings to a folder in Files on a schedule, and restore one by opening it from Files." },
+    { "3.8.0", "gearshape.fill", "Settings Shortcuts", "Press and hold the Settings tab to jump straight to the settings pages you use most." },
+    { "3.8.0", "arrow.uturn.backward.circle.fill", "Back to Where You Were", "After a status-bar tap takes you to the top, tap the Return Button or the status bar again to jump back." },
+    { "3.8.0", "person.crop.circle.fill", "Profiles, Refreshed", "Pick a profile picture shape, see Immersive profile art behind the bars, and browse Hidden & Deleted as one feed." },
+    { "3.8.0", "checkmark.shield.fill", "Smoother and Steadier", "Video-heavy feeds scroll smoother and albums zoom open, plus fixes for crashes, widget sign-in, and glass search." },
     { "3.9.0", "bubble.left.and.bubble.right.fill", "Modern Chat & Modmail", "Opt into Reddit's current Chat and Modmail, with requests, group chats, and media." },
     { "3.9.0", "rosette", "Badge Book", "Reddit achievements and a Trophy Case, right on any profile." },
     { "3.9.0", "person.crop.rectangle.fill", "Immersive Headers", "Redesigned subreddit and profile headers, with bands you can turn off." },

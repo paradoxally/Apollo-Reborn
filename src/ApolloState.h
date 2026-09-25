@@ -89,6 +89,11 @@ extern NSInteger sUnmuteFeedVideos;
 // fullscreen viewer as stock. Default OFF. See ApolloFeedVideoScrubber.xm.
 extern BOOL sFeedVideoScrubber;
 
+// "Smoother Video Scrolling" — when ON (default), feed video players are built
+// on a background queue and video posts draw asynchronously after they scroll
+// in (no synchronous display wait). See ApolloFeedVideoScrolling.xm.
+extern BOOL sFeedVideoScrollSmoothing;
+
 // "Hold for Video Speed": when ON (default), press-and-hold the right side of a
 // fullscreen video to play it at sVideoHoldSpeed while held; release restores the
 // prior rate. When OFF the right side behaves like the rest of the player (normal
@@ -349,6 +354,8 @@ extern NSInteger sSubredditFeedLayout;
 extern BOOL sPerAccountFavoritesEnabled;
 // Effective sorting preference for the materialized favorites scope.
 extern BOOL sSortFavoritesAlphabetically;
+// Opt-in confirm sheet before the Subreddits-list star mutates favorites.
+extern BOOL sConfirmFavoriteToggle;
 // Hide the description subtitles under the subreddit list's built-in feed rows
 // (see UDKeyHideSubredditListDescriptions). Independent of the enhancements master.
 extern BOOL sHideSubredditListDescriptions;

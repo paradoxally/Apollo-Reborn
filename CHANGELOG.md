@@ -4,22 +4,35 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [v3.19.1] - 2026-09-24
+## [v3.20.0] - 2026-09-25
 
 ### Features
 
+- Add **Action Menus** to reorder and hide the actions in Apollo's ••• menus and, for moderators, its shield menus — one menu at a time, with a button that opens the menu exactly as Apollo would show it, under **Settings > Apollo Reborn > Interface > Menus** ([#1131](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1131): @icpryde)
+  - Apollo Reborn's own rows such as Gallery View are listed next to the native ones, and **Reset This Menu** / **Reset All Menus** bring back Apollo's defaults
+- Add **Smoother Video Scrolling** to **Settings > Apollo Reborn > Posts & Feeds > Feed**, on by default — video players are prepared in the background and video posts no longer hold up the scroll while they draw, cutting player setup on the main thread from about 120 ms to 12 ms per scroll; playing videos also update their progress 30 times a second instead of 200 ([#1168](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1168): @icpryde)
 - Improve **immersive profile headers** — the banner artwork now runs up behind the status and navigation bars with a wider crop and fades into the page to suit the theme, and the stat cards use native Liquid Glass ([#1186](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1186): @IllIIllIllIllII)
   - Long-press a banner for **View Banner**, which opens the original full-screen, ready to save to Photos with Apollo's own **Saved!** confirmation
-  - A **Hard** header stays out of the way while the artwork is on screen and returns once it scrolls off, and profiles repaint when you switch Apollo themes
+- Keep unsent **Chat drafts** in modern Direct Chat — each account and conversation keeps its own, restored when you come back ([#1207](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1207): @Thetromboneman1)
+- Add **Confirm Favorite Changes** to **Settings > Apollo Reborn > Subreddits > Favorites**, off by default — the star on the Subreddits list asks before adding or removing a favourite ([#1173](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1173): @nunoo)
+- Fade a newly **posted comment** into the thread with its avatar and flair already in place, instead of the thread jumping and the avatar popping in afterwards ([#1196](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1196): @icpryde)
 
 ### Fixes
 
+- Fix a **crash on launch or when switching accounts** after changing your Reddit password — Apollo now tries to recover the expired session and asks you to sign in again if it can't ([#1200](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1200): @IllIIllIllIllII)
+- Fix a **crash when touching and holding a post** while the feed scrolls ([#1193](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1193): @icpryde)
+- Bring back **Copy with Account** in Copy Widget Setup Code, so Home and multireddit widgets can use your account again ([#1195](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1195): @icpryde)
+- Fix **Gallery View** keeping its spinner up after changing the filter while the first page loads — and holding a video in the viewer now opens Save/Share without letting go ([#1194](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1194): @icpryde)
+- Fix **rich link cards** overlapping a post's details and vote buttons once they finish loading, in feeds and comment threads ([#1191](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1191): @IllIIllIllIllII)
 - Fix **Apollo Reborn's settings screens** stalling or refusing to scroll back up on Apollo AI, Media and Posts & Feeds, and footer text drawing over the rows above it — each footer now keeps the height it measured, and swiping back to the hub no longer slides the list into place ([#1170](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1170): @icpryde)
 - Fix the **Liquid Glass feed search bar** springing back open after you scroll it away, and a **Hard** header cutting off the top of the search field — plus smoother Find in Comments icons, no jump when collapsing a comment near the top, and the field's glass surviving a cancelled swipe back ([#1146](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1146): @icpryde)
+- Fix **feed usernames** drifting right, leaving a growing gap after "by", each time you came back from a post with Translate Post Titles on ([#1208](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1208): @icpryde)
 - Fix **comment ages** being pushed off screen by long usernames — the username now shortens with an ellipsis so the age stays visible ([#1162](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1162): @IllIIllIllIllII)
+- Keep recovered **deleted comments** readable when Apollo switches between light and dark mode while the thread is open ([#1206](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1206): @Thetromboneman1)
+- Fix **chat rooms in the Inbox** turning unread again after a refresh — tapping one now marks it read on Reddit through your signed-in account, so the row and the badge stay cleared ([#1141](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1141): @icpryde)
 - Fix **double-tapping Search** sometimes failing to reopen the keyboard ([#1190](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1190): @IllIIllIllIllII)
 - Fix the **gallery counter** on iPhone 18 Pro and Pro Max showing "1 of 5" in the middle — it is back to "1 / 5" in the top-right corner ([#1189](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1189): @IllIIllIllIllII)
-- Fix **chat rooms in the Inbox** turning unread again after a refresh — tapping one now marks it read on Reddit through your signed-in account, so the row and the badge stay cleared ([#1141](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1141): @icpryde)
+- Fix **Bark Notifications** showing Bark's own icon when your app icon has no Bark artwork — they fall back to the default Apollo icon ([#1204](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1204): @Thetromboneman1)
 
 ## [v3.19.0] - 2026-09-23
 
@@ -1390,7 +1403,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
-[v3.19.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.19.0...v1.15.11_3.19.1
+[v3.20.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.19.0...v1.15.11_3.20.0
 [v3.19.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.2...v1.15.11_3.19.0
 [v3.18.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.1...v1.15.11_3.18.2
 [v3.18.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.0...v1.15.11_3.18.1

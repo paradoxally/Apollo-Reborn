@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "version": "3.20.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "ellipsis.circle.fill", "title": "Action Menus", "subtitle": "Reorder or hide the actions in each ••• and moderator menu, with a live preview. Find it under Interface > Menus." },
+    { "icon": "play.rectangle.fill", "title": "Smoother Video Feeds", "subtitle": "Video players get ready in the background, so video-heavy subreddits scroll without hitches." },
+    { "icon": "person.crop.circle.fill", "title": "Immersive Profiles", "subtitle": "Banner art now runs behind the bars. Long-press a banner to view it full-screen and save it." },
+    { "icon": "text.bubble.fill", "title": "Chat Drafts", "subtitle": "Unsent messages in modern Direct Chat are kept for each account and conversation." },
+    { "icon": "star.fill", "title": "Confirm Favorite Changes", "subtitle": "Have the star on the Subreddits list ask before adding or removing a favourite. Off by default." }
+  ]
+}

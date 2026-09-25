@@ -36,6 +36,7 @@
 #import "ApolloWebJSON.h"
 #import "ApolloWebSessionStore.h"
 #import "ApolloWebSessionLoginViewController.h"
+#import "ApolloMessageDraftStore.h"
 #import "ApolloAccountCredentials.h"
 #import "ApolloPerAccountFavorites.h"
 #import "ApolloFavoritesSorting.h"
@@ -74,6 +75,15 @@ static BOOL IsValetQuery(NSDictionary *query) {
     NSString *service = query[(__bridge id)kSecAttrService];
     return service && [service containsString:kValetServiceSubstring];
 }
+
+#if APOLLO_SIM_BUILD
+// Simulator only: drafts use their own service so they never enter device
+// Valet self-heal. Route that exact service through the persisted simulator
+// shim because ad-hoc simulator apps have no Keychain entitlement.
+static BOOL IsMessageDraftQuery(NSDictionary *query) {
+    return [query[(__bridge id)kSecAttrService] isEqualToString:ApolloMessageDraftKeychainService];
+}
+#endif
 
 static BOOL IsUltraProOverrideKey(NSDictionary *query) {
     NSString *account = query[(__bridge id)kSecAttrAccount];
@@ -1231,7 +1241,7 @@ static void ApolloDeleteStaleKeychainItem(NSDictionary *query) {
 static OSStatus SecItemAdd_replacement(CFDictionaryRef query, CFTypeRef *result) {
     NSDictionary *strippedQuery = stripGroupAccessAttr(query);
 #if APOLLO_SIM_BUILD
-    if (IsValetQuery(strippedQuery)) {
+    if (IsValetQuery(strippedQuery) || IsMessageDraftQuery(strippedQuery)) {
         id value = strippedQuery[(__bridge id)kSecValueData];
         if ([value isKindOfClass:[NSData class]]) {
             SimKeychainStore()[SimKeychainKey(strippedQuery[(__bridge id)kSecAttrService], strippedQuery[(__bridge id)kSecAttrAccount])] = value;
@@ -1337,7 +1347,7 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
     }
 
 #if APOLLO_SIM_BUILD
-    if (IsValetQuery(strippedQuery)) {
+    if (IsValetQuery(strippedQuery) || IsMessageDraftQuery(strippedQuery)) {
         NSData *data = SimKeychainStore()[SimKeychainKey(strippedQuery[(__bridge id)kSecAttrService], strippedQuery[(__bridge id)kSecAttrAccount])];
         if (data) return SimKeychainServe(strippedQuery, data, result);
         return errSecItemNotFound;
@@ -1450,7 +1460,7 @@ static OSStatus SecItemUpdate_replacement(CFDictionaryRef query, CFDictionaryRef
     }
 
 #if APOLLO_SIM_BUILD
-    if (IsValetQuery(strippedQuery)) {
+    if (IsValetQuery(strippedQuery) || IsMessageDraftQuery(strippedQuery)) {
         NSString *key = SimKeychainKey(strippedQuery[(__bridge id)kSecAttrService], strippedQuery[(__bridge id)kSecAttrAccount]);
         id value = attrs[(__bridge id)kSecValueData];
         if ([value isKindOfClass:[NSData class]]) {
@@ -1533,7 +1543,7 @@ static OSStatus SecItemUpdate_replacement(CFDictionaryRef query, CFDictionaryRef
 static OSStatus SecItemDelete_replacement(CFDictionaryRef query) {
     NSDictionary *strippedQuery = stripGroupAccessAttr(query);
 #if APOLLO_SIM_BUILD
-    if (IsValetQuery(strippedQuery)) {
+    if (IsValetQuery(strippedQuery) || IsMessageDraftQuery(strippedQuery)) {
         NSString *key = SimKeychainKey(strippedQuery[(__bridge id)kSecAttrService], strippedQuery[(__bridge id)kSecAttrAccount]);
         if (SimKeychainStore()[key]) {
             [SimKeychainStore() removeObjectForKey:key];
@@ -3835,6 +3845,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
                                     UDKeyUnmuteFeedVideos: @0,
                                     UDKeyFeedVideosUnmutedMemory: @NO,
                                     UDKeyFeedVideoScrubber: @NO,
+                                    UDKeyFeedVideoScrollSmoothing: @YES,
                                     UDKeyVideoHoldSpeedEnabled: @YES,
                                     UDKeyVideoHoldSpeed: @2.0,
                                     UDKeyProxyImgurDDG: @NO,
@@ -3992,6 +4003,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
     sUnmuteCommentsVideos = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyUnmuteCommentsVideos];
     sUnmuteFeedVideos = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyUnmuteFeedVideos];
     sFeedVideoScrubber = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyFeedVideoScrubber];
+    sFeedVideoScrollSmoothing = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyFeedVideoScrollSmoothing];
     sVideoHoldSpeedEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyVideoHoldSpeedEnabled];
     sVideoHoldSpeed = ApolloSanitizedHoldSpeed([[NSUserDefaults standardUserDefaults] floatForKey:UDKeyVideoHoldSpeed]);
     sProxyImgurDDG = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyProxyImgurDDG];
@@ -4240,6 +4252,7 @@ static BOOL ApolloDefaultsKeyChangesNativeFavorites(NSString *key) {
     }
     sPerAccountFavoritesEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyPerAccountFavoritesEnabled];
     sSortFavoritesAlphabetically = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySortFavoritesAlphabetically];
+    sConfirmFavoriteToggle = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyConfirmFavoriteToggle];
     sHideSubredditListDescriptions = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyHideSubredditListDescriptions];
     sHideMultiredditDescriptions = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyHideMultiredditDescriptions];
     sEnableFlairColors = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyEnableFlairColors];

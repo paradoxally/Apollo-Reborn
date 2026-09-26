@@ -2897,12 +2897,17 @@ static void ApolloUserFlairFetchSpriteData(UIViewController *controller, NSStrin
     NSString *enc = [subreddit stringByAddingPercentEncodingWithAllowedCharacters:[NSCharacterSet URLPathAllowedCharacterSet]] ?: subreddit;
     __weak UIViewController *wc = controller;
 
-    void (^reload)(void) = ^{
+    void (^reload)(void (^)(void)) = ^(void (^completion)(void)) {
         UIViewController *c = wc; if (!c) return;
         // Drop the cached collapse model so it rebuilds (css-class subs stop collapsing).
         objc_setAssociatedObject(c, &kApolloUserFlairCollapseModelKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         id tableNode = ApolloUserFlairRawObjectIvar(c, @"tableNode");
+        if (completion && [tableNode respondsToSelector:@selector(reloadDataWithCompletion:)]) {
+            ((void (*)(id, SEL, void (^)(void)))objc_msgSend)(tableNode, @selector(reloadDataWithCompletion:), completion);
+            return;
+        }
         if ([tableNode respondsToSelector:@selector(reloadData)]) ((void (*)(id, SEL))objc_msgSend)(tableNode, @selector(reloadData));
+        if (completion) completion();
     };
 
     NSMutableURLRequest *fs = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"https://oauth.reddit.com/r/%@/api/flairselector?raw_json=1", enc]]];
@@ -2927,7 +2932,7 @@ static void ApolloUserFlairFetchSpriteData(UIViewController *controller, NSStrin
             UIViewController *c = wc; if (!c) return;
             objc_setAssociatedObject(c, &kApolloUserFlairCssByTemplateKey, byTemplate, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
             ApolloLog(@"[UserFlair] css-class flairs: %lu templates", (unsigned long)byTemplate.count);
-            reload(); // show prettified names immediately
+            reload(nil); // show prettified names immediately
 
             // Now fetch the stylesheet + parse + download sprite sheets.
             NSMutableURLRequest *ss = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:[NSString stringWithFormat:@"https://oauth.reddit.com/r/%@/about/stylesheet?raw_json=1", enc]]];
@@ -2977,9 +2982,12 @@ static void ApolloUserFlairFetchSpriteData(UIViewController *controller, NSStrin
                     objc_setAssociatedObject(c2, &kApolloUserFlairSpriteSheetsKey, ownedSheets, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                     // Texture requests EVERY row's node block during reloadData,
                     // so each css row crops its sprite here, not just visible ones.
-                    // The selector keeps those crops, so the sheets can go now.
-                    reload();
-                    objc_setAssociatedObject(c2, &kApolloUserFlairSpriteSheetsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    // The selector keeps those crops, so the sheets can go once
+                    // the reload has finished.
+                    reload(^{
+                        UIViewController *c3 = wc;
+                        if (c3) objc_setAssociatedObject(c3, &kApolloUserFlairSpriteSheetsKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    });
                     ApolloLog(@"[UserFlair] sprite crops owned by the selector after reload: %lu",
                               (unsigned long)[objc_getAssociatedObject(c2, &kApolloUserFlairSpriteCropsKey) count]);
                 });

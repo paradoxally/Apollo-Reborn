@@ -113,6 +113,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloSaveAllMediaBridge.swift \
     $(SRC_DIR)/ApolloSaveAllMediaMenus.xm \
     $(SRC_DIR)/ApolloGIFSaveActivity.xm \
+    $(SRC_DIR)/ApolloShareMediaHandoff.xm \
     $(SRC_DIR)/ApolloMediaDownloadActions.xm \
     $(SRC_DIR)/ApolloLinkedAlbumPostControls.xm \
     $(SRC_DIR)/ApolloFeedAlbumMenus.xm \
@@ -163,6 +164,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloLiquidGlassIconPicker.xm \
     $(SRC_DIR)/ApolloModmailLayout.xm \
     $(SRC_DIR)/ApolloModmailSubjectCounter.xm \
+    $(SRC_DIR)/ApolloMessagesKeyboardInset.xm \
     $(SRC_DIR)/ApolloAutoHideTabBar.xm \
     $(SRC_DIR)/ApolloTopBarScrollPresentation.m \
     $(SRC_DIR)/ApolloListBottomInsetGuard.xm \
@@ -265,6 +267,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloChatInlineImages.xm \
     $(SRC_DIR)/ApolloChatComposer.xm \
     $(SRC_DIR)/ApolloMessageDraftStore.m \
+    $(SRC_DIR)/ApolloMessagesReplyBarRestore.xm \
     $(SRC_DIR)/ApolloChatsFilter.xm \
     $(SRC_DIR)/ApolloDirectChatWeb.xm \
     $(SRC_DIR)/ApolloLinkCardTitleFallback.xm \

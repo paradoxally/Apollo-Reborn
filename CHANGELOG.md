@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.20.1] - 2026-09-26
+
+### Fixes
+
+- Fix **restoring backups made before 3.17.0** failing with "Invalid Backup" — those backups carry an extra keychain record Apollo no longer restores, and it is now left out instead of rejecting the whole file ([#1217](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1217): @icpryde)
+- Fix a **crash when tapping "Translated from …"** on a recovered deleted comment — the tap now switches the comment back to its original text ([#1222](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1222): @icpryde)
+- Fix **Download Video** sending the first video again over Messages — every share now gets its own file, and Apollo clears those copies out of its temporary folder afterwards ([#1216](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1216), [#1219](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1219): @icpryde)
+- Fix **avatars and profile lookups** running as the wrong account when an API-Key-Free account shares the app with an API-key one — they now use the active account's own sign-in ([#1227](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1227): @icpryde)
+- Fix the **newest message** hiding behind the reply bar in modmail and message threads on iOS 26 and 27, and the **reply bar** disappearing after a cancelled swipe back between threads ([#1228](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1228), [#1234](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1234): @icpryde)
+- Fix the **post composer** — the Post button no longer turns white on Liquid Glass, the Media body editor keeps its Done checkmark while typing, and Command-Return in the body editors acts as Done instead of posting ([#1221](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1221), [#1226](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1226), [#1233](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1233): @icpryde)
+- Fix old-reddit **sprite flairs** missing from the top rows of the flair picker in subreddits with long flair lists, such as r/nintendo ([#1215](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1215): @icpryde)
+- Fix the author's **avatar** appearing inside post titles that name their own author, such as "Artwork by Name" ([#1218](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1218): @icpryde)
+- Fix the **Social Links** row on profiles sometimes showing Reddit's copyright footer instead of the user's links ([#1231](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1231): @icpryde)
+- Fix the **Remove** button in Settings Shortcuts leaving the shortcut in the list ([#1212](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1212): @IllIIllIllIllII)
+- Stop sending Apollo's **analytics requests** to a self-hosted Notification Backend — they are now always dropped ([#1230](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1230): @DeltAndy123)
+
 ## [v3.20.0] - 2026-09-25
 
 ### Features
@@ -1403,6 +1419,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.20.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.0...v1.15.11_3.20.1
 [v3.20.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.19.0...v1.15.11_3.20.0
 [v3.19.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.2...v1.15.11_3.19.0
 [v3.18.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.1...v1.15.11_3.18.2

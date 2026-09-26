@@ -18,6 +18,7 @@ static char kApolloUserFlairCurrentFlairKey;
 static char kApolloUserFlairCssByTemplateKey;   // template_id -> css_class (trimmed)
 static char kApolloUserFlairSpriteMapKey;        // css_class -> @{url,x,y,w,h,round}
 static char kApolloUserFlairSpriteCropsKey;      // sprite cache key -> ApolloUserFlairSpriteCrop (owned by the selector)
+static char kApolloUserFlairSpriteSheetsKey;     // sheet url -> UIImage (owned by the selector)
 static char kApolloUserFlairSpriteFetchedKey;    // @YES once sprite-data fetch started
 static char kApolloUserFlairWebCSSClassKey;      // css_class recovered from old-reddit HTML
 static char kApolloUserFlairWebCurrentOptionKey; // @YES on the option matched to the signed-in user's flair
@@ -2833,7 +2834,9 @@ static NSString *ApolloUserFlairBuildSpriteIdentifier(UIViewController *controll
         objc_getAssociatedObject(controller, &kApolloUserFlairSpriteCropsKey);
     ApolloUserFlairSpriteCrop *owned = crops[cacheKey];
     if (owned) return owned.identifier;
-    UIImage *sheet = [ApolloUserFlairSheetCache() objectForKey:region[@"url"]];
+    NSDictionary<NSString *, UIImage *> *ownedSheets =
+        objc_getAssociatedObject(controller, &kApolloUserFlairSpriteSheetsKey);
+    UIImage *sheet = ownedSheets[region[@"url"]] ?: [ApolloUserFlairSheetCache() objectForKey:region[@"url"]];
     if (!sheet || !sheet.CGImage) return nil;
     CGFloat scale = sheet.scale > 0 ? sheet.scale : 1.0;
     CGRect r = CGRectMake([region[@"x"] doubleValue] * scale, [region[@"y"] doubleValue] * scale,
@@ -2939,20 +2942,39 @@ static void ApolloUserFlairFetchSpriteData(UIViewController *controller, NSStrin
                 if (spriteMap.count == 0) { ApolloLog(@"[UserFlair] sprite CSS not parseable — using names"); return; }
                 NSSet *sheetURLs = [NSSet setWithArray:[spriteMap.allValues valueForKeyPath:@"url"]];
                 ApolloLog(@"[UserFlair] sprite map: %lu classes, %lu sheet(s)", (unsigned long)spriteMap.count, (unsigned long)sheetURLs.count);
+                // The selector owns its sheets while it is open. NSCache drops
+                // an object costlier than totalCostLimit the moment it is set,
+                // so a sheet over the byte budget would be gone before the
+                // reload below crops from it. The cache is only for reuse
+                // across selector openings.
+                NSMutableDictionary<NSString *, UIImage *> *sheets = [NSMutableDictionary dictionary];
                 dispatch_group_t grp = dispatch_group_create();
                 for (NSString *u in sheetURLs) {
-                    if ([ApolloUserFlairSheetCache() objectForKey:u]) continue;
+                    UIImage *cached = [ApolloUserFlairSheetCache() objectForKey:u];
+                    if (cached) {
+                        @synchronized (sheets) { sheets[u] = cached; }
+                        continue;
+                    }
                     NSURL *url = [NSURL URLWithString:u]; if (!url) continue;
                     dispatch_group_enter(grp);
                     [[[NSURLSession sharedSession] dataTaskWithURL:url completionHandler:^(NSData *id_, NSURLResponse *ir, NSError *ie) {
                         UIImage *im = id_ ? [UIImage imageWithData:id_] : nil;
-                        if (im) [ApolloUserFlairSheetCache() setObject:im forKey:u cost:ApolloImageByteCost(im)];
+                        if (im) {
+                            NSUInteger cost = ApolloImageByteCost(im);
+                            ApolloLogAlways(@"[UserFlair] sprite sheet %.0fx%.0f px, %lu bytes decoded",
+                                            im.size.width * im.scale, im.size.height * im.scale, (unsigned long)cost);
+                            [ApolloUserFlairSheetCache() setObject:im forKey:u cost:cost];
+                            @synchronized (sheets) { sheets[u] = im; }
+                        }
                         dispatch_group_leave(grp);
                     }] resume];
                 }
                 dispatch_group_notify(grp, dispatch_get_main_queue(), ^{
                     UIViewController *c2 = wc; if (!c2) return;
                     objc_setAssociatedObject(c2, &kApolloUserFlairSpriteMapKey, spriteMap, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+                    NSDictionary *ownedSheets;
+                    @synchronized (sheets) { ownedSheets = [sheets copy]; }
+                    objc_setAssociatedObject(c2, &kApolloUserFlairSpriteSheetsKey, ownedSheets, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
                     // Texture requests EVERY row's node block during reloadData,
                     // so each css row crops its sprite here, not just visible ones.
                     reload();

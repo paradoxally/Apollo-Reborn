@@ -58,6 +58,7 @@ static NSString *ApolloWebJSONAccountFromURL(NSURL *url) { (void)url; return @"a
 #undef NSURLSession
 #undef NSURLSessionDataTask
 static void ApolloWebJSONMergeSetCookiesFromResponse(NSString *username, NSHTTPURLResponse *response) { (void)username; (void)response; merges++; }
+static void ApolloWebJSONRecordRateLimit(NSString *username, NSURLRequest *request, NSHTTPURLResponse *http) { (void)username; (void)request; (void)http; }
 static void require(BOOL okay) { if (!okay) { NSLog(@"FAIL"); abort(); } }
 static NSHTTPURLResponse *response(NSInteger status, NSString *mime) {
     return [[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://www.reddit.com/api/me.json"] statusCode:status HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type":mime}];

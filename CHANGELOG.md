@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.20.2] - 2026-09-28
+
+### Fixes
+
+- Fix **API-Key-Free feeds** getting stuck on a spinner — comment avatars now come from the author lookup Apollo already makes for each thread instead of one request per commenter, so they no longer use up the account's Reddit limit, and if Reddit does start refusing requests a **Reddit Rate Limit Reached** notice says how long to wait ([#1220](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1220): @icpryde)
+- Fix **Pixel Pals** drawing a pill wider than the Dynamic Island on iPhone 18 Pro and newer — the pals, their food and the ball now follow the device's real island, which also stops the pill sitting a pixel too high and the ball floating above the island on newer models, the 16 Pro included ([#1244](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1244): @JeffreyCA)
+
 ## [v3.20.1] - 2026-09-26
 
 ### Fixes
@@ -1419,6 +1426,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.20.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.1...v1.15.11_3.20.2
 [v3.20.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.0...v1.15.11_3.20.1
 [v3.20.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.19.0...v1.15.11_3.20.0
 [v3.19.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.18.2...v1.15.11_3.19.0

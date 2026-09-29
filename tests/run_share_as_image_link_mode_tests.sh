@@ -16,8 +16,8 @@ xcrun --sdk macosx clang $common_flags -I"$repo/src" -c "$repo/tests/share_as_im
 
 nm -g "$build/mode.o" | grep -q ' T _ApolloShareLinkModeRead$'
 nm -g "$build/mode.o" | grep -q ' T _ApolloShareLinkURLForMode$'
-nm -u "$build/tests.o" | grep -q '^_ApolloShareLinkModeRead$'
-nm -u "$build/tests.o" | grep -q '^_ApolloShareLinkURLForMode$'
+nm -u "$build/tests.o" | grep -q '_ApolloShareLinkModeRead$'
+nm -u "$build/tests.o" | grep -q '_ApolloShareLinkURLForMode$'
 
 # shellcheck disable=SC2086
 xcrun --sdk macosx clang++ $common_flags -framework Foundation "$build/tests.o" "$build/mode.o" -o "$build/tests"

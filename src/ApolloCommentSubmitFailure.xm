@@ -24,7 +24,7 @@
 //
 // So this module:
 //  1. notes Reddit's own answer to each POST api/comment (json.errors code + message, HTTP
-//     status), keyed by the thing being replied to;
+//     status) on the submit that sent it;
 //  2. when a submit fails, looks the thread up through the client that posted (API-key and
 //     API-key-free accounts alike) before passing the result on: removed / locked / archived
 //     post, a removed or locked parent comment, a subreddit ban or comment restriction — plus where
@@ -59,8 +59,6 @@ static const NSInteger kApolloCommentFailureServerErrorLastCode = 504;
 
 // How long a failed submit may wait for the thread lookup before Apollo's alert shows anyway.
 static const NSTimeInterval kApolloCommentFailureLookupBudget = 5.0;
-// How long Reddit's noted answer stays claimable by its submit's completion.
-static const NSTimeInterval kApolloCommentFailureReplyTTL = 60.0;
 
 #pragma mark - Reddit's answer to the POST
 
@@ -68,51 +66,24 @@ static const NSTimeInterval kApolloCommentFailureReplyTTL = 60.0;
 @property (nonatomic, copy) NSString *code;      // json.errors[0][0], e.g. THREAD_LOCKED
 @property (nonatomic, copy) NSString *message;   // json.errors[0][1], Reddit's own wording
 @property (nonatomic, assign) NSInteger status;  // HTTP status (0 = no response)
-@property (nonatomic, strong) NSDate *date;
 @end
 
 @implementation ApolloCommentFailureReply
 @end
 
-// (posting client, thing_id) → Reddit's answer to the latest POST api/comment on it, when that
-// answer was a failure. The client is part of the key because each account owns its RDKClient, so
-// two accounts replying to the same thing can never claim each other's answer. Written from the request's completion queue and claimed by the submit completion,
-// so every access is @synchronized. Each POST replaces (or, on success, clears) its thing's
-// entry, and entries past the TTL are pruned on every write.
-static NSMutableDictionary<NSString *, ApolloCommentFailureReply *> *ApolloCommentFailureReplies(void) {
-    static NSMutableDictionary *replies = nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ replies = [NSMutableDictionary dictionary]; });
-    return replies;
-}
+// One per submitComment: call. RedditKit's submitComment:onThingWithFullName:completion: returns
+// the task its own postPath: call creates, so that POST starts synchronously inside the submit, on
+// the same thread: the token is handed across through a thread-local while the submit runs, and
+// the POST's answer lands on the token of the submit that made it. Nothing is shared between two
+// submits, whatever account or thing they target.
+@interface ApolloCommentFailureSubmitToken : NSObject
+@property (atomic, strong) ApolloCommentFailureReply *reply;
+@end
 
-static NSString *ApolloCommentFailureReplyKey(id client, NSString *thingID) {
-    return [NSString stringWithFormat:@"%p|%@", client, thingID];
-}
+@implementation ApolloCommentFailureSubmitToken
+@end
 
-static void ApolloCommentFailureStoreReply(NSString *key, ApolloCommentFailureReply *reply) {
-    NSMutableDictionary *replies = ApolloCommentFailureReplies();
-    @synchronized (replies) {
-        for (NSString *key in replies.allKeys) {
-            ApolloCommentFailureReply *old = replies[key];
-            if (-[old.date timeIntervalSinceNow] > kApolloCommentFailureReplyTTL) [replies removeObjectForKey:key];
-        }
-        if (reply) replies[key] = reply;
-        else [replies removeObjectForKey:key];
-    }
-}
-
-static ApolloCommentFailureReply *ApolloCommentFailureClaimReply(id client, NSString *thingID) {
-    if (!client || thingID.length == 0) return nil;
-    NSString *key = ApolloCommentFailureReplyKey(client, thingID);
-    NSMutableDictionary *replies = ApolloCommentFailureReplies();
-    @synchronized (replies) {
-        ApolloCommentFailureReply *reply = replies[key];
-        [replies removeObjectForKey:key];
-        if (reply && -[reply.date timeIntervalSinceNow] > kApolloCommentFailureReplyTTL) return nil;
-        return reply;
-    }
-}
+static __thread __unsafe_unretained ApolloCommentFailureSubmitToken *tApolloCommentFailureSubmitToken = nil;
 
 // nil when the POST went through (HTTP 200, no json.errors, no transport error).
 static ApolloCommentFailureReply *ApolloCommentFailureReplyFrom(NSHTTPURLResponse *response, id responseObject, NSError *error) {
@@ -132,7 +103,6 @@ static ApolloCommentFailureReply *ApolloCommentFailureReplyFrom(NSHTTPURLRespons
     reply.code = code;
     reply.message = message;
     reply.status = status;
-    reply.date = [NSDate date];
     return reply;
 }
 
@@ -527,17 +497,18 @@ static void ApolloCommentFailureDeliver(ApolloCommentFailureSubmitCompletion com
 // reach the submit completion (RedditKit parses them into "no comment"), so read them here.
 - (id)postPath:(NSString *)path parameters:(id)parameters completion:(ApolloCommentFailureTaskCompletion)completion {
     if (!completion || !ApolloCommentFailureIsCommentPath(path)) return %orig;
+    ApolloCommentFailureSubmitToken *token = tApolloCommentFailureSubmitToken;
+    tApolloCommentFailureSubmitToken = nil;  // one POST per submit
+    if (!token) return %orig;
     NSDictionary *params = [parameters isKindOfClass:[NSDictionary class]] ? parameters : nil;
     NSString *thingID = [params[@"thing_id"] isKindOfClass:[NSString class]] ? [params[@"thing_id"] copy] : nil;
-    if (thingID.length == 0) return %orig;
-    NSString *replyKey = ApolloCommentFailureReplyKey(self, thingID);
     ApolloCommentFailureTaskCompletion wrapped = ^(NSHTTPURLResponse *response, id responseObject, NSError *error) {
         @try {
             ApolloCommentFailureReply *reply = ApolloCommentFailureReplyFrom(response, responseObject, error);
-            ApolloCommentFailureStoreReply(replyKey, reply);
+            token.reply = reply;
             if (reply) {
                 ApolloLog(@"[CommentFailure] Reddit answered the comment on %@: HTTP %ld, code %@",
-                          thingID, (long)reply.status, reply.code ?: @"-");
+                          thingID ?: @"-", (long)reply.status, reply.code ?: @"-");
             }
         } @catch (NSException *e) {
             ApolloLog(@"[CommentFailure] noting the api/comment answer threw: %@", e.reason);
@@ -555,9 +526,10 @@ static void ApolloCommentFailureDeliver(ApolloCommentFailureSubmitCompletion com
     if (!completion) return %orig;
     NSString *thingID = [fullName isKindOfClass:[NSString class]] ? [fullName copy] : nil;
     __weak id weakClient = self;
+    ApolloCommentFailureSubmitToken *token = [ApolloCommentFailureSubmitToken new];
     ApolloCommentFailureSubmitCompletion wrapped = ^(id object, NSError *error) {
         id client = weakClient;
-        ApolloCommentFailureReply *reply = ApolloCommentFailureClaimReply(client, thingID);
+        ApolloCommentFailureReply *reply = token.reply;
         if (object || !client || !NSThread.isMainThread || !ApolloCommentFailureShouldLookUp(thingID, reply, error)) {
             completion(object, error);
             return;
@@ -573,7 +545,11 @@ static void ApolloCommentFailureDeliver(ApolloCommentFailureSubmitCompletion com
             ApolloCommentFailureDeliver(completion, object, error, explanation);
         });
     };
-    return %orig(body, fullName, wrapped);
+    ApolloCommentFailureSubmitToken *previous = tApolloCommentFailureSubmitToken;
+    tApolloCommentFailureSubmitToken = token;
+    id task = %orig(body, fullName, wrapped);
+    tApolloCommentFailureSubmitToken = previous;
+    return task;
 }
 
 %end

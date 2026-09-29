@@ -50,11 +50,13 @@ int main(void) {
         CHECK(sActive.currentUser.subscribedSubreddits == nil && posts == 0, "unloaded list is not fabricated from one name");
         CHECK(!ApolloAccountSubscriptionListState(@"AskReddit", &subscribed), "state stays unknown until the list loads");
 
+        posts = 0;
         sActive.currentUser.subscribedSubreddits = @[@"Apple"];
-        [[NSNotificationCenter defaultCenter] postNotificationName:ApolloSubscribedSubredditsUpdatedNotification object:@"abc"];
+        CHECK(sActive.currentUser.subscribedSubreddits.count == 1, "nothing is applied inside Apollo's own setter call");
         Spin();
         NSArray *list = sActive.currentUser.subscribedSubreddits;
-        CHECK(list.count == 2 && [list containsObject:@"Apple"] && [list containsObject:@"AskReddit"], "held change lands on the loaded list after Apollo's broadcast");
+        CHECK(list.count == 2 && [list containsObject:@"Apple"] && [list containsObject:@"AskReddit"] && posts == 1,
+              "held change lands once Apollo assigns the loaded list, with no broadcast needed");
 
         sActive = Client(nil);
         ApolloAccountApplySubscriptionChange(@"Swift", YES);
@@ -70,9 +72,11 @@ int main(void) {
         FakeClient *second = Client(@[@"Go"]);
         sActive = second;
         CHECK(ApolloAccountSubscriptionListState(@"Rust", &subscribed) && !subscribed, "a held change never lands on another account");
+        Spin();
+        CHECK(![second.currentUser.subscribedSubreddits containsObject:@"Rust"], "assigning another account's list leaves the held change alone");
         first.currentUser.subscribedSubreddits = @[];
-        sActive = first;
-        CHECK(ApolloAccountSubscriptionListState(@"Rust", &subscribed) && subscribed, "it lands on its own account once that list loads");
+        Spin();
+        CHECK([first.currentUser.subscribedSubreddits containsObject:@"Rust"], "it lands on its own account once that list loads, even while inactive");
 
         sActive = Client(@[@"AskReddit"]);
         posts = 0;

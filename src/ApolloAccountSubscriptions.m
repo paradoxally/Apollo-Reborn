@@ -2,6 +2,7 @@
 #import "ApolloAccountCredentials.h"
 #import "ApolloCommon.h"
 #import <objc/message.h>
+#import <objc/runtime.h>
 
 NSString *const ApolloSubscribedSubredditsUpdatedNotification =
     @"com.christianselig.SubscribedSubredditsUpdatedForAccount";
@@ -94,11 +95,38 @@ static void ApolloAccountSubscriptionsFlushPending(id user) {
     if (!user || !sApolloAccountSubscriptionsPending) return;
     NSMutableDictionary<NSString *, NSNumber *> *pending = [sApolloAccountSubscriptionsPending objectForKey:user];
     if (pending.count == 0 || !ApolloAccountSubscriptionsList(user)) return;
-    // Removed before applying: each apply posts the notification that flushes.
+    // Removed before applying: each apply sets the list again.
     [sApolloAccountSubscriptionsPending removeObjectForKey:user];
     [pending enumerateKeysAndObjectsUsingBlock:^(NSString *name, NSNumber *value, __unused BOOL *stop) {
         ApolloAccountSubscriptionsApply(user, name, value.boolValue);
     }];
+}
+
+// Every list Apollo loads or changes is assigned through -setSubscribedSubreddits:,
+// including the first load, which is not necessarily announced. Installed only
+// once a change is actually held, so accounts that never need it pay nothing.
+static void (*sApolloAccountSubscriptionsOrigSetList)(id, SEL, id);
+
+static void ApolloAccountSubscriptionsSetList(id self, SEL _cmd, id list) {
+    sApolloAccountSubscriptionsOrigSetList(self, _cmd, list);
+    if (![list isKindOfClass:[NSArray class]]) return;
+    __weak id weakUser = self;
+    // After the assignment has returned to Apollo, never inside its own setter call.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        ApolloAccountSubscriptionsFlushPending(weakUser);
+    });
+}
+
+static void ApolloAccountSubscriptionsObserveListAssignments(id user) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        sApolloAccountSubscriptionsPending = [NSMapTable weakToStrongObjectsMapTable];
+        Method setter = class_getInstanceMethod(object_getClass(user), @selector(setSubscribedSubreddits:));
+        if (setter) {
+            sApolloAccountSubscriptionsOrigSetList = (void (*)(id, SEL, id))method_setImplementation(
+                setter, (IMP)ApolloAccountSubscriptionsSetList);
+        }
+    });
 }
 
 void ApolloAccountApplySubscriptionChange(NSString *subredditName, BOOL subscribed) {
@@ -110,16 +138,7 @@ void ApolloAccountApplySubscriptionChange(NSString *subredditName, BOOL subscrib
         ApolloAccountSubscriptionsApply(user, name, subscribed);
         return;
     }
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        sApolloAccountSubscriptionsPending = [NSMapTable weakToStrongObjectsMapTable];
-        [[NSNotificationCenter defaultCenter] addObserverForName:ApolloSubscribedSubredditsUpdatedNotification
-                                                          object:nil
-                                                           queue:[NSOperationQueue mainQueue]
-                                                      usingBlock:^(__unused NSNotification *note) {
-            ApolloAccountSubscriptionsFlushPending(ApolloAccountSubscriptionsUser(ApolloActiveAccountClient()));
-        }];
-    });
+    ApolloAccountSubscriptionsObserveListAssignments(user);
     NSMutableDictionary<NSString *, NSNumber *> *pending = [sApolloAccountSubscriptionsPending objectForKey:user];
     if (!pending) {
         pending = [NSMutableDictionary dictionary];

@@ -25,7 +25,8 @@ BOOL ApolloAccountSubscriptionListState(NSString *subredditName, BOOL *outSubscr
 // take: add (or remove) the name on the active account's list, then post
 // ApolloSubscribedSubredditsUpdatedNotification. Pass the display name
 // ("AskReddit"); the list stores names as Reddit spells them. No-op when the
-// list already agrees or has not loaded. Main thread.
+// list already agrees; held and applied once the list loads when it has not
+// loaded yet. Main thread.
 void ApolloAccountApplySubscriptionChange(NSString *subredditName, BOOL subscribed);
 
 #ifdef __cplusplus

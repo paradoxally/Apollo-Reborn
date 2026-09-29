@@ -42,18 +42,20 @@ static NSIndexSet *ApolloAccountSubscriptionsIndexes(NSArray *list, NSString *di
     }];
 }
 
+static void ApolloAccountSubscriptionsFlushPending(id user);
+
 BOOL ApolloAccountSubscriptionListState(NSString *subredditName, BOOL *outSubscribed) {
     NSString *name = ApolloAccountSubscriptionsDisplayName(subredditName);
     if (!name) return NO;
-    NSArray *list = ApolloAccountSubscriptionsList(ApolloAccountSubscriptionsUser(ApolloActiveAccountClient()));
+    id user = ApolloAccountSubscriptionsUser(ApolloActiveAccountClient());
+    ApolloAccountSubscriptionsFlushPending(user);
+    NSArray *list = ApolloAccountSubscriptionsList(user);
     if (!list) return NO;
     if (outSubscribed) *outSubscribed = ApolloAccountSubscriptionsIndexes(list, name).count > 0;
     return YES;
 }
 
-void ApolloAccountApplySubscriptionChange(NSString *subredditName, BOOL subscribed) {
-    NSString *name = ApolloAccountSubscriptionsDisplayName(subredditName);
-    id user = ApolloAccountSubscriptionsUser(ApolloActiveAccountClient());
+static void ApolloAccountSubscriptionsApply(id user, NSString *name, BOOL subscribed) {
     NSArray *list = ApolloAccountSubscriptionsList(user);
     if (!name || !list) return;
 
@@ -79,4 +81,51 @@ void ApolloAccountApplySubscriptionChange(NSString *subredditName, BOOL subscrib
     ApolloLog(@"[AccountSubscriptions] %@ r/%@ %@ Apollo's subscription list (%lu -> %lu)",
               subscribed ? @"added" : @"removed", name, subscribed ? @"to" : @"from",
               (unsigned long)list.count, (unsigned long)updated.count);
+}
+
+// Changes Reddit already confirmed while the account's list had not loaded yet,
+// keyed weakly by the RDKUser they belong to (latest change per name wins).
+// Writing a list into a nil slot would replace the account's real
+// subscriptions with this one name, so they wait for the list instead. Main
+// thread only, like everything else in this module.
+static NSMapTable<id, NSMutableDictionary<NSString *, NSNumber *> *> *sApolloAccountSubscriptionsPending;
+
+static void ApolloAccountSubscriptionsFlushPending(id user) {
+    if (!user || !sApolloAccountSubscriptionsPending) return;
+    NSMutableDictionary<NSString *, NSNumber *> *pending = [sApolloAccountSubscriptionsPending objectForKey:user];
+    if (pending.count == 0 || !ApolloAccountSubscriptionsList(user)) return;
+    // Removed before applying: each apply posts the notification that flushes.
+    [sApolloAccountSubscriptionsPending removeObjectForKey:user];
+    [pending enumerateKeysAndObjectsUsingBlock:^(NSString *name, NSNumber *value, __unused BOOL *stop) {
+        ApolloAccountSubscriptionsApply(user, name, value.boolValue);
+    }];
+}
+
+void ApolloAccountApplySubscriptionChange(NSString *subredditName, BOOL subscribed) {
+    NSString *name = ApolloAccountSubscriptionsDisplayName(subredditName);
+    id user = ApolloAccountSubscriptionsUser(ApolloActiveAccountClient());
+    if (!name || !user) return;
+    if (ApolloAccountSubscriptionsList(user)) {
+        ApolloAccountSubscriptionsFlushPending(user);
+        ApolloAccountSubscriptionsApply(user, name, subscribed);
+        return;
+    }
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        sApolloAccountSubscriptionsPending = [NSMapTable weakToStrongObjectsMapTable];
+        [[NSNotificationCenter defaultCenter] addObserverForName:ApolloSubscribedSubredditsUpdatedNotification
+                                                          object:nil
+                                                           queue:[NSOperationQueue mainQueue]
+                                                      usingBlock:^(__unused NSNotification *note) {
+            ApolloAccountSubscriptionsFlushPending(ApolloAccountSubscriptionsUser(ApolloActiveAccountClient()));
+        }];
+    });
+    NSMutableDictionary<NSString *, NSNumber *> *pending = [sApolloAccountSubscriptionsPending objectForKey:user];
+    if (!pending) {
+        pending = [NSMutableDictionary dictionary];
+        [sApolloAccountSubscriptionsPending setObject:pending forKey:user];
+    }
+    pending[name] = @(subscribed);
+    ApolloLog(@"[AccountSubscriptions] r/%@ %@ held until the account's subscription list loads",
+              name, subscribed ? @"subscribe" : @"unsubscribe");
 }

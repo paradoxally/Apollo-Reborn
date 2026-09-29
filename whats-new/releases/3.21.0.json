@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "version": "3.21.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "magnifyingglass", "title": "Google Search", "subtitle": "Tap the magnifier in the Search tab and pick Google to find Reddit threads. Results open right in Apollo." },
+    { "icon": "link", "title": "Comment Links in Share as Image", "subtitle": "When you share a comment as an image, attach the comment's own link, the post's, or none." },
+    { "icon": "hand.tap.fill", "title": "Menus Where You Press", "subtitle": "In the fullscreen viewer, Copy, Save and Share open right where you press and hold." },
+    { "icon": "exclamationmark.bubble.fill", "title": "Clearer Comment Errors", "subtitle": "When a comment can't post, Apollo says why: a removed post, a locked thread, or a ban." },
+    { "icon": "paintpalette.fill", "title": "Toon Bot Icons", "subtitle": "Toon Bot and Happy Toon Bot join the Concepts icon pack." }
+  ]
+}

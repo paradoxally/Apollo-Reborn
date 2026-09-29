@@ -4,6 +4,47 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.21.0] - 2026-09-29
+
+### Features
+
+- Add **Google Search** to the Search tab — tap the magnifier and pick Google to find Reddit threads through Google, with its snippets, Any Time and Exact Words filters, and results that open natively in Apollo ([#1260](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1260): @icpryde)
+- Add **Comment Link** to **Share as Image** — the Link menu on a comment share now offers No Link, Post Link or Comment Link, and GIF and video exports of a comment follow the same choice ([#1278](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1278): @Thetromboneman1)
+- Open the fullscreen image viewer's **Copy / Save / Share** menu where you press and hold, instead of in the middle of the screen ([#1254](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1254): @IllIIllIllIllII)
+- Add **Toon Bot** and **Happy Toon Bot** to the Concepts icon pack ([#1253](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1253): @IllIIllIllIllII)
+
+### Performance
+
+- Capture Apollo's internal objects at launch in one pass over the loaded libraries instead of two — the tweak's hooking time at launch drops from about 73 ms to 30 ms ([#1169](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1169): @icpryde, #71: @paradoxally)
+- Stop the **AI comment summary** re-running over and over while you scroll a thread ([#1270](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1270): @Thetromboneman1)
+- Stop filtered posts leaving stacks of gray gaps in feeds, correcting just the affected rows instead of redrawing the whole feed ([#1274](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1274): @Thetromboneman1)
+
+### Fixes
+
+- Fix saved **translations** being deleted — with bulk translation off, leaving the app wiped the cache that Tap to Translate had built up ([#1169](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1169): @icpryde, #71: @paradoxally)
+- Keep **large images** in memory — a banner or gallery GIF bigger than its cache was dropped as soon as it loaded, so Save could write a still frame instead of the GIF and Share could hand over a link instead of the file, and custom subreddit icons were pushed out early ([#1169](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1169): @icpryde, #71: @paradoxally)
+- Fix a feed **crash** when several RedGIFs posts load at once, most often right after launching or switching accounts ([#1251](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1251): @icpryde)
+- Fix **RedGIFs** posts showing "RedGIFs error" after switching Wi-Fi, cellular or VPN, and on older RedGIFs videos with no listed length ([#1256](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1256), [#1258](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1258): @icpryde)
+- Explain why a **comment** couldn't post — the post was removed (and where the mods' reason is), the thread is locked or archived, the parent comment was removed, or a ban — instead of "Reddit had a little hiccup" ([#1275](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1275): @icpryde, #71: @paradoxally)
+- Fix **Add Account** signing in with the active account's saved API key instead of the one set in Settings ([#1237](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1237): @icpryde)
+- Explain what went wrong when Reddit rejects your API key during sign-in, instead of leaving a blank "{}" page ([#1236](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1236): @icpryde)
+- Fix **Unmute Videos** swapping the sound between two playing feed videos on every frame, starting videos with sound in feeds you already left, and playing on with sound under a different fullscreen video ([#1247](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1247), [#1250](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1250), [#1252](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1252): @icpryde)
+- Fix a post's video going gray, and the scrubber not working, after opening the OP's profile or swiping forward back into the post ([#1269](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1269): @icpryde)
+- Fix **Swipe Past Gallery to Navigate** only acting after you lift your finger, sometimes on the wrong thread — swiping past a feed gallery's first or last image now goes straight to your post swipes ([#1271](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1271): @Thetromboneman1)
+- Fix tapping a post sometimes opening a gallery post from further up the feed with **Swipe Through Feed Galleries** on ([#1248](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1248): @icpryde)
+- Fix **Gallery View** only playing the first video when swiping on CarPlay (CarBridge/CarCast) ([#1257](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1257): @icpryde)
+- Reserve room for **inline comment images** up front, so comments no longer grow when the image finishes loading ([#1273](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1273): @Thetromboneman1)
+- Fix a just-posted **image comment** showing "[Unknown Image]" under the picture ([#1246](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1246): @icpryde)
+- Fix **interactive posts**' Subscribe button doing nothing when Reddit needs your permission first, and keep Apollo's Join button and Subscriptions list in sync when a post subscribes you ([#1264](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1264): @icpryde, #71: @paradoxally)
+- On Liquid Glass, keep a scrolled-away feed **search bar** hidden after swiping back from a post, and the Search tab's placeholder dim after Cancel ([#1249](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1249), [#1261](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1261): @icpryde)
+- Put the post header's **translation** marker after the edited pencil instead of on top of it ([#1259](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1259): @icpryde)
+- Stop **Random** and **RandNSFW** sometimes opening an empty feed that never loads ([#1272](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1272): @Thetromboneman1)
+- Fix the Subreddits list's **Edit** mode putting moderator hide controls on the wrong rows and jumping the list up after Edit or Done, and open the multireddit editor there again when Multireddits isn't the second section ([#1262](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1262), [#1267](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1267): @icpryde)
+- Fix tapping a multireddit's expand arrow in the Subreddits list asking to change a favorite, and style expanded multireddit rows like the rest of the list ([#1229](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1229): @nunoo)
+- Make **settings section headers** match across Apollo's and Apollo Reborn's settings on iOS 26 and later, in one Title Case style that follows Text Size and your theme ([#1241](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1241): @IllIIllIllIllII)
+- Fix **Open in Apollo (Legacy)** in Safari doing nothing without Link Companion installed ([#1268](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1268): @Thetromboneman1)
+- Respect a **usage heartbeat** opt-out even when the keychain can't be read for a moment ([#1169](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1169): @icpryde)
+
 ## [v3.20.2] - 2026-09-28
 
 ### Fixes
@@ -1426,6 +1467,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.21.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.2...v1.15.11_3.21.0
 [v3.20.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.1...v1.15.11_3.20.2
 [v3.20.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.0...v1.15.11_3.20.1
 [v3.20.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.19.0...v1.15.11_3.20.0

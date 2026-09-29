@@ -17,6 +17,7 @@
 #import "ApolloImageUploadHost.h"
 #import "ApolloImgChestUpload.h"
 #import "ApolloMediaAutoplay.h"
+#import "ApolloRedgifsTokenRefresh.h"
 #import "ApolloNotificationBackend.h"
 #import "ApolloUsageHeartbeat.h"
 #import "ApolloPushNotifications.h"
@@ -24,6 +25,7 @@
 #import "ApolloLiquidGlassIconSelectionState.h"
 #import "ApolloState.h"
 #import "ApolloTranslation.h"
+#import "ApolloRedgifsMissingDuration.h"
 #import "Tweak.h"
 #import "settings/CustomAPIViewController.h"
 #import "settings/ApolloAutomaticBackup.h"
@@ -1689,13 +1691,29 @@ typedef void (^ApolloSubredditSourceRefreshCompletion)(NSString *content, NSErro
 
 static const NSUInteger kApolloSubredditSourceMaximumBytes = 1024 * 1024;
 
+static BOOL ApolloSubredditSourceLineIsValid(NSString *subreddit) {
+    // Reddit community names are 3-21 ASCII letters, digits, or underscores
+    // (a few grandfathered ones like r/de are 2). Source files sometimes
+    // include dates, headings, or other prose; routing one of those lines as a
+    // subreddit name opens a listing that never loads, so skip them.
+    if (![subreddit isKindOfClass:[NSString class]] ||
+        subreddit.length < 2 || subreddit.length > 21) return NO;
+    static NSCharacterSet *invalidCharacters;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        invalidCharacters = [[NSCharacterSet characterSetWithCharactersInString:
+            @"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_"] invertedSet];
+    });
+    return [subreddit rangeOfCharacterFromSet:invalidCharacters].location == NSNotFound;
+}
+
 static NSArray<NSString *> *ApolloSubredditListLines(NSString *content) {
     if (![content isKindOfClass:[NSString class]] || content.length == 0) return @[];
     NSMutableArray<NSString *> *lines = [NSMutableArray array];
     NSCharacterSet *whitespace = [NSCharacterSet whitespaceAndNewlineCharacterSet];
     [content enumerateLinesUsingBlock:^(NSString *line, __unused BOOL *stop) {
         NSString *trimmed = [line stringByTrimmingCharactersInSet:whitespace];
-        if (trimmed.length > 0) [lines addObject:trimmed];
+        if (ApolloSubredditSourceLineIsValid(trimmed)) [lines addObject:trimmed];
     }];
     return lines;
 }
@@ -2014,11 +2032,13 @@ void ApolloPrepareRandomNSFWSubredditSource(
             });
         });
 }
-// Replace Reddit API client ID. Resolved per-account (see
-// ApolloAccountCredentials.{h,m}): a pending add-account choice, else the
-// active account's stored override, else the global default — instead of
-// unconditionally forcing the single global client id/redirect URI onto every
-// account, which broke a second account's login/refresh under a different key.
+// Replace Reddit API client ID. Resolved per credential (see
+// ApolloAccountCredentials.{h,m}): a credential created by an interactive
+// sign-in (Add Account) keeps the default key it started with, every other one
+// follows the active account's stored override, else the global default —
+// instead of unconditionally forcing the single global client id/redirect URI
+// onto every account, which broke a second account's login/refresh under a
+// different key.
 %hook RDKOAuthCredential
 
 // Fall back to %orig (the credential's REAL stored value) when nothing is
@@ -2028,12 +2048,12 @@ void ApolloPrepareRandomNSFWSubredditSource(
 // hardcoded fallback constant, unlike the redirect URI below), breaking token
 // refresh for exactly that account with a blank, unmatchable client_id.
 - (NSString *)clientIdentifier {
-    NSString *effective = ApolloEffectiveRedditClientId();
+    NSString *effective = ApolloRedditClientIdForCredential(self);
     return effective.length > 0 ? effective : %orig;
 }
 
 - (NSURL *)redirectURI {
-    NSString *effective = ApolloEffectiveRedirectURI();
+    NSString *effective = ApolloRedirectURIForCredential(self);
     return effective.length > 0 ? [NSURL URLWithString:effective] : %orig;
 }
 
@@ -2186,6 +2206,33 @@ static const char kARCompletion = '\0';
 - (NSString *)userAgent {
     NSString *customUA = [sUserAgent length] > 0 ? sUserAgent : defaultUserAgent;
     return customUA;
+}
+
+// Every interactive sign-in (Add Account, the signed-out splash) starts here:
+// AccountManager's beginAuthenticationOfNewUser(_:completion:) — and its
+// SFSafariViewController variant — allocates a fresh RDKClient and calls this
+// with Apollo's own client id + redirect URI, then asks the same client for
+// -authenticationURLWithScope:. RDK creates a new RDKOAuthCredential here and
+// installs it with -setAuthorizationCredential:, which already bakes the Basic
+// auth header for the later authorization_code exchange from -clientIdentifier.
+// So the credential gets the default key attached (see
+// ApolloAccountCredentialsBeginInteractiveSignIn) and is installed again so
+// that header is rebuilt from it: the authorize URL, the exchange's Basic auth
+// and its redirect_uri then all carry the default, while every other account's
+// credential (the active one keeps refreshing meanwhile) is untouched. The
+// app-only bootstrap arrives through -authenticateWithClientIdentifier:, which
+// passes a nil redirect URI; a client that already has a user is never an
+// Add Account sign-in. Both keep the old resolution.
+- (void)authenticateWithClientIdentifier:(NSString *)identifier redirectURI:(NSURL *)redirectURI {
+    %orig;
+    if (!redirectURI || [self currentUser]) return;
+    id credential = [self authorizationCredential];
+    if (!credential) {
+        ApolloLog(@"[AccountCredentials] New sign-in: RDKClient has no credential after authenticate; default key not applied");
+        return;
+    }
+    ApolloAccountCredentialsBeginInteractiveSignIn(credential);
+    [self setAuthorizationCredential:credential];
 }
 
 // #785: "Go to user" with a trailing space after the username crashes. Apollo
@@ -2888,6 +2935,18 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
         return %orig(ApolloLocalFastFailRequest(@"apollo-upload-registry-delete"), wrappedHandler);
     }
 
+    // RedGIFs gif lookups: RedGIFs leaves "duration" null on some videos, and
+    // Apollo's decoder then rejects the whole record and shows its error card,
+    // so fill the duration in before Apollo parses the response (see
+    // ApolloRedgifsMissingDuration.h). Rebinding the parameter hands the
+    // repaired completion to every RedGIFs path below.
+    if (completionHandler && [host isEqualToString:@"api.redgifs.com"] && [path hasPrefix:@"/v2/gifs/"]) {
+        completionHandler = ApolloRedgifsCompletionFillingMissingDuration(self, request, completionHandler,
+            ^NSURLSessionDataTask *(NSURLRequest *headerRequest, ApolloRedgifsLookupCompletion headerCompletion) {
+                return %orig(headerRequest, headerCompletion);
+            });
+    }
+
     if ([host isEqualToString:@"imgur-apiv3.p.rapidapi.com"] && [path hasPrefix:@"/3/album"]) {
         // Album creation needs body format conversion (form-urlencoded → JSON)
         // URL redirect and auth are handled by _onqueue_resume
@@ -2920,6 +2979,10 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
                 NSError *jsonError = nil;
                 NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:&jsonError];
                 if (!jsonError && json[@"token"]) {
+                    // Apollo keeps this token for the 23 hours below, but RedGIFs
+                    // stops accepting it as soon as the device's IP address
+                    // changes; ApolloRedgifsTokenRefresh.m swaps in a fresh one.
+                    ApolloRedgifsNoteTokenIssuedToApollo(json[@"token"]);
                     // Transform response to match Apollo's format from '/v2/oauth/client'
                     NSDictionary *oauthResponse = @{
                         @"access_token": json[@"token"],
@@ -2935,6 +2998,15 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
             completionHandler(data, response, error);
         };
         return %orig(modifiedRequest, newCompletionHandler);
+    } else if ([host isEqualToString:@"api.redgifs.com"] && completionHandler) {
+        // Apollo's own RedGIFs API calls: re-mint the token and retry once when
+        // RedGIFs rejects it with a 401 (see ApolloRedgifsTokenRefresh.h).
+        // Returns nil for any request that doesn't carry Apollo's token.
+        NSURLSessionDataTask *redgifsTask = ApolloRedgifsDataTaskWithTokenRefresh(request, completionHandler,
+            ^NSURLSessionDataTask *(NSURLRequest *redgifsRequest, ApolloRedgifsTaskCompletion redgifsCompletion) {
+                return %orig(redgifsRequest, redgifsCompletion);
+            });
+        if (redgifsTask) return redgifsTask;
     }
     return %orig(request, ApolloDeletedCommentsMaybeWrapCompletion(request, completionHandler));
 }
@@ -4330,7 +4402,9 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
     // walks all ~2k loaded images per call, and four separate calls paid that
     // walk four times. The Security bindings have to be installed here, before
     // the Web JSON keychain hydration below, so this is the call the others join.
-    struct rebinding rebindings[5 + 3 * ApolloRebornMaxAppendedRebindings] = {
+    // (ApolloSwiftSingletonCapture and ApolloRedgifsQueuedFetchesLock rebind
+    // only Apollo's own image with rebind_symbols_image, which skips that walk.)
+    struct rebinding rebindings[5 + 2 * ApolloRebornMaxAppendedRebindings] = {
         {"SecItemAdd", (void *)SecItemAdd_replacement, (void **)&SecItemAdd_orig},
         {"SecItemCopyMatching", (void *)SecItemCopyMatching_replacement, (void **)&SecItemCopyMatching_orig},
         {"SecItemUpdate", (void *)SecItemUpdate_replacement, (void **)&SecItemUpdate_orig},
@@ -4340,7 +4414,6 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
     size_t rebindingCount = 5;
     rebindingCount += ApolloImageUploadHostAppendRebindings(&rebindings[rebindingCount]);
     rebindingCount += ApolloPhotoComposerAppendRebindings(&rebindings[rebindingCount]);
-    rebindingCount += ApolloRecentlyReadAppendRebindings(&rebindings[rebindingCount]);
     rebind_symbols(rebindings, rebindingCount);
 
     if ([[NSUserDefaults standardUserDefaults] boolForKey:UDKeyEnableFLEX]) {

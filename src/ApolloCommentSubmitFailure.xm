@@ -74,8 +74,9 @@ static const NSTimeInterval kApolloCommentFailureReplyTTL = 60.0;
 @implementation ApolloCommentFailureReply
 @end
 
-// thing_id → Reddit's answer to the latest POST api/comment on it, when that answer was a
-// failure. Written from the request's completion queue and claimed by the submit completion,
+// (posting client, thing_id) → Reddit's answer to the latest POST api/comment on it, when that
+// answer was a failure. The client is part of the key because each account owns its RDKClient, so
+// two accounts replying to the same thing can never claim each other's answer. Written from the request's completion queue and claimed by the submit completion,
 // so every access is @synchronized. Each POST replaces (or, on success, clears) its thing's
 // entry, and entries past the TTL are pruned on every write.
 static NSMutableDictionary<NSString *, ApolloCommentFailureReply *> *ApolloCommentFailureReplies(void) {
@@ -85,24 +86,29 @@ static NSMutableDictionary<NSString *, ApolloCommentFailureReply *> *ApolloComme
     return replies;
 }
 
-static void ApolloCommentFailureStoreReply(NSString *thingID, ApolloCommentFailureReply *reply) {
+static NSString *ApolloCommentFailureReplyKey(id client, NSString *thingID) {
+    return [NSString stringWithFormat:@"%p|%@", client, thingID];
+}
+
+static void ApolloCommentFailureStoreReply(NSString *key, ApolloCommentFailureReply *reply) {
     NSMutableDictionary *replies = ApolloCommentFailureReplies();
     @synchronized (replies) {
         for (NSString *key in replies.allKeys) {
             ApolloCommentFailureReply *old = replies[key];
             if (-[old.date timeIntervalSinceNow] > kApolloCommentFailureReplyTTL) [replies removeObjectForKey:key];
         }
-        if (reply) replies[thingID] = reply;
-        else [replies removeObjectForKey:thingID];
+        if (reply) replies[key] = reply;
+        else [replies removeObjectForKey:key];
     }
 }
 
-static ApolloCommentFailureReply *ApolloCommentFailureClaimReply(NSString *thingID) {
-    if (thingID.length == 0) return nil;
+static ApolloCommentFailureReply *ApolloCommentFailureClaimReply(id client, NSString *thingID) {
+    if (!client || thingID.length == 0) return nil;
+    NSString *key = ApolloCommentFailureReplyKey(client, thingID);
     NSMutableDictionary *replies = ApolloCommentFailureReplies();
     @synchronized (replies) {
-        ApolloCommentFailureReply *reply = replies[thingID];
-        [replies removeObjectForKey:thingID];
+        ApolloCommentFailureReply *reply = replies[key];
+        [replies removeObjectForKey:key];
         if (reply && -[reply.date timeIntervalSinceNow] > kApolloCommentFailureReplyTTL) return nil;
         return reply;
     }
@@ -524,10 +530,11 @@ static void ApolloCommentFailureDeliver(ApolloCommentFailureSubmitCompletion com
     NSDictionary *params = [parameters isKindOfClass:[NSDictionary class]] ? parameters : nil;
     NSString *thingID = [params[@"thing_id"] isKindOfClass:[NSString class]] ? [params[@"thing_id"] copy] : nil;
     if (thingID.length == 0) return %orig;
+    NSString *replyKey = ApolloCommentFailureReplyKey(self, thingID);
     ApolloCommentFailureTaskCompletion wrapped = ^(NSHTTPURLResponse *response, id responseObject, NSError *error) {
         @try {
             ApolloCommentFailureReply *reply = ApolloCommentFailureReplyFrom(response, responseObject, error);
-            ApolloCommentFailureStoreReply(thingID, reply);
+            ApolloCommentFailureStoreReply(replyKey, reply);
             if (reply) {
                 ApolloLog(@"[CommentFailure] Reddit answered the comment on %@: HTTP %ld, code %@",
                           thingID, (long)reply.status, reply.code ?: @"-");
@@ -549,8 +556,8 @@ static void ApolloCommentFailureDeliver(ApolloCommentFailureSubmitCompletion com
     NSString *thingID = [fullName isKindOfClass:[NSString class]] ? [fullName copy] : nil;
     __weak id weakClient = self;
     ApolloCommentFailureSubmitCompletion wrapped = ^(id object, NSError *error) {
-        ApolloCommentFailureReply *reply = ApolloCommentFailureClaimReply(thingID);
         id client = weakClient;
+        ApolloCommentFailureReply *reply = ApolloCommentFailureClaimReply(client, thingID);
         if (object || !client || !NSThread.isMainThread || !ApolloCommentFailureShouldLookUp(thingID, reply, error)) {
             completion(object, error);
             return;

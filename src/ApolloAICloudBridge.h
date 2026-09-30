@@ -36,6 +36,10 @@
 
 extern NSString *const ApolloAICloudBridgeErrorDomain;
 
+// Keys of one custom-provider header entry (UDKeyCustomAIHeaders / sCustomAIHeaders).
+extern NSString *const ApolloAICloudCustomHeaderNameKey;
+extern NSString *const ApolloAICloudCustomHeaderValueKey;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -67,6 +71,20 @@ BOOL ApolloAICloudBaseURLIsValid(void);
 // (AICloudAPIKey/BaseURL/Model) onto the per-provider keys. Call once at launch
 // BEFORE reading the provider defaults. Idempotent.
 void ApolloAIMigrateLegacyCloudKeys(void);
+
+// Why a custom-provider header can't be sent, as one short user-facing
+// sentence, or nil when it can. Pass the name and value already trimmed. A
+// header can only ADD to a request: names this bridge sets or relies on
+// (Authorization, Content-Type, Accept, …), ones the URL loading system
+// reserves (Host, …) and connection-level ones are refused, and values must be
+// printable ASCII (no line breaks).
+NSString *ApolloAICloudCustomHeaderProblem(NSString *name, NSString *value);
+
+// The stored header list minus anything malformed or invalid (see above), with
+// names/values trimmed and repeated names (case-insensitive) collapsed to the
+// first; nil when nothing is left. Takes any object: the defaults value can be
+// hand-edited or come from a restored backup.
+NSArray<NSDictionary<NSString *, NSString *> *> *ApolloAICloudSanitizedCustomHeaders(id stored);
 
 #ifdef __cplusplus
 }

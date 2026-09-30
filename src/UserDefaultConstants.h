@@ -499,6 +499,12 @@ static NSString *const UDKeyGeminiAIModel     = @"GeminiAIModel";
 static NSString *const UDKeyCustomAIAPIKey    = @"CustomAIAPIKey";
 static NSString *const UDKeyCustomAIModel     = @"CustomAIModel";
 static NSString *const UDKeyCustomAIBaseURL   = @"CustomAIBaseURL"; // OpenAI-compatible base URL, e.g. https://api.example.com/v1
+// Extra HTTP headers sent with every "custom" provider request, for services
+// that need more than the Bearer key (OpenCode Go rejects requests without
+// x-opencode-session since 2026-09-06). An ordered array of
+// @{@"name": NSString, @"value": NSString}; unset = none. Validated on load and
+// on save by ApolloAICloudSanitizedCustomHeaders (ApolloAICloudBridge.h).
+static NSString *const UDKeyCustomAIHeaders   = @"CustomAIHeaders";
 
 // Legacy single-endpoint cloud keys shipped by this fork in v3.4.0-v3.8.3,
 // before upstream's per-provider scheme above landed. Read ONCE by

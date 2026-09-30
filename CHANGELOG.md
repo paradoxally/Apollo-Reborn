@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.22.0] - 2026-10-01
+
+### Features
+
+- Add a **subreddit switcher sheet** — tapping the subreddit title on a feed now opens a native sheet with search, your favorites and results instead of the small floating dropdown, and picking one switches the feed in place ([#1313](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1313): @IllIIllIllIllII)
+- Add **True Black Keyboard** (**Settings > Apollo Reborn > Interface > Display & Navigation**) — paints the keyboard background pure black for OLED screens, in dark mode only, light mode only or always ([#1316](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1316): @IllIIllIllIllII)
+- Add **Custom Headers** to Apollo AI's Custom provider, so endpoints that require an extra header, like OpenCode Go's `x-opencode-session`, work again — the headers are sent on retries too ([#1286](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1286): @icpryde, #73: @paradoxally)
+- Show the newest commenter's **profile picture** next to their name in the follow-thread **Live Activity**, on the Lock Screen and in the expanded Dynamic Island, when Show User Profile Pictures is on ([#1296](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1296): @icpryde)
+- Start a **crosspost** with the original post's title already filled in, with a clear button to write your own ([#1290](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1290): @icpryde)
+- Make the **touch-and-hold menus** on posts and comments follow your **Action Menus** layout, the same as the ••• button ([#1282](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1282): @icpryde)
+- Replace iPad's Move Tab Bar to Bottom with a **Tab Bar Position** picker (Top or Bottom) — tabs keep their text labels in both positions, and the title and search field no longer crowd each other on Liquid Glass ([#1314](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1314): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix moderating with an **API-Key-Free account** — removal reasons, the ban, mute and approved lists, bans and moderator invites, Set Post Flair, AutoModerator saves and Apollo's own Moderator Mail now work ([#1298](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1298), [#1304](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1304), [#1309](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1309), [#1311](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1311): @icpryde)
+- Fix the **subreddit sidebar** (stats, Search by Flair, related communities and links) and the **user flair picker** for API-Key-Free accounts ([#1312](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1312): @IllIIllIllIllII)
+- Fix touch and hold on a **message** doing nothing on Liquid Glass — Copy Text, Select Text, Share and Report now open where you press — and size message bubbles to their text, so long messages no longer end in blank space ([#1307](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1307), [#1308](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1308): @icpryde)
+- Fix GIFs and videos stopping or going blank behind the comments with **Swipe Up for Comments** ([#1277](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1277): @Thetromboneman1)
+- Fix the previous subreddit's header and **Community Highlights** staying on the feed after switching subreddits from the title bar ([#1287](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1287): @icpryde)
+- **Translate** comments that open with a quote, list or link, which bulk translation used to skip, and show translated markdown the way the original looks ([#1294](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1294): @icpryde)
+- Color the classic navigation and tab bars with a custom theme's **Bars** color, matching the search band between them ([#1280](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1280): @Thetromboneman1)
+- Fix the **GIF picker**'s search bar looking double-layered on Liquid Glass ([#1283](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1283): @icpryde)
+- Keep post and comment text visible on **Mac** after switching away from Apollo and back ([#1301](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1301): @Thetromboneman1)
+- Keep **Google Search** signed in across restarts on iOS 16 and earlier ([#1315](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1315): @icpryde)
+- Stop the **Apollo AI** settings screen jumping while you scroll, after a cancelled swipe-back or when you come back to it, and keep rebuilt settings footers in the settings font ([#1288](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1288), [#1291](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1291), [#1293](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1293): @icpryde)
+- Fix rare **crashes** when a screen closes while Inbox, Subreddits list, comment or Share as Image work is still queued ([#1284](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1284), [#1285](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1285): @icpryde)
+
 ## [v3.21.0] - 2026-09-29
 
 ### Features
@@ -1467,6 +1494,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.22.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.21.0...v1.15.11_3.22.0
 [v3.21.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.2...v1.15.11_3.21.0
 [v3.20.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.1...v1.15.11_3.20.2
 [v3.20.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.0...v1.15.11_3.20.1

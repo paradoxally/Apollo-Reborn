@@ -338,6 +338,95 @@ static NSString *CloudShapeKey(NSString *provider, NSURL *endpoint, NSString *mo
     return [NSString stringWithFormat:@"%@|%@|%@", provider ?: @"", endpoint.absoluteString ?: @"", model ?: @""];
 }
 
+#pragma mark - Custom provider headers
+
+NSString *const ApolloAICloudCustomHeaderNameKey = @"name";
+NSString *const ApolloAICloudCustomHeaderValueKey = @"value";
+
+// Headers a custom entry may never set, so a custom header can only ADD to the
+// request, never break it.
+static BOOL CloudHeaderNameIsReserved(NSString *name) {
+    static NSSet<NSString *> *reserved;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        reserved = [NSSet setWithArray:@[
+            // Set by -summarize:, or describing the JSON body it sends and the
+            // SSE stream the parser reads back (URLSession decodes that stream).
+            @"authorization", @"content-type", @"content-length", @"content-encoding",
+            @"accept", @"accept-encoding",
+            // Reserved by the URL loading system (NSURLRequest docs); it may
+            // ignore or overwrite them.
+            @"connection", @"host", @"proxy-authenticate", @"proxy-authorization", @"www-authenticate",
+            // Connection-specific (RFC 9110 7.6.1), and malformed on HTTP/2.
+            @"keep-alive", @"proxy-connection", @"te", @"transfer-encoding", @"upgrade",
+        ]];
+    });
+    return [reserved containsObject:name.lowercaseString];
+}
+
+// An RFC 9110 token, the only characters a header name may contain.
+static BOOL CloudHeaderNameIsToken(NSString *name) {
+    static NSCharacterSet *invalid;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableCharacterSet *token = [NSMutableCharacterSet characterSetWithCharactersInString:
+            @"!#$%&'*+-.^_`|~0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"];
+        invalid = [token invertedSet];
+    });
+    return name.length > 0 && [name rangeOfCharacterFromSet:invalid].location == NSNotFound;
+}
+
+// Visible ASCII, space and tab (RFC 9110's recommended field-value). Rules out
+// CR/LF (header injection) and non-ASCII such as the keyboard's smart quotes,
+// which URLSession would put on the wire in an encoding the server won't expect.
+static BOOL CloudHeaderValueIsPrintableASCII(NSString *value) {
+    static NSCharacterSet *invalid;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        NSMutableCharacterSet *printable = [NSMutableCharacterSet characterSetWithRange:NSMakeRange(0x20, 0x7F - 0x20)];
+        [printable addCharactersInString:@"\t"];
+        invalid = [printable invertedSet];
+    });
+    return [value rangeOfCharacterFromSet:invalid].location == NSNotFound;
+}
+
+NSString *ApolloAICloudCustomHeaderProblem(NSString *name, NSString *value) {
+    if (name.length == 0) return @"Enter a header name.";
+    if ([name containsString:@":"]) return @"Enter the name without a colon, and its value in the Value field.";
+    if (!CloudHeaderNameIsToken(name)) return @"Header names can't contain spaces, quotes or symbols like ( ) , / ; = ? @ [ ] { }.";
+    if (CloudHeaderNameIsReserved(name)) {
+        return [name caseInsensitiveCompare:@"Authorization"] == NSOrderedSame
+            ? @"Apollo already sends your API key as the Authorization header."
+            : [NSString stringWithFormat:@"%@ can't be set as a custom header.", name];
+    }
+    if (value.length == 0) return @"Enter a value for this header.";
+    if (!CloudHeaderValueIsPrintableASCII(value)) return @"Header values must be plain text, with no line breaks, emoji or curly quotes.";
+    return nil;
+}
+
+NSArray<NSDictionary<NSString *, NSString *> *> *ApolloAICloudSanitizedCustomHeaders(id stored) {
+    if (![stored isKindOfClass:[NSArray class]]) return nil;
+    NSCharacterSet *whitespace = [NSCharacterSet whitespaceAndNewlineCharacterSet];
+    NSMutableArray<NSDictionary<NSString *, NSString *> *> *headers = [NSMutableArray array];
+    NSMutableSet<NSString *> *seenNames = [NSMutableSet set];
+    for (id entry in (NSArray *)stored) {
+        if (![entry isKindOfClass:[NSDictionary class]]) continue;
+        id rawName = ((NSDictionary *)entry)[ApolloAICloudCustomHeaderNameKey];
+        id rawValue = ((NSDictionary *)entry)[ApolloAICloudCustomHeaderValueKey];
+        if (![rawName isKindOfClass:[NSString class]] || ![rawValue isKindOfClass:[NSString class]]) continue;
+        NSString *name = [(NSString *)rawName stringByTrimmingCharactersInSet:whitespace];
+        NSString *value = [(NSString *)rawValue stringByTrimmingCharactersInSet:whitespace];
+        if (ApolloAICloudCustomHeaderProblem(name, value)) continue;
+        // Header names are case-insensitive; a second entry would only
+        // overwrite the first on the request, so keep the first.
+        NSString *foldedName = name.lowercaseString;
+        if ([seenNames containsObject:foldedName]) continue;
+        [seenNames addObject:foldedName];
+        [headers addObject:@{ApolloAICloudCustomHeaderNameKey: name, ApolloAICloudCustomHeaderValueKey: value}];
+    }
+    return headers.count > 0 ? [headers copy] : nil;
+}
+
 #pragma mark - Per-request state
 
 @interface ApolloAICloudRequest : NSObject
@@ -382,6 +471,9 @@ static NSString *CloudShapeKey(NSString *provider, NSURL *endpoint, NSString *mo
 @property (nonatomic, copy) NSString *apiKey;
 @property (nonatomic, copy) NSString *model;
 @property (nonatomic, strong) NSURL *endpoint;
+// Sanitized custom-provider headers (Apollo AI → Custom Headers); nil for every
+// other provider.
+@property (nonatomic, copy) NSArray<NSDictionary<NSString *, NSString *> *> *customHeaders;
 @end
 
 @implementation ApolloAICloudRequest
@@ -596,6 +688,13 @@ static NSURLRequest *CloudURLRequestForState(ApolloAICloudRequest *state) {
         [request setValue:@"https://github.com/Apollo-Reborn/Apollo-Reborn" forHTTPHeaderField:@"HTTP-Referer"];
         [request setValue:@"Apollo Reborn" forHTTPHeaderField:@"X-Title"];
     }
+    // The user's extra headers, e.g. OpenCode Go's required x-opencode-session.
+    // They only ever ADD headers: the snapshot was sanitized against the
+    // reserved names this builder sets.
+    for (NSDictionary<NSString *, NSString *> *header in state.customHeaders) {
+        [request setValue:header[ApolloAICloudCustomHeaderValueKey]
+       forHTTPHeaderField:header[ApolloAICloudCustomHeaderNameKey]];
+    }
     return request;
 }
 
@@ -620,6 +719,9 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
     state.apiKey = CloudAPIKey();
     state.model = ApolloAICloudEffectiveModel();
     state.endpoint = CloudEndpointURL();
+    // Re-sanitized so no writer of the global can put a reserved name on the wire.
+    state.customHeaders = [state.provider isEqualToString:@"custom"]
+        ? ApolloAICloudSanitizedCustomHeaders(sCustomAIHeaders) : nil;
     // Start from the shape this model last succeeded with, so a model the
     // family shaping mispredicts pays its failed round-trips once per session
     // rather than on every summary.
@@ -663,10 +765,11 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
             previous.finished = YES;
         }
         [self startTaskForState:state request:request];
-        ApolloLog(@"[AICloud][wire] request %@ started provider=%@ model=%@ host=%@ promptChars=%lu instructionChars=%lu bodyBytes=%lu",
+        // Header count only: custom header values can be credentials.
+        ApolloLog(@"[AICloud][wire] request %@ started provider=%@ model=%@ host=%@ promptChars=%lu instructionChars=%lu bodyBytes=%lu customHeaders=%lu",
                   state.identifier, provider, model, state.endpoint.host ?: @"?",
                   (unsigned long)inputChars, (unsigned long)instructions.length,
-                  (unsigned long)request.HTTPBody.length);
+                  (unsigned long)request.HTTPBody.length, (unsigned long)state.customHeaders.count);
         ApolloLog(@"[AICloud][wire] request %@ learned-shape %@ params=%@", state.identifier,
                   state.usingLearnedShape ? @"hit" : @"miss", CloudOverrideNames(state.overrides));
     });

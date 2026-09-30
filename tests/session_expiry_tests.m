@@ -50,6 +50,10 @@ static NSString *ApolloWebJSONAccountFromURL(NSURL *url) { (void)url; return @"a
     (void)username; [silent addObject:[completion copy]];
 }
 @end
+// Keyless-moderator web-bearer routing (#1304/#1311): these tests send no
+// oauth.reddit.com traffic and no moderator-only paths.
+static void ApolloWebJSONNoteWebBearerResponse(NSURLRequest *request, NSHTTPURLResponse *http);
+BOOL ApolloWebJSONPathNeedsWebBearer(NSString *path);
 #define dispatch_after testDispatchAfter
 #define NSURLSession TestSession
 #define NSURLSessionDataTask TestTask
@@ -59,6 +63,8 @@ static NSString *ApolloWebJSONAccountFromURL(NSURL *url) { (void)url; return @"a
 #undef NSURLSessionDataTask
 static void ApolloWebJSONMergeSetCookiesFromResponse(NSString *username, NSHTTPURLResponse *response) { (void)username; (void)response; merges++; }
 static void ApolloWebJSONRecordRateLimit(NSString *username, NSURLRequest *request, NSHTTPURLResponse *http) { (void)username; (void)request; (void)http; }
+static void ApolloWebJSONNoteWebBearerResponse(NSURLRequest *request, NSHTTPURLResponse *http) { (void)request; (void)http; }
+BOOL ApolloWebJSONPathNeedsWebBearer(NSString *path) { (void)path; return NO; }
 static void require(BOOL okay) { if (!okay) { NSLog(@"FAIL"); abort(); } }
 static NSHTTPURLResponse *response(NSInteger status, NSString *mime) {
     return [[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://www.reddit.com/api/me.json"] statusCode:status HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type":mime}];

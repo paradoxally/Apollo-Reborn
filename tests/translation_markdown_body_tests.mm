@@ -221,6 +221,18 @@ static void TestInlineEmphasisAndLinks(void) {
           [[strike attribute:NSStrikethroughStyleAttributeName atIndex:0 effectiveRange:NULL] integerValue] == NSUnderlineStyleSingle,
           @"strikethrough");
 
+    NSAttributedString *sup = ApolloTranslatedMarkdownBodyAttributedString(base, @"E=mc^2 and ^(two words) end");
+    Check([sup.string isEqualToString:@"E=mc2 and two words end"], [NSString stringWithFormat:@"superscript markers: '%@'", sup.string]);
+    NSFont *plainFont = [sup attribute:NSFontAttributeName atIndex:0 effectiveRange:NULL];
+    for (NSString *raised in @[@"2", @"two words"]) {
+        NSUInteger at = RangeOf(sup, raised).location;
+        NSFont *supFont = [sup attribute:NSFontAttributeName atIndex:at effectiveRange:NULL];
+        Check(supFont.pointSize < plainFont.pointSize && [[sup attribute:NSBaselineOffsetAttributeName atIndex:at effectiveRange:NULL] doubleValue] > 0,
+              [NSString stringWithFormat:@"superscript '%@' is smaller and raised", raised]);
+    }
+    Check([sup attribute:NSBaselineOffsetAttributeName atIndex:RangeOf(sup, @" end").location effectiveRange:NULL] == nil,
+          @"superscript stops at the closing parenthesis");
+
     NSAttributedString *link = ApolloTranslatedMarkdownBodyAttributedString(base, @"> text [Source](https://x.de/a_b_c_d) end\n\nsee https://x.de/_u_ ok");
     Check([link.string isEqualToString:@"\ttext Source end\n\nsee https://x.de/_u_ ok"],
           [NSString stringWithFormat:@"links: '%@'", link.string]);

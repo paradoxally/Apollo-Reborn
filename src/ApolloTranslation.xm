@@ -1978,6 +1978,17 @@ static void ApolloAddFontTraitInRange(NSMutableAttributedString *attributed, NSR
     }];
 }
 
+// Reddit draws superscript smaller and raised; each level stacks on the one below.
+static void ApolloApplySuperscriptInRange(NSMutableAttributedString *attributed, NSRange range) {
+    [attributed enumerateAttributesInRange:range options:0 usingBlock:^(NSDictionary *attrs, NSRange sub, __unused BOOL *stop) {
+        UIFont *font = [attrs[NSFontAttributeName] isKindOfClass:[UIFont class]] ? attrs[NSFontAttributeName] : nil;
+        if (!font) return;
+        CGFloat offset = [attrs[NSBaselineOffsetAttributeName] doubleValue] + font.pointSize * 0.4;
+        [attributed addAttribute:NSFontAttributeName value:[UIFont fontWithDescriptor:font.fontDescriptor size:font.pointSize * 0.7] range:sub];
+        [attributed addAttribute:NSBaselineOffsetAttributeName value:@(offset) range:sub];
+    }];
+}
+
 // Inline markdown → attributes: **bold**/__bold__, ~~strike~~, *italic*/_italic_,
 // ^(super)/^super. Matches that touch a link are left alone (URLs keep their _ and *),
 // and a backslash-escaped marker never opens or closes one.
@@ -1991,7 +2002,7 @@ static void ApolloApplyInlineMarkdownEmphasis(NSMutableAttributedString *attribu
             @"(?<![\\w*\\\\])\\*(?=[^\\s*])([^\\n*]+?)(?<=[^\\s*\\\\])\\*(?![\\w*])",     // 2 italic
             @"(?<![\\w_\\\\])_(?=[^\\s_])([^\\n_]+?)(?<=[^\\s_\\\\])_(?![\\w_])",         // 3 italic
             @"(?<!\\\\)\\^\\(([^)\\n]+)\\)",                                              // 4 superscript, parenthesised
-            @"(?<!\\\\)\\^(?=[^\\s(^])()",                                                // 5 superscript caret (inner empty)
+            @"(?<!\\\\)\\^([^\\s(^][^\\s^]*)",                                             // 5 superscript caret, to the next space
         ];
         NSMutableArray *compiled = [NSMutableArray array];
         for (NSString *source in sources) {
@@ -2021,6 +2032,7 @@ static void ApolloApplyInlineMarkdownEmphasis(NSMutableAttributedString *attribu
             if (p == 0) ApolloAddFontTraitInRange(attributed, styled, UIFontDescriptorTraitBold);
             else if (p == 1) [attributed addAttribute:NSStrikethroughStyleAttributeName value:@(NSUnderlineStyleSingle) range:styled];
             else if (p == 2 || p == 3) ApolloAddFontTraitInRange(attributed, styled, UIFontDescriptorTraitItalic);
+            else ApolloApplySuperscriptInRange(attributed, styled);
         }
     }
 }

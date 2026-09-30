@@ -461,14 +461,21 @@ static NSDictionary *ApolloSBPerformWidgetsRequest(NSURLRequest *request, NSStri
     __block NSData *body = nil;
     __block NSInteger status = -1;
     __block NSError *networkError = nil;
-    [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+    NSURLSessionDataTask *task = [[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         body = data;
         networkError = error;
         if ([response isKindOfClass:[NSHTTPURLResponse class]]) status = ((NSHTTPURLResponse *)response).statusCode;
         dispatch_semaphore_signal(sema);
-    }] resume];
+    }];
+    [task resume];
     if (dispatch_semaphore_wait(sema, dispatch_time(DISPATCH_TIME_NOW, (int64_t)((request.timeoutInterval + 3.0) * NSEC_PER_SEC))) != 0) {
-        status = -1;
+        // The completion handler can still be writing body/status/networkError,
+        // so none of them may be read on this path.
+        [task cancel];
+        ApolloLog(@"[Sidebar] widgets fetch r/%@ (%@) timed out", subredditName, label);
+        if (outStatus) *outStatus = -1;
+        if (outDefinitive) *outDefinitive = NO;
+        return nil;
     }
     id json = body.length > 0 ? [NSJSONSerialization JSONObjectWithData:body options:0 error:nil] : nil;
     NSDictionary *root = [json isKindOfClass:[NSDictionary class]] ? json : nil;

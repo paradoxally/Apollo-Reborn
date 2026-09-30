@@ -33,12 +33,17 @@ static BOOL TrueBlackKeyboardAppliesTo(UIUserInterfaceStyle style) {
     }
 }
 
-// The app's appearance (Apollo may override it per window), from its first normal-level window.
-static UIUserInterfaceStyle AppInterfaceStyle(void) {
+// The app's appearance (Apollo may override it per window), read from the normal-level app window
+// in the keyboard's scene. The keyboard draws in its own higher-level window, so it has to be looked
+// up by scene; with no scene to match, any normal-level window will do.
+static UIUserInterfaceStyle AppInterfaceStyle(UIWindowScene *keyboardScene) {
+    UIWindow *fallback = nil;
     for (UIWindow *window in ApolloAllWindows()) {
-        if (window.windowLevel == UIWindowLevelNormal) return window.traitCollection.userInterfaceStyle;
+        if (window.windowLevel != UIWindowLevelNormal) continue;
+        if (keyboardScene && window.windowScene == keyboardScene) return window.traitCollection.userInterfaceStyle;
+        if (!fallback) fallback = window;
     }
-    return UIUserInterfaceStyleUnspecified;
+    return fallback ? fallback.traitCollection.userInterfaceStyle : UIUserInterfaceStyleUnspecified;
 }
 
 static const void *kEdgeFillKey = &kEdgeFillKey;
@@ -112,7 +117,7 @@ static BOOL BackdropBelongsToKey(UIView *backdrop) {
 
 static void ApplyTrueBlack(UIVisualEffectView *backdrop) {
     if (BackdropBelongsToKey(backdrop)) return;
-    BOOL applies = TrueBlackKeyboardAppliesTo(AppInterfaceStyle());
+    BOOL applies = TrueBlackKeyboardAppliesTo(AppInterfaceStyle(backdrop.window.windowScene));
     UpdateEdgeFill(backdrop, applies);
     if (!applies) {
         RevertTrueBlack(backdrop);
@@ -147,9 +152,13 @@ static void ApplyTrueBlack(UIVisualEffectView *backdrop) {
 %hook UIKBRenderConfig
 
 + (id)configForAppearance:(long long)appearance inputMode:(id)inputMode traitEnvironment:(id)traitEnvironment {
-    if (appearance != UIKeyboardAppearanceDark &&
-        TrueBlackKeyboardAppliesTo(AppInterfaceStyle()) && AppInterfaceStyle() != UIUserInterfaceStyleDark) {
-        return %orig(UIKeyboardAppearanceDark, inputMode, traitEnvironment);
+    if (appearance != UIKeyboardAppearanceDark) {
+        UIWindowScene *scene = [traitEnvironment isKindOfClass:[UIView class]]
+            ? ((UIView *)traitEnvironment).window.windowScene : nil;
+        UIUserInterfaceStyle style = AppInterfaceStyle(scene);
+        if (TrueBlackKeyboardAppliesTo(style) && style != UIUserInterfaceStyleDark) {
+            return %orig(UIKeyboardAppearanceDark, inputMode, traitEnvironment);
+        }
     }
     return %orig;
 }
@@ -175,3 +184,7 @@ static void ApplyTrueBlack(UIVisualEffectView *backdrop) {
 }
 
 %end
+
+%ctor {
+    %init;
+}

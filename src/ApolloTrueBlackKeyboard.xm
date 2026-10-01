@@ -35,15 +35,14 @@ static BOOL TrueBlackKeyboardAppliesTo(UIUserInterfaceStyle style) {
 
 // The app's appearance (Apollo may override it per window), read from the normal-level app window
 // in the keyboard's scene. The keyboard draws in its own higher-level window, so it has to be looked
-// up by scene; with no scene to match, any normal-level window will do.
+// up by scene. Without a window there, the scene's own style; any normal-level window only when
+// the keyboard's scene is unknown.
 static UIUserInterfaceStyle AppInterfaceStyle(UIWindowScene *keyboardScene) {
-    UIWindow *fallback = nil;
     for (UIWindow *window in ApolloAllWindows()) {
         if (window.windowLevel != UIWindowLevelNormal) continue;
-        if (keyboardScene && window.windowScene == keyboardScene) return window.traitCollection.userInterfaceStyle;
-        if (!fallback) fallback = window;
+        if (!keyboardScene || window.windowScene == keyboardScene) return window.traitCollection.userInterfaceStyle;
     }
-    return fallback ? fallback.traitCollection.userInterfaceStyle : UIUserInterfaceStyleUnspecified;
+    return keyboardScene ? keyboardScene.traitCollection.userInterfaceStyle : UIUserInterfaceStyleUnspecified;
 }
 
 static const void *kEdgeFillKey = &kEdgeFillKey;

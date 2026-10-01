@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "version": "3.22.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "list.bullet.rectangle.fill", "title": "Subreddit Switcher", "subtitle": "Tap the subreddit title on a feed to search, pick a favorite, and switch right in place." },
+    { "icon": "keyboard.fill", "title": "True Black Keyboard", "subtitle": "Paint the keyboard pure black for OLED screens. Find it in Interface > Display & Navigation." },
+    { "icon": "person.crop.circle.fill", "title": "Faces in Live Activities", "subtitle": "Followed threads show the newest commenter's profile picture next to their name." },
+    { "icon": "arrowshape.turn.up.right.fill", "title": "Quicker Crossposts", "subtitle": "A crosspost starts with the original post's title, ready to send or clear." },
+    { "icon": "shield.lefthalf.filled", "title": "Moderating Without an API Key", "subtitle": "Removal reasons, bans, flair and Moderator Mail now work on API-Key-Free accounts." }
+  ]
+}

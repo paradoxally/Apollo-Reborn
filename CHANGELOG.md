@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.22.1] - 2026-10-02
+
+### Features
+
+- Add **Open via Nitter** (**Settings > General > Open in App > X / Twitter**) — X and Twitter links open on a Nitter instance you pick, so posts and profiles can be read without an X account and without X's tracking parameters; the picker lists the public instances currently reported healthy, or takes your own address, including a self-hosted `http://` one ([#1334](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1334): @nickclyde)
+
+### Fixes
+
+- Fix settings footers and subtitles growing to body text size under the **Rounded**, **Serif** and **Mono** theme fonts ([#1297](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1297): @icpryde)
+- Fix settings section headers and footers keeping the old **theme**'s colors and font when you come back to a screen after changing themes ([#1322](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1322): @icpryde)
+
 ## [v3.22.0] - 2026-10-01
 
 ### Features
@@ -1494,6 +1505,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.22.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.22.0...v1.15.11_3.22.1
 [v3.22.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.21.0...v1.15.11_3.22.0
 [v3.21.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.2...v1.15.11_3.21.0
 [v3.20.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.1...v1.15.11_3.20.2

@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.22.2] - 2026-10-05
+
+### Features
+
+- Add **Kagi** to the Search tab — tap the magnifier and pick Kagi to search Reddit with your Kagi subscription's **Session Link** instead of an API key (each page of results counts as one search on your plan); results load as you scroll and open natively with Reddit's score, comment count and age, and the link can be changed or cleared in **Settings > Apollo Reborn > Accounts & API Keys > Kagi Search** ([#1305](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1305): @nickclyde)
+
+### Fixes
+
+- Keep **media previews** and your **current user flair** working for API-Key-Free accounts now that Reddit is limiting Old Reddit to accounts that used it in the last six months — both now load from www.reddit.com, and the flair picker matches your flair by its real template ([#1327](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1327): @nickclyde)
+
 ## [v3.22.1] - 2026-10-02
 
 ### Features
@@ -1505,6 +1515,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.22.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.22.1...v1.15.11_3.22.2
 [v3.22.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.22.0...v1.15.11_3.22.1
 [v3.22.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.21.0...v1.15.11_3.22.0
 [v3.21.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.20.2...v1.15.11_3.21.0

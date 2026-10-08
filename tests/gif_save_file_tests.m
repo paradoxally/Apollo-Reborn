@@ -1,5 +1,8 @@
 #import <Foundation/Foundation.h>
+// Intentional no-op: the harness links no logging, so log lines from the code
+// under test are dropped at every level; no check depends on log output.
 #define ApolloLog(...) do {} while (0)
+#define ApolloLogError(...) do {} while (0)
 @interface ApolloGIFSaveActivityContext : NSObject
 @property(nonatomic,copy) NSURL *sourceURL;
 @property(nonatomic,copy) NSURL *directoryURL;

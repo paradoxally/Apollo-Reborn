@@ -5,6 +5,7 @@
 // metadata. Falls back to Apollo's native card when metadata is missing.
 
 #import "ApolloCommon.h"
+#import "ApolloClasses.h"
 #import "ApolloMemoryDiagnostics.h"
 #import "ApolloDeletedCommentsData.h"
 #import "ApolloLinkPreviewCache.h"
@@ -14,8 +15,8 @@
 #import "ApolloUserProfileCache.h"
 #import "ApolloState.h"
 #import "ApolloSubredditInfoCache.h"
+#import "ApolloSwiftRuntime.h"
 #import "ApolloTranslation.h"
-#import "ApolloUserProfileCache.h"
 #import "UserDefaultConstants.h"
 
 #import <CoreImage/CoreImage.h>
@@ -57,6 +58,8 @@ typedef NS_ENUM(unsigned char, ApolloLinkPreviewStackAlignItems) {
 - (UIView *)view;
 - (BOOL)isNodeLoaded;
 - (void)setNeedsDisplay;
+- (void)setNeedsLayout;
+- (void)invalidateCalculatedLayout;
 - (void)onDidLoad:(void(^)(__kindof ASDisplayNode *node))body;
 // Texture ASInterfaceState bitmask: MeasureLayout=1<<0, Preload=1<<1,
 // Display=1<<2, Visible=1<<3. Thread-safe accessor (lock-guarded in Texture).
@@ -126,8 +129,8 @@ typedef NS_ENUM(unsigned char, ApolloLinkPreviewStackAlignItems) {
 
 // The result type of -calculateLayoutThatFits: (NOT a spec). Only the leaf
 // factory is needed — the nesting guard below returns a sublayout-less ASLayout
-// to truncate a runaway spec chain. Resolved via ApolloLPClass at runtime like
-// every other ASDK class here, so no link-time class reference is emitted.
+// to truncate a runaway spec chain. Resolved through the shared ApolloClasses
+// table like every other ASDK class here, so no link-time class reference is emitted.
 @interface ASLayout : NSObject
 + (instancetype)layoutWithLayoutElement:(id)layoutElement size:(CGSize)size;
 @end
@@ -179,10 +182,6 @@ static NSString *ApolloLPRedditSubredditFromURL(NSURL *url);
 static NSString *ApolloLPCleanDisplayText(NSString *text);
 static void ApolloLPMaybeKickFaceScanForNode(ASNetworkImageNode *imageNode, NSURL *imageURL, UIImage *image);
 static BOOL ApolloLPNodeImageBelongsToURL(ASNetworkImageNode *imageNode, NSString *key);
-
-static Class ApolloLPClass(NSString *name) {
-    return NSClassFromString(name);
-}
 
 static NSString *ApolloLPHost(NSURL *url) {
     NSString *host = url.host.lowercaseString ?: @"";
@@ -287,26 +286,19 @@ static BOOL ApolloLPShouldDeferToInlineMedia(NSURL *url) {
 }
 
 static UIColor *ApolloLPResolvedColor(UIColor *color, UITraitCollection *traitCollection) {
-    if (!color) return nil;
-    if (@available(iOS 13.0, *)) {
-        return [color resolvedColorWithTraitCollection:traitCollection ?: UIScreen.mainScreen.traitCollection];
-    }
-    return color;
+    // Callers must supply the traits the color is resolved for (the dynamic
+    // provider's own traitCollection).
+    return [color resolvedColorWithTraitCollection:traitCollection];
 }
 
 static UIView *ApolloLPViewForNode(ASDisplayNode *node) {
-    if (!node || ![node respondsToSelector:@selector(view)]) return nil;
+    // [node view] FORCE-LOADS the backing view; below-fold preload-range cards
+    // must not pay that (memory + main-thread work for rows that may never
+    // display). An unloaded node has no on-screen row to fix anyway — its next
+    // display pass measures with the corrected layout.
     @try {
-        // [node view] FORCE-LOADS the backing view; below-fold preload-range cards
-        // must not pay that (memory + main-thread work for rows that may never
-        // display). An unloaded node has no on-screen row to fix anyway — its next
-        // display pass measures with the corrected layout.
-        if ([node respondsToSelector:@selector(isNodeLoaded)] &&
-            !((BOOL (*)(id, SEL))objc_msgSend)(node, @selector(isNodeLoaded))) {
-            return nil;
-        }
-        UIView *view = ((UIView *(*)(id, SEL))objc_msgSend)(node, @selector(view));
-        return [view isKindOfClass:[UIView class]] ? view : nil;
+        if (![node isNodeLoaded]) return nil;
+        return node.view;
     } @catch (__unused NSException *exception) {
         return nil;
     }
@@ -318,22 +310,7 @@ static BOOL ApolloLPURLIsHTTP(NSURL *url) {
 }
 
 static UIViewController *ApolloLPTopViewControllerFromView(UIView *view) {
-    UIWindow *window = view.window;
-    if (!window) {
-        if (@available(iOS 13.0, *)) {
-            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-                if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-                for (UIWindow *candidate in ((UIWindowScene *)scene).windows) {
-                    if (candidate.isKeyWindow) {
-                        window = candidate;
-                        break;
-                    }
-                }
-                if (window) break;
-            }
-        }
-    }
-
+    UIWindow *window = view.window ?: ApolloKeyWindow();
     UIViewController *controller = window.rootViewController;
     while (controller.presentedViewController) controller = controller.presentedViewController;
     return controller;
@@ -862,7 +839,7 @@ static void ApolloLPInstallContextMenuForNode(ASDisplayNode *node, NSURL *url) {
         ApolloLPInstallContextMenuOnView(view, currentURL);
     };
 
-    if ([node respondsToSelector:@selector(isNodeLoaded)] && [node isNodeLoaded]) {
+    if ([node isNodeLoaded]) {
         install(node);
         return;
     }
@@ -874,12 +851,10 @@ static void ApolloLPInstallContextMenuForNode(ASDisplayNode *node, NSURL *url) {
     // per-measure growth on card-heavy threads (#630 round-9 lag audit).
     static const void *kApolloLPOnDidLoadArmedKey = &kApolloLPOnDidLoadArmedKey;
     if ([objc_getAssociatedObject(node, kApolloLPOnDidLoadArmedKey) boolValue]) return;
-    if ([node respondsToSelector:@selector(onDidLoad:)]) {
-        objc_setAssociatedObject(node, kApolloLPOnDidLoadArmedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        [node onDidLoad:^(__kindof ASDisplayNode *loadedNode) {
-            install(loadedNode);
-        }];
-    }
+    objc_setAssociatedObject(node, kApolloLPOnDidLoadArmedKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [node onDidLoad:^(__kindof ASDisplayNode *loadedNode) {
+        install(loadedNode);
+    }];
 }
 
 static NSCache<NSString *, UIImage *> *ApolloLPFallbackImageCache(void) {
@@ -1350,6 +1325,11 @@ static void ApolloLPStartFallbackImageFetch(ASNetworkImageNode *imageNode, NSURL
     __weak ASNetworkImageNode *weakImageNode = imageNode;
     NSString *hostCopy = [host copy];
     [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        // TODO: Modernization - this decode runs on the URLSession delegate queue and
+        // the bitmap is stored in the URL-keyed cache shared by every card, so there is
+        // no single view whose displayScale applies; the requesting node's Texture traits
+        // may not carry a display scale yet. Thread the requesting node's scale in (and
+        // key the cache by it) to drop the main-screen assumption.
         UIImage *image = data.length > 0 ? [UIImage imageWithData:data scale:UIScreen.mainScreen.scale] : nil;
         BOOL definitivelyDead = NO;
         if (image) {
@@ -1374,7 +1354,7 @@ static void ApolloLPStartFallbackImageFetch(ASNetworkImageNode *imageNode, NSURL
             if (!definitivelyDead) {
                 ApolloLPMarkImageURLTransientFailure(imageURL);
             }
-            ApolloLog(@"[LinkPreviews] image fetch failed host=%@ status=%ld bytes=%lu err=%@ (%@)",
+            ApolloLogError(@"[LinkPreviews] image fetch failed host=%@ status=%ld bytes=%lu err=%@ (%@)",
                       hostCopy, (long)httpResponse.statusCode, (unsigned long)data.length,
                       error.localizedDescription ?: @"decode",
                       definitivelyDead ? @"dead-marked" : @"will retry on approach");
@@ -1897,15 +1877,11 @@ static UIColor *ApolloLPCardBackgroundColorForNode(ASDisplayNode *hostNode, NSUR
     // Default ("Neutral"): keep the original subtle, theme-aware card background.
     UIColor *tintColor = ApolloLinkPreviewPresetColor(ApolloLinkPreviewCardColorNeutral);
 
-    if (@available(iOS 13.0, *)) {
-        return [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *traitCollection) {
-            BOOL dark = traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
-            UIColor *base = dark ? [UIColor secondarySystemBackgroundColor] : [UIColor systemBackgroundColor];
-            return ApolloLPBlendColor(tintColor, base, dark ? 0.14 : 0.08, traitCollection);
-        }];
-    }
-
-    return ApolloLPBlendColor(tintColor, [UIColor secondarySystemBackgroundColor], 0.12, UIScreen.mainScreen.traitCollection);
+    return [UIColor colorWithDynamicProvider:^UIColor *(UITraitCollection *traitCollection) {
+        BOOL dark = traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark;
+        UIColor *base = dark ? [UIColor secondarySystemBackgroundColor] : [UIColor systemBackgroundColor];
+        return ApolloLPBlendColor(tintColor, base, dark ? 0.14 : 0.08, traitCollection);
+    }];
 }
 
 static void ApolloLPRegisterLinkPreviewNode(ASDisplayNode *node) {
@@ -1965,8 +1941,7 @@ static BOOL ApolloLPFireRowReloadFromAttachedNodesForURL(NSString *urlString, NS
     for (ASDisplayNode *node in ApolloLPRegisteredLinkPreviewNodesSnapshot()) {
         NSURL *nodeURL = objc_getAssociatedObject(node, &kApolloLinkPreviewURLKey);
         if (![nodeURL.absoluteString isEqualToString:urlString]) continue;
-        BOOL loaded = [node respondsToSelector:@selector(isNodeLoaded)] && [node isNodeLoaded];
-        UIView *view = loaded ? ApolloLPViewForNode(node) : nil;
+        UIView *view = ApolloLPViewForNode(node); // nil while unloaded
         if (!view.window) continue; // only an on-screen tree can resolve its row's index path
         ASDisplayNode *cellNode = ApolloLPFindOwningCellNode(node);
         if (ApolloLPInvokeRowReloadIfPossible(cellNode ?: node, node, host)) {
@@ -2035,23 +2010,16 @@ static void ApolloLPNoteRowReloadMissForNode(ASDisplayNode *node, NSString *host
 }
 
 static void ApolloLPMarkNodeForColorRefresh(ASDisplayNode *node) {
-    if (!node) return;
     @try {
-        if ([node respondsToSelector:@selector(setNeedsDisplay)]) {
-            [(id)node setNeedsDisplay];
-        }
-        if ([node respondsToSelector:@selector(setNeedsLayout)]) {
-            [(id)node setNeedsLayout];
-        }
-        if ([node respondsToSelector:@selector(invalidateCalculatedLayout)]) {
-            ((void (*)(id, SEL))objc_msgSend)(node, @selector(invalidateCalculatedLayout));
-        }
+        [node setNeedsDisplay];
+        [node setNeedsLayout];
+        [node invalidateCalculatedLayout];
     } @catch (__unused NSException *exception) {
     }
 }
 
 static BOOL ApolloLPApplyCardBackgroundColor(ASDisplayNode *hostNode, ASDisplayNode *backgroundNode, NSURL *url, BOOL force) {
-    if (!backgroundNode || ![backgroundNode respondsToSelector:@selector(setBackgroundColor:)]) return NO;
+    if (!backgroundNode) return NO;
 
     NSNumber *currentToken = @((unsigned long)ApolloLPCardColorPackedSnapshot());
     NSNumber *lastToken = objc_getAssociatedObject(backgroundNode, &kApolloLinkPreviewBackgroundColorPresetKey);
@@ -2082,9 +2050,9 @@ static NSDictionary *ApolloLPNodeBundleForHostUnlocked(ASDisplayNode *hostNode, 
     NSDictionary *bundle = bundles[key];
     if (bundle) return bundle;
 
-    Class imageNodeClass = ApolloLPClass(@"ASNetworkImageNode");
-    Class textNodeClass = ApolloLPClass(@"ASTextNode");
-    Class displayNodeClass = ApolloLPClass(@"ASDisplayNode");
+    Class imageNodeClass = ApolloClassASNetworkImageNode;
+    Class textNodeClass = ApolloClassASTextNode;
+    Class displayNodeClass = ApolloClassASDisplayNode;
     if (!imageNodeClass || !textNodeClass || !displayNodeClass) return nil;
 
     ASNetworkImageNode *imageNode = [[imageNodeClass alloc] init];
@@ -2463,19 +2431,6 @@ static BOOL ApolloLPHostReliablyHasPreviewImages(NSURL *url) {
     return [[ApolloLinkPreviewShapeMemory sharedMemory] shapeForHost:host] == ApolloLPHostShapeImaged;
 }
 
-static id ApolloLPModelFromNodeIvar(ASDisplayNode *node, const char *ivarName) {
-    if (!node || !ivarName) return nil;
-    Ivar ivar = class_getInstanceVariable([node class], ivarName);
-    if (!ivar) return nil;
-
-    id model = nil;
-    @try {
-        model = object_getIvar(node, ivar);
-    } @catch (__unused NSException *exception) {
-    }
-    return model;
-}
-
 // Positive class-based detection of the owning cell, by user-facing area.
 // The two areas map to Apollo's two data models (see ApolloInlineImages.xm:
 // CommentCellNode holds an RDKComment via a `comment` ivar; the header and
@@ -2494,26 +2449,6 @@ static id ApolloLPModelFromNodeIvar(ASDisplayNode *node, const char *ivarName) {
 // The walk below resolves whichever signal is *nearest* the link button, and
 // falls back to the `comment`/`link` ivar as suspenders when a cell class is
 // renamed in a future Apollo build.
-static Class ApolloLPCommentCellClass(void) {
-    static Class cls; static dispatch_once_t once;
-    dispatch_once(&once, ^{ cls = objc_getClass("_TtC6Apollo15CommentCellNode"); });
-    return cls;
-}
-static Class ApolloLPCommentsHeaderCellClass(void) {
-    static Class cls; static dispatch_once_t once;
-    dispatch_once(&once, ^{ cls = objc_getClass("_TtC6Apollo22CommentsHeaderCellNode"); });
-    return cls;
-}
-static Class ApolloLPLargePostCellClass(void) {
-    static Class cls; static dispatch_once_t once;
-    dispatch_once(&once, ^{ cls = objc_getClass("_TtC6Apollo17LargePostCellNode"); });
-    return cls;
-}
-static Class ApolloLPCompactPostCellClass(void) {
-    static Class cls; static dispatch_once_t once;
-    dispatch_once(&once, ^{ cls = objc_getClass("_TtC6Apollo19CompactPostCellNode"); });
-    return cls;
-}
 
 // Walk supernodes; returns YES on positive detection via known cell class or
 // `comment` ivar. *outArea receives the resolved area; *outDepth receives the
@@ -2521,10 +2456,10 @@ static Class ApolloLPCompactPostCellClass(void) {
 // measurement, the root cause of the vote-time compact→hero flip).
 static BOOL ApolloLPResolveAreaByWalk(ASDisplayNode *linkButtonNode, ApolloLPArea *outArea, NSUInteger *outDepth) {
     NSUInteger depth = 0;
-    Class commentCellCls = ApolloLPCommentCellClass();
-    Class headerCellCls = ApolloLPCommentsHeaderCellClass();
-    Class largePostCellCls = ApolloLPLargePostCellClass();
-    Class compactPostCellCls = ApolloLPCompactPostCellClass();
+    Class commentCellCls = ApolloClassCommentCellNode;
+    Class headerCellCls = ApolloClassCommentsHeaderCellNode;
+    Class largePostCellCls = ApolloClassLargePostCellNode;
+    Class compactPostCellCls = ApolloClassCompactPostCellNode;
     // Nearest-ancestor wins: the first node carrying any positive signal
     // decides the area. Within a node, Comments signals are checked before
     // Body signals so a comment cell that also references its parent post
@@ -2539,7 +2474,7 @@ static BOOL ApolloLPResolveAreaByWalk(ASDisplayNode *linkButtonNode, ApolloLPAre
             if (outDepth) *outDepth = depth;
             return YES;
         }
-        if (ApolloLPModelFromNodeIvar(node, "comment")) {
+        if (ApolloObjectIvar(node, "comment")) {
             if (outArea) *outArea = ApolloLPAreaComments;
             if (outDepth) *outDepth = depth;
             return YES;
@@ -2553,7 +2488,7 @@ static BOOL ApolloLPResolveAreaByWalk(ASDisplayNode *linkButtonNode, ApolloLPAre
             if (outDepth) *outDepth = depth;
             return YES;
         }
-        if (ApolloLPModelFromNodeIvar(node, "link")) {
+        if (ApolloObjectIvar(node, "link")) {
             if (outArea) *outArea = ApolloLPAreaBody;
             if (outDepth) *outDepth = depth;
             return YES;
@@ -2618,21 +2553,11 @@ static ApolloLPArea ApolloLPAreaForLinkButton(ASDisplayNode *linkButtonNode) {
         // Force re-measure: invalidate both the link button and the
         // enclosing cell. Cell invalidation is what actually makes Texture
         // drop the cached spec and re-run layoutSpecThatFits on the row.
-        if ([strongNode respondsToSelector:@selector(invalidateCalculatedLayout)]) {
-            ((void (*)(id, SEL))objc_msgSend)(strongNode, @selector(invalidateCalculatedLayout));
-        }
-        if ([strongNode respondsToSelector:@selector(setNeedsLayout)]) {
-            [(id)strongNode setNeedsLayout];
-        }
+        [strongNode invalidateCalculatedLayout];
+        [strongNode setNeedsLayout];
         ASDisplayNode *cell = ApolloLPEnclosingCellNode(strongNode);
-        if (cell) {
-            if ([cell respondsToSelector:@selector(invalidateCalculatedLayout)]) {
-                ((void (*)(id, SEL))objc_msgSend)(cell, @selector(invalidateCalculatedLayout));
-            }
-            if ([cell respondsToSelector:@selector(setNeedsLayout)]) {
-                [(id)cell setNeedsLayout];
-            }
-        }
+        [cell invalidateCalculatedLayout];
+        [cell setNeedsLayout];
     });
     return fallbackArea;
 }
@@ -2641,9 +2566,7 @@ static ApolloLPArea ApolloLPAreaForLinkButton(ASDisplayNode *linkButtonNode) {
 // cell). Returns nil if none found. Used by the deferred re-resolve path to
 // invalidate the *cell's* layout so the wrong cached spec is discarded.
 static ASDisplayNode *ApolloLPEnclosingCellNode(ASDisplayNode *node) {
-    static Class cellCls = Nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ cellCls = objc_getClass("ASCellNode"); });
+    Class cellCls = ApolloClassASCellNode;
     if (!cellCls) return nil;
     for (ASDisplayNode *cur = node; cur; cur = cur.supernode) {
         if ([cur isKindOfClass:cellCls]) return cur;
@@ -2657,9 +2580,7 @@ static ASDisplayNode *ApolloLPEnclosingCellNode(ASDisplayNode *node) {
 // CommentCellNode / CommentsHeaderCellNode didLoad hooks below.
 static void ApolloLPStampLinkButtonAreaInTree(ASDisplayNode *root, ApolloLPArea area) {
     if (!root) return;
-    static Class linkButtonCls = Nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ linkButtonCls = objc_getClass("_TtC6Apollo14LinkButtonNode"); });
+    Class linkButtonCls = ApolloClassLinkButtonNode;
     if (!linkButtonCls) return;
     if ([root isMemberOfClass:linkButtonCls]) {
         NSNumber *existing = objc_getAssociatedObject(root, &kApolloLinkPreviewAreaKey);
@@ -2668,7 +2589,7 @@ static void ApolloLPStampLinkButtonAreaInTree(ASDisplayNode *root, ApolloLPArea 
         }
     }
     NSArray *subnodes = nil;
-    @try { subnodes = [root respondsToSelector:@selector(subnodes)] ? [(id)root subnodes] : nil; }
+    @try { subnodes = root.subnodes; }
     @catch (__unused NSException *e) { subnodes = nil; }
     for (ASDisplayNode *child in subnodes) {
         ApolloLPStampLinkButtonAreaInTree(child, area);
@@ -2699,9 +2620,7 @@ static BOOL ApolloLPURLEligibleForPreviewCard(NSURL *url) {
 // fresh walk at layout time is cheap and always correct.
 static NSUInteger ApolloLPCountEligiblePreviewLinksInTree(ASDisplayNode *root) {
     if (!root) return 0;
-    static Class linkButtonCls = Nil;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{ linkButtonCls = objc_getClass("_TtC6Apollo14LinkButtonNode"); });
+    Class linkButtonCls = ApolloClassLinkButtonNode;
 
     NSUInteger count = 0;
     if (linkButtonCls && [root isMemberOfClass:linkButtonCls]) {
@@ -2710,7 +2629,7 @@ static NSUInteger ApolloLPCountEligiblePreviewLinksInTree(ASDisplayNode *root) {
         if (ApolloLPURLEligibleForPreviewCard(url)) count++;
     }
     NSArray *subnodes = nil;
-    @try { subnodes = [root respondsToSelector:@selector(subnodes)] ? [(id)root subnodes] : nil; }
+    @try { subnodes = root.subnodes; }
     @catch (__unused NSException *e) { subnodes = nil; }
     for (ASDisplayNode *child in subnodes) {
         count += ApolloLPCountEligiblePreviewLinksInTree(child);
@@ -2912,9 +2831,9 @@ static id ApolloLPBuildCompactCardSpec(ASDisplayNode *hostNode, NSURL *url, Apol
 
     ApolloLPSetAvatarNodeVisible(avatarNode, NO);
 
-    Class stackClass = ApolloLPClass(@"ASStackLayoutSpec");
-    Class insetClass = ApolloLPClass(@"ASInsetLayoutSpec");
-    Class backgroundClass = ApolloLPClass(@"ASBackgroundLayoutSpec");
+    Class stackClass = ApolloClassASStackLayoutSpec;
+    Class insetClass = ApolloClassASInsetLayoutSpec;
+    Class backgroundClass = ApolloClassASBackgroundLayoutSpec;
     if (!stackClass || !insetClass) return nil;
 
     imageNode.cornerRadius = 8.0;
@@ -2985,10 +2904,10 @@ static id ApolloLPBuildHeroCardSpec(ASDisplayNode *hostNode, NSURL *url, ApolloL
 
     ApolloLPSetAvatarNodeVisible(avatarNode, NO);
 
-    Class stackClass = ApolloLPClass(@"ASStackLayoutSpec");
-    Class insetClass = ApolloLPClass(@"ASInsetLayoutSpec");
-    Class ratioClass = ApolloLPClass(@"ASRatioLayoutSpec");
-    Class backgroundClass = ApolloLPClass(@"ASBackgroundLayoutSpec");
+    Class stackClass = ApolloClassASStackLayoutSpec;
+    Class insetClass = ApolloClassASInsetLayoutSpec;
+    Class ratioClass = ApolloClassASRatioLayoutSpec;
+    Class backgroundClass = ApolloClassASBackgroundLayoutSpec;
     if (!stackClass || !insetClass) return nil;
 
     imageNode.cornerRadius = 10.0;
@@ -3099,10 +3018,10 @@ static id ApolloLPBuildBlueskyPostCardSpec(ASDisplayNode *hostNode, NSURL *url, 
 
     ApolloLPSetAvatarNodeVisible(avatarNode, YES);
 
-    Class stackClass = ApolloLPClass(@"ASStackLayoutSpec");
-    Class insetClass = ApolloLPClass(@"ASInsetLayoutSpec");
-    Class ratioClass = ApolloLPClass(@"ASRatioLayoutSpec");
-    Class backgroundClass = ApolloLPClass(@"ASBackgroundLayoutSpec");
+    Class stackClass = ApolloClassASStackLayoutSpec;
+    Class insetClass = ApolloClassASInsetLayoutSpec;
+    Class ratioClass = ApolloClassASRatioLayoutSpec;
+    Class backgroundClass = ApolloClassASBackgroundLayoutSpec;
     if (!stackClass || !insetClass) return nil;
 
     NSString *displayName = preview.authorDisplayName.length > 0 ? preview.authorDisplayName : (ApolloLPDisplayTitleForPreview(preview).length > 0 ? ApolloLPDisplayTitleForPreview(preview) : @"Bluesky");
@@ -3265,9 +3184,9 @@ static id ApolloLPBuildRedditUserCardSpec(ASDisplayNode *hostNode, NSURL *url, A
 
     ApolloLPSetAvatarNodeVisible(avatarNode, YES);
 
-    Class stackClass = ApolloLPClass(@"ASStackLayoutSpec");
-    Class insetClass = ApolloLPClass(@"ASInsetLayoutSpec");
-    Class backgroundClass = ApolloLPClass(@"ASBackgroundLayoutSpec");
+    Class stackClass = ApolloClassASStackLayoutSpec;
+    Class insetClass = ApolloClassASInsetLayoutSpec;
+    Class backgroundClass = ApolloClassASBackgroundLayoutSpec;
     if (!stackClass || !insetClass) return nil;
 
     NSString *handleText = ApolloLPRedditUserHandleText(preview);
@@ -3351,9 +3270,9 @@ static id ApolloLPBuildRedditSubredditCardSpec(ASDisplayNode *hostNode, NSURL *u
 
     ApolloLPSetAvatarNodeVisible(avatarNode, YES);
 
-    Class stackClass = ApolloLPClass(@"ASStackLayoutSpec");
-    Class insetClass = ApolloLPClass(@"ASInsetLayoutSpec");
-    Class backgroundClass = ApolloLPClass(@"ASBackgroundLayoutSpec");
+    Class stackClass = ApolloClassASStackLayoutSpec;
+    Class insetClass = ApolloClassASInsetLayoutSpec;
+    Class backgroundClass = ApolloClassASBackgroundLayoutSpec;
     if (!stackClass || !insetClass) return nil;
 
     NSString *handleText = ApolloLPRedditSubredditHandleText(preview);
@@ -3421,10 +3340,10 @@ static id ApolloLPBuildPlaceholderSpec(ASDisplayNode *hostNode, NSURL *url, Apol
 
     ApolloLPSetAvatarNodeVisible(avatarNode, NO);
 
-    Class stackClass = ApolloLPClass(@"ASStackLayoutSpec");
-    Class insetClass = ApolloLPClass(@"ASInsetLayoutSpec");
-    Class ratioClass = ApolloLPClass(@"ASRatioLayoutSpec");
-    Class backgroundClass = ApolloLPClass(@"ASBackgroundLayoutSpec");
+    Class stackClass = ApolloClassASStackLayoutSpec;
+    Class insetClass = ApolloClassASInsetLayoutSpec;
+    Class ratioClass = ApolloClassASRatioLayoutSpec;
+    Class backgroundClass = ApolloClassASBackgroundLayoutSpec;
     if (!stackClass || !insetClass) return nil;
 
     UIColor *placeholder = [UIColor tertiarySystemFillColor];
@@ -3505,7 +3424,7 @@ static id ApolloLPBuildPlaceholderSpec(ASDisplayNode *hostNode, NSURL *url, Apol
 // Kept for reference only — do not reintroduce on cell-sized nodes.
 static void __attribute__((unused)) ApolloLPInvokeTransitionLayoutIfPossible(id node) {
     if (!node) return;
-    SEL transitionSel = NSSelectorFromString(@"transitionLayoutWithAnimation:shouldMeasureAsync:measurementCompletion:");
+    SEL transitionSel = @selector(transitionLayoutWithAnimation:shouldMeasureAsync:measurementCompletion:);
     if (![node respondsToSelector:transitionSel]) return;
 
     NSMethodSignature *signature = [node methodSignatureForSelector:transitionSel];
@@ -3529,7 +3448,7 @@ static void __attribute__((unused)) ApolloLPInvokeTransitionLayoutIfPossible(id 
 static BOOL ApolloLPInvokeRelayoutItemsIfPossible(id node) {
     if (!node) return NO;
 
-    SEL relayoutItems = NSSelectorFromString(@"relayoutItems");
+    SEL relayoutItems = @selector(relayoutItems);
     if (![node respondsToSelector:relayoutItems]) return NO;
 
     @try {
@@ -3637,20 +3556,20 @@ static BOOL ApolloLPInvokeScrollViewHeightRefresh(ASDisplayNode *node) {
 static id ApolloLPTextureNodeForScrollView(UIView *scrollView) {
     if (!scrollView) return nil;
 
-    SEL nodeSelectors[] = { NSSelectorFromString(@"asyncdisplaykit_node"), NSSelectorFromString(@"node") };
+    SEL nodeSelectors[] = { @selector(asyncdisplaykit_node), @selector(node) };
     for (NSUInteger index = 0; index < sizeof(nodeSelectors) / sizeof(SEL); index++) {
         SEL selector = nodeSelectors[index];
         if (![scrollView respondsToSelector:selector]) continue;
         @try {
             id node = ((id (*)(id, SEL))objc_msgSend)(scrollView, selector);
-            if ([node respondsToSelector:NSSelectorFromString(@"relayoutItems")]) return node;
+            if ([node respondsToSelector:@selector(relayoutItems)]) return node;
         } @catch (__unused NSException *exception) {
         }
     }
 
     @try {
         id node = [scrollView valueForKey:@"asyncdisplaykit_node"];
-        if ([node respondsToSelector:NSSelectorFromString(@"relayoutItems")]) return node;
+        if ([node respondsToSelector:@selector(relayoutItems)]) return node;
     } @catch (__unused NSException *exception) {
     }
 
@@ -3887,12 +3806,8 @@ static void ApolloLPInvokeContainerRelayoutIfPossible(ASDisplayNode *node, ASDis
 static void ApolloLPInvalidateAncestorChain(ASDisplayNode *node) {
     NSUInteger depth = 0;
     for (ASDisplayNode *current = node; current && depth < 32; current = current.supernode, depth++) {
-        if ([current respondsToSelector:@selector(invalidateCalculatedLayout)]) {
-            ((void (*)(id, SEL))objc_msgSend)(current, @selector(invalidateCalculatedLayout));
-        }
-        if ([current respondsToSelector:@selector(setNeedsLayout)]) {
-            ((void (*)(id, SEL))objc_msgSend)(current, @selector(setNeedsLayout));
-        }
+        [current invalidateCalculatedLayout];
+        [current setNeedsLayout];
     }
 }
 
@@ -3913,7 +3828,7 @@ static void ApolloLPInvalidateAncestorChain(ASDisplayNode *node) {
 // the next layout pass and commit the row height without the eager sync measure.
 static void ApolloLPPerformRelayoutClimb(ASDisplayNode *node, ASDisplayNode *cellNode, NSString *host) {
     ASDisplayNode *target = cellNode ?: node;
-    SEL relayout = NSSelectorFromString(@"_u_setNeedsLayoutFromAbove");
+    SEL relayout = @selector(_u_setNeedsLayoutFromAbove);
     if ([target respondsToSelector:relayout]) {
         ((void (*)(id, SEL))objc_msgSend)(target, relayout);
     }
@@ -3956,20 +3871,20 @@ static void ApolloLPArmRelayoutClimb(ASDisplayNode *node, ASDisplayNode *cellNod
 
 static ASDisplayNode *ApolloLPHostedCellForSizeUpdate(ASDisplayNode *node) {
     ASDisplayNode *cell = ApolloLPFindOwningCellNode(node);
-    Class cellClass = objc_getClass("ASCellNode");
-    SEL interactionDelegate = NSSelectorFromString(@"interactionDelegate");
+    Class cellClass = ApolloClassASCellNode;
+    SEL interactionDelegate = @selector(interactionDelegate);
     if (!cellClass || ![cell isKindOfClass:cellClass] ||
         ![cell respondsToSelector:interactionDelegate] ||
-        ![cell respondsToSelector:NSSelectorFromString(@"_rootNodeDidInvalidateSize")]) return nil;
+        ![cell respondsToSelector:@selector(_rootNodeDidInvalidateSize)]) return nil;
 
     // Unhosted cells measure synchronously; only use Texture's queued container path.
     id container = ((id (*)(id, SEL))objc_msgSend)(cell, interactionDelegate);
-    Class tableClass = objc_getClass("ASTableView");
-    Class collectionClass = objc_getClass("ASCollectionView");
+    Class tableClass = ApolloClassASTableView;
+    Class collectionClass = ApolloClassASCollectionView;
     if (!((tableClass && [container isKindOfClass:tableClass]) ||
           (collectionClass && [container isKindOfClass:collectionClass]))) return nil;
-    if (![container respondsToSelector:NSSelectorFromString(@"indexPathForNode:")] ||
-        ![container respondsToSelector:NSSelectorFromString(@"nodeDidInvalidateSize:")]) return nil;
+    if (![container respondsToSelector:@selector(indexPathForNode:)] ||
+        ![container respondsToSelector:@selector(nodeDidInvalidateSize:)]) return nil;
     return cell;
 }
 
@@ -3977,9 +3892,9 @@ static BOOL ApolloLPInvalidateHostedCell(ASDisplayNode *node) {
     ASDisplayNode *cell = ApolloLPHostedCellForSizeUpdate(node);
     if (!cell) return NO;
     id __attribute__((objc_precise_lifetime)) container =
-        ((id (*)(id, SEL))objc_msgSend)(cell, NSSelectorFromString(@"interactionDelegate"));
+        ((id (*)(id, SEL))objc_msgSend)(cell, @selector(interactionDelegate));
     // Table membership queries may touch UIKit row data; keep them outside layout callbacks.
-    if (!((id (*)(id, SEL, id))objc_msgSend)(container, NSSelectorFromString(@"indexPathForNode:"), cell)) return NO;
+    if (!((id (*)(id, SEL, id))objc_msgSend)(container, @selector(indexPathForNode:), cell)) return NO;
 
     // Texture batches these invalidations and remeasures the row before laying out its children.
     NSUInteger depth = 0;
@@ -3987,7 +3902,7 @@ static BOOL ApolloLPInvalidateHostedCell(ASDisplayNode *node) {
         ((void (*)(id, SEL))objc_msgSend)(current, @selector(invalidateCalculatedLayout));
         if (current == cell) break;
     }
-    ((void (*)(id, SEL))objc_msgSend)(cell, NSSelectorFromString(@"_rootNodeDidInvalidateSize"));
+    ((void (*)(id, SEL))objc_msgSend)(cell, @selector(_rootNodeDidInvalidateSize));
     return YES;
 }
 
@@ -4073,14 +3988,14 @@ static void ApolloLPTriggerPlaceholderContextRelayout(ASDisplayNode *node, NSStr
 // card overflows the cell or overlaps its footer, reload that row.
 static CGFloat ApolloLPFeedFooterOverlap(ASDisplayNode *node, UIView *cellView, CGRect cardFrame) {
     ASDisplayNode *cellNode = ApolloLPFindOwningCellNode(node);
-    Class largePostClass = objc_getClass("_TtC6Apollo17LargePostCellNode");
+    Class largePostClass = ApolloClassLargePostCellNode;
     if (!largePostClass || ![cellNode isKindOfClass:largePostClass]) return 0;
 
     CGFloat overlap = 0;
     // These are ObjC node ivars; compact posts use a different layout.
     const char *footerIvars[] = { "postInfoNode", "optionButtonsNode" };
     for (const char *ivarName : footerIvars) {
-        ASDisplayNode *footer = ApolloLPModelFromNodeIvar(cellNode, ivarName);
+        ASDisplayNode *footer = ApolloObjectIvar(cellNode, ivarName);
         if (![footer respondsToSelector:@selector(isNodeLoaded)] || !footer.isNodeLoaded || footer.hidden) continue;
         UIView *footerView = ApolloLPViewForNode(footer);
         if (!footerView || footerView.hidden || footerView.alpha <= 0 ||
@@ -4219,7 +4134,7 @@ static void ApolloLPDeferOverflowHeightCheck(ASDisplayNode *node, NSString *host
             state.checkPending = NO;
             state.reloadPending = NO;
             state.hasGeometry = NO;
-            ApolloLog(@"[LinkPreviews] overflow check failed (%@)", exception.name);
+            ApolloLogError(@"[LinkPreviews] overflow check failed (%@)", exception.name);
         }
     });
 }
@@ -4270,7 +4185,7 @@ static void ApolloLPScheduleOverflowHeightCheck(ASDisplayNode *node, NSString *h
 
 static ASDisplayNode *ApolloLPNodeForViewIfPossible(UIView *view) {
     if (!view) return nil;
-    SEL nodeSelectors[] = { NSSelectorFromString(@"asyncdisplaykit_node"), NSSelectorFromString(@"node") };
+    SEL nodeSelectors[] = { @selector(asyncdisplaykit_node), @selector(node) };
     for (NSUInteger index = 0; index < sizeof(nodeSelectors) / sizeof(SEL); index++) {
         SEL selector = nodeSelectors[index];
         if (![view respondsToSelector:selector]) continue;
@@ -4489,26 +4404,9 @@ static void ApolloLPRefreshVisibleLayoutsForModeChange(NSString *areaName) {
         }
 
         NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
-        if (@available(iOS 13.0, *)) {
-            for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-                if (![scene isKindOfClass:[UIWindowScene class]]) continue;
-                UIWindowScene *windowScene = (UIWindowScene *)scene;
-                for (UIWindow *window in windowScene.windows) {
-                    if (window.isKeyWindow && !window.hidden && window.alpha > 0.01) {
-                        [windows addObject:window];
-                    }
-                }
-            }
-        }
-
-        if (windows.count == 0) {
-            UIWindow *keyWindow = nil;
-            SEL keyWindowSel = NSSelectorFromString(@"keyWindow");
-            if ([UIApplication.sharedApplication respondsToSelector:keyWindowSel]) {
-                keyWindow = ((UIWindow *(*)(id, SEL))objc_msgSend)(UIApplication.sharedApplication, keyWindowSel);
-            }
-            if (keyWindow && !keyWindow.hidden && keyWindow.alpha > 0.01) {
-                [windows addObject:keyWindow];
+        for (UIWindow *window in ApolloAllWindows()) {
+            if (window.isKeyWindow && !window.hidden && window.alpha > 0.01) {
+                [windows addObject:window];
             }
         }
 
@@ -4942,7 +4840,7 @@ static __attribute__((noinline)) id ApolloLPBailOutOfRunawaySpecNesting(id spec,
     // A sublayout-less ASLayout stops the descent here, so the runaway subtree
     // measures as an empty box instead of exhausting the stack. Degraded
     // rendering beats a guaranteed crash.
-    Class layoutClass = ApolloLPClass(@"ASLayout");
+    Class layoutClass = ApolloClassASLayout;
     if (layoutClass) return [layoutClass layoutWithLayoutElement:spec size:size];
     return nil;
 }
@@ -5351,13 +5249,8 @@ static void ApolloLPKickWeakCachedPreviewRefetch(NSURL *url, ApolloLinkPreview *
                 ASDisplayNode *strongSelf = weakSelf;
                 if (!strongSelf) return;
                 @try {
-                    SEL invalidateSel = NSSelectorFromString(@"invalidateCalculatedLayout");
-                    if ([strongSelf respondsToSelector:invalidateSel]) {
-                        ((void (*)(id, SEL))objc_msgSend)(strongSelf, invalidateSel);
-                    }
-                    if ([strongSelf respondsToSelector:@selector(setNeedsLayout)]) {
-                        ((void (*)(id, SEL))objc_msgSend)((id)strongSelf, @selector(setNeedsLayout));
-                    }
+                    [strongSelf invalidateCalculatedLayout];
+                    [strongSelf setNeedsLayout];
                 } @catch (__unused NSException *e) {}
             });
         } else {

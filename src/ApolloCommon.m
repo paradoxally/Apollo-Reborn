@@ -10,7 +10,9 @@
 #import <objc/runtime.h>
 #import <OSLog/OSLog.h>
 #import <os/lock.h>
+#include <stdatomic.h>
 #import <Security/Security.h>
+#import "ApolloClasses.h"
 
 #pragma mark - Security dictionaries
 
@@ -114,6 +116,36 @@ os_log_t ApolloFixLog(void) {
         sProcessStartDate = [NSDate date];
     });
     return log;
+}
+
+void ApolloLogEmit(os_log_type_t type, NSString *format, ...) {
+    // Drains the arguments' -description temporaries here instead of letting
+    // them collect in the caller's pool.
+    @autoreleasepool {
+        va_list args;
+        va_start(args, format);
+        // alloc/init rather than stringWithFormat: ARC releases it at the end
+        // of this scope instead of autoreleasing it.
+        NSString *message = [[NSString alloc] initWithFormat:format arguments:args];
+        va_end(args);
+
+        // %{public}s keeps the text unredacted (a dynamic %@ would be <private>
+        // in the data store, and so in exported logs). Avoid -UTF8String's
+        // autoreleased copy: borrow CF's internal UTF-8 pointer when it has one,
+        // else convert into a stack buffer; only an oversized message falls
+        // back to letting os_log encode the NSString itself.
+        CFStringRef cfMessage = (__bridge CFStringRef)message;
+        const char *utf8 = CFStringGetCStringPtr(cfMessage, kCFStringEncodingUTF8);
+        char stackBuffer[1024];
+        if (!utf8 && CFStringGetCString(cfMessage, stackBuffer, sizeof stackBuffer, kCFStringEncodingUTF8)) {
+            utf8 = stackBuffer;
+        }
+        if (utf8) {
+            os_log_with_type(ApolloFixLog(), type, "%{public}s", utf8);
+        } else {
+            os_log_with_type(ApolloFixLog(), type, "%{public}@", message);
+        }
+    }
 }
 
 #pragma mark - Row-measure re-entrancy guard
@@ -684,7 +716,7 @@ static BOOL ApolloRouteURLThroughUIApplication(NSURL *url) {
         msgSend(appDelegate, @selector(application:openURL:options:), application, url, @{});
         return YES;
     } @catch (NSException *exception) {
-        ApolloLog(@"[ApolloRouteURL] application:openURL:options: threw: %@", exception);
+        ApolloLogError(@"[ApolloRouteURL] application:openURL:options: threw: %@", exception);
         return NO;
     }
 }
@@ -998,20 +1030,17 @@ UIImage *ApolloEmojiSettingsIcon(NSString *emoji, UIColor *backgroundColor, CGFl
 }
 
 NSAttributedString *ApolloSymbolAttachment(NSString *symbolName, UIFont *font, UIColor *tint) {
-    if (@available(iOS 13.0, *)) {
-        UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithFont:font];
-        UIImage *image = [UIImage systemImageNamed:symbolName withConfiguration:config];
-        if (!image) return nil;
-        image = [image imageWithTintColor:tint renderingMode:UIImageRenderingModeAlwaysOriginal];
-        NSTextAttachment *attachment = [NSTextAttachment new];
-        attachment.image = image;
-        // Center the glyph on the font's cap height so it sits on the text
-        // baseline rather than floating above it.
-        CGFloat y = (font.capHeight - image.size.height) / 2.0;
-        attachment.bounds = CGRectMake(0, y, image.size.width, image.size.height);
-        return [NSAttributedString attributedStringWithAttachment:attachment];
-    }
-    return nil;
+    UIImageSymbolConfiguration *config = [UIImageSymbolConfiguration configurationWithFont:font];
+    UIImage *image = [UIImage systemImageNamed:symbolName withConfiguration:config];
+    if (!image) return nil;
+    image = [image imageWithTintColor:tint renderingMode:UIImageRenderingModeAlwaysOriginal];
+    NSTextAttachment *attachment = [NSTextAttachment new];
+    attachment.image = image;
+    // Center the glyph on the font's cap height so it sits on the text
+    // baseline rather than floating above it.
+    CGFloat y = (font.capHeight - image.size.height) / 2.0;
+    attachment.bounds = CGRectMake(0, y, image.size.width, image.size.height);
+    return [NSAttributedString attributedStringWithAttachment:attachment];
 }
 
 static NSString *ApolloBundledResourcePNGPath(NSString *resourceName) {
@@ -1249,11 +1278,11 @@ static void ApolloRecordBrowserPresent(NSURL *url) {
 }
 
 static UIViewController *ApolloApolloSafariBrowserForURL(NSURL *url) {
-    Class apolloSafariClass = NSClassFromString(@"_TtC6Apollo26ApolloSafariViewController");
+    Class apolloSafariClass = objc_getClass("_TtC6Apollo26ApolloSafariViewController");
     if (!apolloSafariClass) return nil;
 
     id alloced = [apolloSafariClass alloc];
-    SEL initSel = NSSelectorFromString(@"initWithURL:");
+    SEL initSel = @selector(initWithURL:);
     if (![alloced respondsToSelector:initSel]) return nil;
 
     id (*msgSend)(id, SEL, NSURL *) = (id (*)(id, SEL, NSURL *))objc_msgSend;
@@ -1319,25 +1348,35 @@ BOOL ApolloIsSystemShareComposeController(UIViewController *controller) {
     // Apple's out-of-process compose controllers whose class names collide with
     // Apollo's "...ComposeViewController" suffix matchers. Treating them as
     // Apollo composers crashes the GIF/composer machinery (issue #366).
-    static const char *kSystemComposeClassNames[] = {
-        "MFMessageComposeViewController",
-        "MFMailComposeViewController",
-        "SLComposeViewController",
-    };
-    for (size_t i = 0; i < sizeof(kSystemComposeClassNames) / sizeof(kSystemComposeClassNames[0]); i++) {
-        Class cls = objc_getClass(kSystemComposeClassNames[i]);
-        if (cls && [controller isKindOfClass:cls]) return YES;
-    }
-    return NO;
+    return [controller isKindOfClass:ApolloClassMFMessageComposeViewController] ||
+           [controller isKindOfClass:ApolloClassMFMailComposeViewController] ||
+           [controller isKindOfClass:ApolloSLComposeViewControllerClass()];
 }
 
 NSArray<UIWindow *> *ApolloAllWindows(void) {
     NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
+    NSMutableArray<UIWindow *> *background = [NSMutableArray array];
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if ([scene isKindOfClass:[UIWindowScene class]])
-            [windows addObjectsFromArray:((UIWindowScene *)scene).windows];
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        NSArray<UIWindow *> *sceneWindows = ((UIWindowScene *)scene).windows;
+        if (scene.activationState == UISceneActivationStateForegroundActive) [windows addObjectsFromArray:sceneWindows];
+        else [background addObjectsFromArray:sceneWindows];
     }
+    [windows addObjectsFromArray:background];
     return windows;
+}
+
+UIWindow *ApolloKeyWindow(void) {
+    UIWindow *anyKey = nil;
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            if (!window.isKeyWindow) continue;
+            if (scene.activationState == UISceneActivationStateForegroundActive) return window;
+            anyKey = anyKey ?: window;
+        }
+    }
+    return anyKey;
 }
 
 static UIViewController *ApolloTabBarControllerIvarOn(id object) {
@@ -1347,7 +1386,7 @@ static UIViewController *ApolloTabBarControllerIvarOn(id object) {
         id value = ivar ? object_getIvar(object, ivar) : nil;
         return [value isKindOfClass:[UIViewController class]] ? value : nil;
     } @catch (NSException *exception) {
-        ApolloLog(@"[Common] Failed reading tabBarController ivar on %@: %@", object, exception);
+        ApolloLogError(@"[Common] Failed reading tabBarController ivar on %@: %@", object, exception);
         return nil;
     }
 }
@@ -1510,12 +1549,12 @@ NSRegularExpression *ApolloCachedRegex(NSString *pattern, NSRegularExpressionOpt
 
 // Runtime-checked UIKit preview feedback shared by profile menus and their viewer.
 id ApolloPlayPreviewOpenedFeedback(UIView *sourceView) {
-    Class configurationClass = NSClassFromString(@"_UIStatesFeedbackGeneratorPreviewConfiguration");
-    Class generatorClass = NSClassFromString(@"_UIStatesFeedbackGenerator");
-    SEL configurationSelector = NSSelectorFromString(@"defaultConfiguration");
-    SEL stateSelector = NSSelectorFromString(@"previewState");
-    SEL initializer = NSSelectorFromString(@"initWithConfiguration:coordinateSpace:");
-    SEL transition = NSSelectorFromString(@"transitionToState:ended:");
+    Class configurationClass = objc_getClass("_UIStatesFeedbackGeneratorPreviewConfiguration");
+    Class generatorClass = objc_getClass("_UIStatesFeedbackGenerator");
+    SEL configurationSelector = @selector(defaultConfiguration);
+    SEL stateSelector = @selector(previewState);
+    SEL initializer = @selector(initWithConfiguration:coordinateSpace:);
+    SEL transition = @selector(transitionToState:ended:);
     if (![configurationClass respondsToSelector:configurationSelector] ||
         ![configurationClass respondsToSelector:stateSelector] ||
         ![generatorClass instancesRespondToSelector:initializer] ||
@@ -1526,4 +1565,17 @@ id ApolloPlayPreviewOpenedFeedback(UIView *sourceView) {
     id generator = ((id (*)(id, SEL, id, id))objc_msgSend)([generatorClass alloc], initializer, configuration, sourceView);
     ((void (*)(id, SEL, id, BOOL))objc_msgSend)(generator, transition, state, YES);
     return generator;
+}
+
+// YES only when this process is an iOS app running on visionOS in compatibility
+// mode. Prefers the official API added in visionOS 26.1
+// (-[NSProcessInfo isiOSAppOnVision]); falls back to a visionOS-only class
+// check on earlier releases. Guarded so it can never raise
+// doesNotRecognizeSelector.
+BOOL ApolloIsRunningOnVisionOS(void) {
+    NSProcessInfo *processInfo = NSProcessInfo.processInfo;
+    SEL selector = @selector(isiOSAppOnVision);
+    if ([processInfo respondsToSelector:selector] &&
+        ((BOOL (*)(id, SEL))objc_msgSend)(processInfo, selector)) return YES;
+    return objc_getClass("UIWindowSceneGeometryPreferencesVision") != Nil;
 }

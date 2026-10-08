@@ -2,52 +2,65 @@
 #import <UIKit/UIKit.h>
 #import <os/log.h>
 #import <Security/SecBase.h>
+#import <objc/message.h>
 
 @class CASpringAnimation;
 
 // On iOS 26, NSLog redacts strings, so use os_log: https://developer.apple.com/documentation/ios-ipados-release-notes/ios-ipados-26-release-notes#NSLog
 // Uses a dedicated subsystem so OSLogStore can efficiently filter our entries.
-
-// Formats and emits unconditionally at the given level.
-#define ApolloLogAlwaysWithType(type, fmt, ...) do { \
-    NSString *logMessage = [NSString stringWithFormat:@"[ApolloFix] " fmt, ##__VA_ARGS__]; \
-    os_log_with_type(ApolloFixLog(), type, "%{public}s", [logMessage UTF8String]); \
-} while(0)
-
-// Reserved for the few lines that have to survive in the os_log export with
-// verbose logging off: the launch banner and every login-persistence
-// diagnostic, which are how an account-loss report is read.
+//
+// These wrappers exist for the PERSISTED levels, the ones Export Debug Logs and
+// the bug-report flow read back from OSLogStore. They take an NSString format
+// and publish the whole message as one public string, so every %@ shows up in
+// a user's export without a per-argument %{public} annotation:
+//   ApolloLog       DEFAULT  The normal level for diagnostics.
+//   ApolloLogError  ERROR    A real failure in our process: an NSError from a
+//                            request/IO/parse, an exception caught in a hook.
+//   ApolloLogFault  FAULT    A broken invariant / should-never-happen state.
+//                            Use sparingly.
+//   ApolloLogAlways DEFAULT  Reserved for the few lines that have to survive in
+//                            the export with verbose logging off: the launch
+//                            banner and every login-persistence diagnostic,
+//                            which are how an account-loss report is read.
+//
+// ApolloLog and ApolloLogError run through the process-wide verbose gate, which
+// is OFF unless the user turns it on (Settings > Apollo Reborn > Advanced).
+// Without it every one of the ~2,000 call sites formats a string and asks logd
+// to persist a line nobody will read, and some arguments are expensive: the AI
+// summary constructor's FoundationModels availability probe costs ~120 ms at
+// launch. The gate has to be the FIRST thing in the macro: a check after the
+// arguments are evaluated saves nothing. Errors are gated too because several
+// failure paths repeat per card, per avatar or per poll tick while offline.
+// Faults are rare enough to always emit. Relaxed atomic because the only writer
+// is the settings toggle on the main thread and a reader that is a few
+// microseconds stale just drops one line.
+//
+// The in-memory levels have no wrapper: call os_log_info / os_log_debug
+// directly with ApolloFixLog() and a C-literal format that starts with
+// "[ApolloFix] [Tag] ". They never reach exports and belong to chatty call
+// sites and hot paths (per cell, per layout pass, per scroll tick, per touch).
+// Debug is off unless something asks for it (log stream --level debug, log
+// config, a profile), and Apple's macros check the level before touching the
+// arguments, so a disabled debug line costs one os_log_type_enabled call and
+// its arguments are not evaluated (no side effects in log arguments). In every
+// direct call each dynamic string or object needs %{public}@ / %{public}s, or
+// it is <private> in exports; integers, floats, bools and %p are public by
+// default.
+#define ApolloLogAlwaysWithType(type, fmt, ...) ApolloLogEmit(type, @"[ApolloFix] " fmt, ##__VA_ARGS__)
 #define ApolloLogAlways(fmt, ...) ApolloLogAlwaysWithType(OS_LOG_TYPE_DEFAULT, fmt, ##__VA_ARGS__)
-
-// Everything else runs through the process-wide verbose gate, which is OFF
-// unless the user turns it on (Settings > Apollo Reborn > Advanced). Handing
-// os_log a pre-formatted string defeats its own lazy formatting, so without a
-// gate every one of the ~2,000 call sites pays -stringWithFormat: + -UTF8String
-// and asks logd to persist a line nobody will read. The gate has to be the
-// FIRST thing in the macro: a check after the format string is built saves
-// nothing. Relaxed atomic because the only writer is the settings toggle on the
-// main thread and a reader that is a few microseconds stale just drops one line.
 #define ApolloLogWithType(type, fmt, ...) do { \
     if (__builtin_expect(__atomic_load_n(&ApolloVerboseLoggingEnabled, __ATOMIC_RELAXED), 0)) { \
         ApolloLogAlwaysWithType(type, fmt, ##__VA_ARGS__); \
     } \
 } while(0)
 #define ApolloLog(fmt, ...) ApolloLogWithType(OS_LOG_TYPE_DEFAULT, fmt, ##__VA_ARGS__)
-
-// Debug-level lines cost the same formatting as any other, and nothing reads
-// them outside a debugger. The `if (0)` arm keeps the arguments compiled, so a
-// local used only by a debug log does not become an unused-variable -Werror
-// failure and the format string is still type-checked.
-#if defined(DEBUG) && DEBUG
-#define ApolloLogDebug(fmt, ...) ApolloLogWithType(OS_LOG_TYPE_DEBUG, fmt, ##__VA_ARGS__)
-#else
-#define ApolloLogDebug(fmt, ...) do { \
-    if (0) { ApolloLogWithType(OS_LOG_TYPE_DEBUG, fmt, ##__VA_ARGS__); } \
-} while(0)
-#endif
+#define ApolloLogError(fmt, ...) ApolloLogWithType(OS_LOG_TYPE_ERROR, fmt, ##__VA_ARGS__)
+#define ApolloLogFault(fmt, ...) ApolloLogAlwaysWithType(OS_LOG_TYPE_FAULT, fmt, ##__VA_ARGS__)
 
 __BEGIN_DECLS
 os_log_t ApolloFixLog(void);
+// Formats and emits one log line. Call through the ApolloLog* macros.
+void ApolloLogEmit(os_log_type_t type, NSString *format, ...) NS_FORMAT_FUNCTION(2, 3);
 NSString *ApolloCollectLogs(void);
 
 // Backing storage for the ApolloLog gate above. Read it through the macro, not
@@ -180,9 +193,18 @@ void ApolloPresentWebURLFromViewController(UIViewController *presenter, NSURL *u
 // ApolloPresentWebURLFromViewController.
 BOOL ApolloRouteURLThroughApp(NSURL *url);
 
-// Returns all UIWindows across every connected UIWindowScene.
-// Use instead of the deprecated UIApplication.windows property.
+// Returns all UIWindows across every connected UIWindowScene, foreground-active
+// scenes first, so `.firstObject` (the usual fallback after ApolloKeyWindow())
+// is a window of the scene the user is in rather than whichever scene the set
+// enumerates first. Use instead of the deprecated UIApplication.windows property.
 NSArray<UIWindow *> *ApolloAllWindows(void);
+// The key window, preferring a foreground-active scene's (each iPad scene can
+// have its own key window), else any key window; nil when none is key (e.g.
+// mid scene transition) — callers keep their own fallback policy.
+// This is app-global state: on multi-window iPad it is the window the user
+// last interacted with, not necessarily the one a given piece of UI lives in.
+// When a view or view controller is in scope, use its view.window instead.
+UIWindow *ApolloKeyWindow(void);
 // Refresh title geometry/capsules on one known bar after a local content or
 // action change. Never walks the window/page hierarchy (no-op off Liquid Glass).
 void ApolloNavigationTitlesRefreshBar(UINavigationBar *bar);
@@ -218,6 +240,8 @@ UIViewController *ApolloMainTabBarController(void);
 // GIF/composer machinery pokes at the remote view hierarchy (issue #366).
 // Resolved via objc_getClass so we don't link MessageUI/Social.
 BOOL ApolloIsSystemShareComposeController(UIViewController *controller);
+// YES when the iOS app is running on visionOS (Apple Vision Pro).
+BOOL ApolloIsRunningOnVisionOS(void);
 
 // Present the tweak's fullscreen zoomable image-album viewer (implemented in
 // ApolloInlineImages). Items are dictionaries with an @"url" NSURL; despite
@@ -357,8 +381,28 @@ BOOL ApolloTextNodeIsTweakUI(id node);
 // many it wrote; ApolloRebornMaxAppendedRebindings bounds the caller's array.
 // swift_allocObject stays out of this batch: ApolloSwiftSingletonCapture is its
 // only owner and rebinds just the image that defines each captured class.
+// ApolloImageUploadHost's ImageIO bindings likewise rebind only Apollo's image.
 struct rebinding;
 enum { ApolloRebornMaxAppendedRebindings = 5 };
-size_t ApolloImageUploadHostAppendRebindings(struct rebinding *out);
 size_t ApolloPhotoComposerAppendRebindings(struct rebinding *out);
+void ApolloImageUploadHostInstallRebindings(void);
 __END_DECLS
+
+// Sends a zero-argument object getter when `object` implements it, else nil.
+static inline id ApolloSendObject(id object, SEL selector) {
+    return [object respondsToSelector:selector] ? ((id (*)(id, SEL))objc_msgSend)(object, selector) : nil;
+}
+
+// method_setImplementation(method, imp) for a method found on cls. When cls owns
+// the method, class_replaceMethod makes the same change but flushes only cls's
+// subtree; method_setImplementation does not know the class and flushes the
+// method cache of every realized class (~0.4 ms once the app is running).
+// An inherited method still goes through method_setImplementation unchanged.
+static inline IMP ApolloSetMethodImplementation(Class cls, Method method, IMP imp) {
+    SEL name = method_getName(method);
+    if (class_getInstanceMethod(cls, name) == method &&
+        class_getInstanceMethod(class_getSuperclass(cls), name) != method) {
+        return class_replaceMethod(cls, name, imp, method_getTypeEncoding(method));
+    }
+    return method_setImplementation(method, imp);
+}

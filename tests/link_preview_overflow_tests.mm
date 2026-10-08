@@ -30,7 +30,10 @@ static double TestTime(void) {
     return now;
 }
 #define CACurrentMediaTime() TestTime()
+// Intentional no-op: the harness links no logging, so log lines from the code
+// under test are dropped at every level; no check depends on log output.
 #define ApolloLog(...) ((void)0)
+#define ApolloLogError(...) ((void)0)
 @interface Layer : NSObject
 @property NSArray *animationKeys;
 @end
@@ -261,8 +264,8 @@ static UIView *ApolloLPViewForNode(ASDisplayNode *n) {
 static ASDisplayNode *ApolloLPFindOwningCellNode(ASDisplayNode *n) {
     return n.owner;
 }
-static id ApolloLPModelFromNodeIvar(ASDisplayNode *n, const char *name) {
-    return n.footers[@(name)];
+static id ApolloObjectIvar(id n, const char *name) {
+    return ((ASDisplayNode *)n).footers[@(name)];
 }
 static void ApolloLPRenoteDroppedRowReload(ASDisplayNode *n, NSString *h, NSInteger row) {
     notes++;
@@ -279,6 +282,13 @@ static BOOL ApolloLPShouldDeferToInlineMedia(NSURL *u) {
 }
 static BOOL ApolloLPInvokeRowReloadIfPossible(ASDisplayNode *, ASDisplayNode *, NSString *,
                                               BOOL (^)(UIView *) = nil, void (^)(void) = nil);
+static Class ApolloClassASCellNode, ApolloClassASCollectionView, ApolloClassASTableView, ApolloClassLargePostCellNode;
+__attribute__((constructor)) static void OverflowTestResolveClasses(void) {
+    ApolloClassASCellNode = objc_getClass("ASCellNode");
+    ApolloClassASCollectionView = objc_getClass("ASCollectionView");
+    ApolloClassASTableView = objc_getClass("ASTableView");
+    ApolloClassLargePostCellNode = objc_getClass("_TtC6Apollo17LargePostCellNode");
+}
 #import "Overflow.inc"
 
 static NSUInteger checks;

@@ -47,8 +47,10 @@
 static NSUInteger saves;
 static NSArray *savedItems;
 static void ApolloSaveAllMedia(NSArray *items, __unused UIViewController *presenter) { saves++;savedItems=items; }
+// Intentional no-op: the harness links no logging, so log lines from the code
+// under test are dropped at every level; no check depends on log output.
 #define ApolloLog(...) ((void)0)
-static id ApolloMediaActionGet(id object, NSString *name) { return [object isKindOfClass:NSDictionary.class] ? object[name] : nil; }
+static id ApolloSendObject(id object, SEL selector) { return [object isKindOfClass:NSDictionary.class] ? object[NSStringFromSelector(selector)] : nil; }
 #import "InlineVideo.inc"
 static NSUInteger checks;
 static void Check(BOOL good, NSString *why) { checks++;if(!good){NSLog(@"FAIL: %@",why);exit(1);} }

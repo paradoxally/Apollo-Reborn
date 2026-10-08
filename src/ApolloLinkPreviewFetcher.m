@@ -941,7 +941,7 @@ static NSString *ApolloLinkPreviewBrowserUserAgent(void) {
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error || !data) {
-            ApolloLog(@"[LinkPreviews] YouTube oEmbed failed %@ err=%@", url.absoluteString, error.localizedDescription);
+            ApolloLogError(@"[LinkPreviews] YouTube oEmbed failed %@ err=%@", url.absoluteString, error.localizedDescription);
             completion(nil);
             return;
         }
@@ -1013,7 +1013,7 @@ static NSString *ApolloLinkPreviewBrowserUserAgent(void) {
     [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
         if (error || !data || httpResponse.statusCode < 200 || httpResponse.statusCode >= 300) {
-            ApolloLog(@"[LinkPreviews] Wikipedia summary failed %@ status=%ld err=%@",
+            ApolloLogError(@"[LinkPreviews] Wikipedia summary failed %@ status=%ld err=%@",
                       url.absoluteString, (long)httpResponse.statusCode, error.localizedDescription);
             completion(ApolloLinkPreviewFallbackPreviewForURL(url, nil));
             return;
@@ -1187,7 +1187,7 @@ static NSString *ApolloLinkPreviewBrowserUserAgent(void) {
 
     [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         if (error || !data) {
-            ApolloLog(@"[LinkPreviews] Reddit JSON failed %@ err=%@", url.absoluteString, error.localizedDescription);
+            ApolloLogError(@"[LinkPreviews] Reddit JSON failed %@ err=%@", url.absoluteString, error.localizedDescription);
             completion(nil);
             return;
         }
@@ -1291,7 +1291,7 @@ static NSString *ApolloLinkPreviewBrowserUserAgent(void) {
         [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
             NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
             if (error || !data || httpResponse.statusCode < 200 || httpResponse.statusCode >= 300) {
-                ApolloLog(@"[LinkPreviews] Bluesky post fetch failed host=%@ status=%ld err=%@",
+                ApolloLogError(@"[LinkPreviews] Bluesky post fetch failed host=%@ status=%ld err=%@",
                           ApolloLinkPreviewHost(url), (long)httpResponse.statusCode, error.localizedDescription);
                 completion(nil);
                 return;
@@ -1388,7 +1388,7 @@ static NSString *ApolloLinkPreviewBrowserUserAgent(void) {
     [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
         if (error || !data || httpResponse.statusCode < 200 || httpResponse.statusCode >= 300) {
-            ApolloLog(@"[LinkPreviews] Bluesky handle resolve failed actor=%@ status=%ld err=%@",
+            ApolloLogError(@"[LinkPreviews] Bluesky handle resolve failed actor=%@ status=%ld err=%@",
                       actor, (long)httpResponse.statusCode, error.localizedDescription);
             completion(nil);
             return;
@@ -1466,7 +1466,7 @@ static NSURL *ApolloLinkPreviewWWWSiblingURL(NSURL *url) {
     [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSHTTPURLResponse *httpResponse = [response isKindOfClass:[NSHTTPURLResponse class]] ? (NSHTTPURLResponse *)response : nil;
         if (error || !data || httpResponse.statusCode < 200 || httpResponse.statusCode >= 300) {
-            ApolloLog(@"[LinkPreviews] Reddit info lookup failed host=%@ status=%ld err=%@",
+            ApolloLogError(@"[LinkPreviews] Reddit info lookup failed host=%@ status=%ld err=%@",
                       ApolloLinkPreviewHost(url), (long)httpResponse.statusCode, error.localizedDescription);
             completion(nil);
             return;
@@ -1547,7 +1547,7 @@ static NSURL *ApolloLinkPreviewWWWSiblingURL(NSURL *url) {
     [[[NSURLSession sharedSession] dataTaskWithRequest:request completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
         if (error || !data || httpResponse.statusCode < 200 || httpResponse.statusCode >= 300) {
-            ApolloLog(@"[LinkPreviews] Crossref failed doi=%@ status=%ld err=%@", doi, (long)httpResponse.statusCode, error.localizedDescription);
+            ApolloLogError(@"[LinkPreviews] Crossref failed doi=%@ status=%ld err=%@", doi, (long)httpResponse.statusCode, error.localizedDescription);
             completion(nil);
             return;
         }
@@ -1681,7 +1681,7 @@ static NSData *ApolloLinkPreviewHeadSliceOfData(NSData *data) {
         NSHTTPURLResponse *httpResponse = (NSHTTPURLResponse *)response;
         NSString *contentType = [[httpResponse allHeaderFields][@"Content-Type"] lowercaseString];
         if (error || !data || httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 || (contentType.length > 0 && ![contentType containsString:@"text/html"])) {
-            ApolloLog(@"[LinkPreviews] HTML fetch failed %@ status=%ld type=%@ bytes=%lu err=%@",
+            ApolloLogError(@"[LinkPreviews] HTML fetch failed %@ status=%ld type=%@ bytes=%lu err=%@",
                       url.absoluteString, (long)httpResponse.statusCode, contentType ?: @"",
                       (unsigned long)data.length, error.localizedDescription);
             // Bot walls answer non-browser clients with a live 4xx (reuters

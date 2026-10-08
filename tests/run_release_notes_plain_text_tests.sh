@@ -11,7 +11,7 @@ import re
 import sys
 
 sys.path.insert(0, sys.argv[1])
-from update_source_json import format_release_notes, markdown_to_plain_text
+from update_source_json import LEFTOVER_TAG_RE, format_release_notes, markdown_to_plain_text
 
 failures = 0
 
@@ -98,6 +98,18 @@ check(
     "a feature named Screenshots in a bullet is kept",
     markdown_to_plain_text("### Features\n\n- Screenshots now save faster"),
     "Features\n- Screenshots now save faster",
+)
+
+check(
+    "other inline formatting tags are removed",
+    markdown_to_plain_text("- <u>Under</u> <s>struck</s> <small>tiny</small> <mark>hi</mark>"),
+    "- Under struck tiny hi",
+)
+
+check(
+    "the leftover check flags unknown tags only",
+    LEFTOVER_TAG_RE.findall("x <blink>y</blink> <https://example.com> <3 a < b"),
+    ["<blink>", "</blink>"],
 )
 
 notes = format_release_notes(fork_body, "Liquid Glass build.")

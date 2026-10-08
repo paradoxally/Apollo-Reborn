@@ -30,9 +30,12 @@ REBORN_ASSET_RE = re.compile(
 HTML_TAG_RE = re.compile(
     r"</?(?:a|b|i|em|strong|code|sub|sup|br|img|table|thead|tbody|tr|td|th|p|div|span"
     r"|details|summary|picture|source|video|audio|center|h[1-6]|ul|ol|li|hr|font"
-    r"|blockquote|pre|kbd)\b[^<>]*>",
+    r"|blockquote|pre|kbd|u|s|strike|del|ins|small|mark|iframe|svg|label|input)\b[^<>]*>",
     re.IGNORECASE,
 )
+# Anything tag-shaped that HTML_TAG_RE doesn't know. Autolinks never match: the
+# scheme's ":" can't follow a tag name.
+LEFTOVER_TAG_RE = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
 REBORN_SUFFIX_TO_PREFIX = {
     None: "",
     "GLASS": "GLASS",
@@ -304,6 +307,15 @@ def validate_generated_sources(root: Path, config: dict[str, Any]) -> None:
             raise ValueError(f"{variant['output']} is missing downloadURL")
         if data.get("featuredApps") != [config["app"]["bundleIdentifier"]]:
             raise ValueError(f"{variant['output']} has an invalid featuredApps value")
+        # A warning, not an error: a literal placeholder like `<key>` in the notes
+        # is legitimate and must not block a release.
+        leftovers = sorted(set(LEFTOVER_TAG_RE.findall(app.get("versionDescription") or "")))
+        if leftovers:
+            print(
+                f"warning: {variant['output']} release notes still contain tag-like text "
+                f"{leftovers}; add real HTML tags to HTML_TAG_RE",
+                file=sys.stderr,
+            )
 
     print(f"Validated generated sources for Apollo-Reborn {tweak_version} build {build_version}")
 

@@ -8,7 +8,7 @@
 #import <UIKit/UIKit.h>
 
 static NSString *const kUpdateManifestURL =
-    @"https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/release-manifest.json";
+    @"https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/release-manifest.json";
 static const NSTimeInterval kUpdateCheckInterval = 24 * 60 * 60;
 
 // Main-thread state.

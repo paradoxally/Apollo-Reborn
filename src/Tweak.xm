@@ -20,6 +20,7 @@
 #import "ApolloRedgifsTokenRefresh.h"
 #import "ApolloNotificationBackend.h"
 #import "ApolloUsageHeartbeat.h"
+#import "ApolloUpdateChecker.h"
 #import "ApolloPushNotifications.h"
 #import "ApolloBarkNotifications.h"
 #import "ApolloLiquidGlassIconSelectionState.h"
@@ -3819,6 +3820,7 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
                                     UDKeyPostFilterSubreddits: @{},
                                     UDKeyPostFilterNameSubstrings: @[],
                                     UDKeyImgurAlbumFallbackProxies: @YES,
+                                    UDKeyAutomaticUpdateChecks: @YES,
                                     UDKeyWebJSONEnabled: @NO,
                                     UDKeyUseModernRedditChat: @NO,
                                     UDKeyUseModernRedditModmail: @NO,
@@ -4069,7 +4071,7 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
     NSInteger storedTabBarHideStyle =
         [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyTabBarCollapseSide];
     if (storedTabBarHideStyle < ApolloTabBarHideStyleLeft ||
-        storedTabBarHideStyle > ApolloTabBarHideStyleDown) {
+        storedTabBarHideStyle > ApolloTabBarHideStyleMinimize) {
         storedTabBarHideStyle = ApolloTabBarHideStyleLeft;
     }
     sTabBarHideStyle = (ApolloTabBarHideStyle)storedTabBarHideStyle;
@@ -4533,6 +4535,7 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
                      queue:[NSOperationQueue mainQueue]
                 usingBlock:^(NSNotification *note) {
         ApolloSendUsageHeartbeatIfNeeded();
+        ApolloUpdateCheckIfNeeded();
     }];
 
     // Login-persistence diagnostics: snapshot where the account lives at each lifecycle

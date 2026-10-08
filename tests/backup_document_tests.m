@@ -9,6 +9,8 @@ static NSMutableArray *results;
 static UIWindow *testWindow;
 static NSURL *backup;
 os_log_t ApolloFixLog(void) { return os_log_create("apollo.backup.tests", "tests"); }
+// The harness does not link ApolloCommon.m, so log lines from the code under
+// test are dropped here at every level.
 void ApolloLogEmit(os_log_type_t type, NSString *format, ...) { (void)type; (void)format; }
 NSArray *ApolloAllWindows(void) { return testWindow ? @[testWindow] : @[]; }
 BOOL ApolloBackupRestoreRestoreFromZipURL(NSURL *url, NSString **title, NSString **message) {

@@ -77,6 +77,24 @@ check(
 )
 
 check(
+    "embedded video tags are removed",
+    markdown_to_plain_text('- Demo\n\n<video src="https://example.com/a.mp4" controls width="100%"></video>'),
+    "- Demo",
+)
+
+check(
+    "angle-bracket placeholders in code spans are kept",
+    markdown_to_plain_text("- Set `<key>` to your token"),
+    "- Set <key> to your token",
+)
+
+check(
+    "Markdown autolinks are kept",
+    markdown_to_plain_text("- See <https://example.com/docs> for details"),
+    "- See <https://example.com/docs> for details",
+)
+
+check(
     "a feature named Screenshots in a bullet is kept",
     markdown_to_plain_text("### Features\n\n- Screenshots now save faster"),
     "Features\n- Screenshots now save faster",

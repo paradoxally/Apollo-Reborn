@@ -25,6 +25,14 @@ REBORN_ASSET_RE = re.compile(
     r"(?:-(?P<suffix>GLASSICONS-NOEXTENSIONS|GLASS-NOEXTENSIONS|GLASSICONS|NOEXTENSIONS|GLASS))?"
     r"\.ipa$"
 )
+# Named tags only: a bare `<letter…>` pattern would also eat Markdown autolinks
+# (`<https://…>`) and placeholders such as `<key>` in code spans.
+HTML_TAG_RE = re.compile(
+    r"</?(?:a|b|i|em|strong|code|sub|sup|br|img|table|thead|tbody|tr|td|th|p|div|span"
+    r"|details|summary|picture|source|video|audio|center|h[1-6]|ul|ol|li|hr|font"
+    r"|blockquote|pre|kbd)\b[^<>]*>",
+    re.IGNORECASE,
+)
 REBORN_SUFFIX_TO_PREFIX = {
     None: "",
     "GLASS": "GLASS",
@@ -90,7 +98,7 @@ def markdown_to_plain_text(markdown: str) -> str:
         flags=re.DOTALL | re.MULTILINE | re.IGNORECASE,
     )
     text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</?[A-Za-z][^<>]*>", "", text)
+    text = HTML_TAG_RE.sub("", text)
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"__([^_]+)__", r"\1", text)

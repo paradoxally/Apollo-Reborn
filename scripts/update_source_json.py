@@ -80,6 +80,17 @@ def markdown_to_plain_text(markdown: str) -> str:
     # AltStore/Feather version history renders descriptions as plain text, so
     # remove the most visible Markdown syntax while keeping the curated wording.
     text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    # Release bodies end with an HTML image table under "Screenshots", which
+    # plain-text renderers (sideloaders, the in-app release notes) show as raw
+    # tags. Drop that section up to the next heading, then any stray tags.
+    text = re.sub(
+        r"^#{1,6}[ \t]*Screenshots[ \t]*(?:\r?\n|\Z).*?(?=^#{1,6}[ \t]|\Z)",
+        "",
+        text,
+        flags=re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    )
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</?[A-Za-z][^<>]*>", "", text)
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"__([^_]+)__", r"\1", text)

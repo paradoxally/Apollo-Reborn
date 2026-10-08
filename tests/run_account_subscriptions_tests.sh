@@ -7,6 +7,7 @@ repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 build=$(mktemp -d "${TMPDIR:-/tmp}/apollo-account-subscriptions.XXXXXX")
 trap 'rm -rf -- "$build"' EXIT HUP INT TERM
 cp "$repo/src/ApolloAccountSubscriptions.m" "$repo/src/ApolloAccountSubscriptions.h" "$build/"
+# Intentional no-op ApolloLog: the harness links no logging and no check reads log output.
 printf '#import <Foundation/Foundation.h>\n#define ApolloLog(...) do {} while (0)\n' > "$build/ApolloCommon.h"
 printf '#import <Foundation/Foundation.h>\nid ApolloActiveAccountClient(void);\n' > "$build/ApolloAccountCredentials.h"
 cp "$repo/tests/account_subscriptions_tests.m" "$build/"

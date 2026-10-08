@@ -1,5 +1,7 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+// Intentional no-op: the harness links no logging, so log lines from the code
+// under test are dropped at every level; no check depends on log output.
 #define ApolloLog(...) do { if (NO) NSLog(__VA_ARGS__); } while (0)
 // PRODUCTION_HELPERS
 

@@ -30,6 +30,8 @@ static double TestTime(void) {
     return now;
 }
 #define CACurrentMediaTime() TestTime()
+// Intentional no-op: the harness links no logging, so log lines from the code
+// under test are dropped at every level; no check depends on log output.
 #define ApolloLog(...) ((void)0)
 #define ApolloLogError(...) ((void)0)
 @interface Layer : NSObject

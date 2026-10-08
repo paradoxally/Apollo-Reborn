@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import <dispatch/dispatch.h>
+// Intentional no-op: the harness links no logging, so log lines from the code
+// under test are dropped at every level; no check depends on log output.
 #define ApolloLog(...) do {} while (0)
 
 typedef NSInteger UITableViewRowAnimation;

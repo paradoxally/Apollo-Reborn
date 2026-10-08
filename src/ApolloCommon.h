@@ -193,8 +193,10 @@ void ApolloPresentWebURLFromViewController(UIViewController *presenter, NSURL *u
 // ApolloPresentWebURLFromViewController.
 BOOL ApolloRouteURLThroughApp(NSURL *url);
 
-// Returns all UIWindows across every connected UIWindowScene.
-// Use instead of the deprecated UIApplication.windows property.
+// Returns all UIWindows across every connected UIWindowScene, foreground-active
+// scenes first, so `.firstObject` (the usual fallback after ApolloKeyWindow())
+// is a window of the scene the user is in rather than whichever scene the set
+// enumerates first. Use instead of the deprecated UIApplication.windows property.
 NSArray<UIWindow *> *ApolloAllWindows(void);
 // The key window, preferring a foreground-active scene's (each iPad scene can
 // have its own key window), else any key window; nil when none is key (e.g.

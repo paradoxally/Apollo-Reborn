@@ -1355,10 +1355,14 @@ BOOL ApolloIsSystemShareComposeController(UIViewController *controller) {
 
 NSArray<UIWindow *> *ApolloAllWindows(void) {
     NSMutableArray<UIWindow *> *windows = [NSMutableArray array];
+    NSMutableArray<UIWindow *> *background = [NSMutableArray array];
     for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
-        if ([scene isKindOfClass:[UIWindowScene class]])
-            [windows addObjectsFromArray:((UIWindowScene *)scene).windows];
+        if (![scene isKindOfClass:[UIWindowScene class]]) continue;
+        NSArray<UIWindow *> *sceneWindows = ((UIWindowScene *)scene).windows;
+        if (scene.activationState == UISceneActivationStateForegroundActive) [windows addObjectsFromArray:sceneWindows];
+        else [background addObjectsFromArray:sceneWindows];
     }
+    [windows addObjectsFromArray:background];
     return windows;
 }
 

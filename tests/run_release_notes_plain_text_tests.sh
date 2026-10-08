@@ -11,7 +11,7 @@ import re
 import sys
 
 sys.path.insert(0, sys.argv[1])
-from update_source_json import LEFTOVER_TAG_RE, format_release_notes, markdown_to_plain_text
+from update_source_json import format_release_notes, markdown_to_plain_text
 
 failures = 0
 
@@ -107,9 +107,15 @@ check(
 )
 
 check(
-    "the leftover check flags unknown tags only",
-    LEFTOVER_TAG_RE.findall("x <blink>y</blink> <https://example.com> <3 a < b"),
-    ["<blink>", "</blink>"],
+    "tags outside any known list are removed",
+    markdown_to_plain_text("- <section><figure>Fig</figure></section> <dl><dt>t</dt></dl> <blink>b</blink>"),
+    "- Fig t b",
+)
+
+check(
+    "tags inside code spans are kept",
+    markdown_to_plain_text("- Wrap it in `<details>` or `<br/>` blocks"),
+    "- Wrap it in <details> or <br/> blocks",
 )
 
 notes = format_release_notes(fork_body, "Liquid Glass build.")

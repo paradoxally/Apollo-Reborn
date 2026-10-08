@@ -25,17 +25,10 @@ REBORN_ASSET_RE = re.compile(
     r"(?:-(?P<suffix>GLASSICONS-NOEXTENSIONS|GLASS-NOEXTENSIONS|GLASSICONS|NOEXTENSIONS|GLASS))?"
     r"\.ipa$"
 )
-# Named tags only: a bare `<letter…>` pattern would also eat Markdown autolinks
-# (`<https://…>`) and placeholders such as `<key>` in code spans.
-HTML_TAG_RE = re.compile(
-    r"</?(?:a|b|i|em|strong|code|sub|sup|br|img|table|thead|tbody|tr|td|th|p|div|span"
-    r"|details|summary|picture|source|video|audio|center|h[1-6]|ul|ol|li|hr|font"
-    r"|blockquote|pre|kbd|u|s|strike|del|ins|small|mark|iframe|svg|label|input)\b[^<>]*>",
-    re.IGNORECASE,
-)
-# Anything tag-shaped that HTML_TAG_RE doesn't know. Autolinks never match: the
-# scheme's ":" can't follow a tag name.
-LEFTOVER_TAG_RE = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
+# Any tag-shaped span. Autolinks never match: the scheme's ":" can't follow a
+# tag name. Code spans are skipped, so placeholders like `<key>` survive.
+HTML_TAG_RE = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
+CODE_SPAN_RE = re.compile(r"(`[^`]+`)")
 REBORN_SUFFIX_TO_PREFIX = {
     None: "",
     "GLASS": "GLASS",
@@ -83,6 +76,15 @@ def load_existing_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def strip_html_tags(text: str) -> str:
+    # split() with one capturing group leaves the code spans at odd indices.
+    segments = CODE_SPAN_RE.split(text)
+    for i in range(0, len(segments), 2):
+        segment = re.sub(r"<br\s*/?>", "\n", segments[i], flags=re.IGNORECASE)
+        segments[i] = HTML_TAG_RE.sub("", segment)
+    return "".join(segments)
+
+
 def markdown_to_plain_text(markdown: str) -> str:
     text = markdown.strip()
     if not text:
@@ -100,8 +102,7 @@ def markdown_to_plain_text(markdown: str) -> str:
         text,
         flags=re.DOTALL | re.MULTILINE | re.IGNORECASE,
     )
-    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
-    text = HTML_TAG_RE.sub("", text)
+    text = strip_html_tags(text)
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"__([^_]+)__", r"\1", text)
@@ -307,15 +308,6 @@ def validate_generated_sources(root: Path, config: dict[str, Any]) -> None:
             raise ValueError(f"{variant['output']} is missing downloadURL")
         if data.get("featuredApps") != [config["app"]["bundleIdentifier"]]:
             raise ValueError(f"{variant['output']} has an invalid featuredApps value")
-        # A warning, not an error: a literal placeholder like `<key>` in the notes
-        # is legitimate and must not block a release.
-        leftovers = sorted(set(LEFTOVER_TAG_RE.findall(app.get("versionDescription") or "")))
-        if leftovers:
-            print(
-                f"warning: {variant['output']} release notes still contain tag-like text "
-                f"{leftovers}; add real HTML tags to HTML_TAG_RE",
-                file=sys.stderr,
-            )
 
     print(f"Validated generated sources for Apollo-Reborn {tweak_version} build {build_version}")
 

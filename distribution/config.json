@@ -1,12 +1,12 @@
 {
-  "repo": "Apollo-Reborn/Apollo-Reborn",
+  "repo": "paradoxally/Apollo-Reborn",
   "distribution": {
-    "sourceBaseURL": "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main",
+    "sourceBaseURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main",
     "manifestOutput": "release-manifest.json"
   },
   "source": {
     "iconURL": "https://apolloreborn.app/assets/icon.png",
-    "headerURL": "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/lg-icons.jpg",
+    "headerURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
     "website": "https://apolloreborn.app",
     "tintColor": "#F0542D"
   },
@@ -18,14 +18,14 @@
     "tintColor": "#F0542D",
     "category": "social",
     "screenshots": [
-      "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/settings.jpg",
-      "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/custom.jpg",
-      "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/recents.jpg",
-      "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/inline.jpg",
-      "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/lg-icons.jpg",
-      "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/avatar-profile.jpg",
-      "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/avatar-comments.jpg",
-      "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/translation.jpg"
+      "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/settings.jpg",
+      "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/custom.jpg",
+      "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/recents.jpg",
+      "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/inline.jpg",
+      "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
+      "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/avatar-profile.jpg",
+      "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/avatar-comments.jpg",
+      "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/translation.jpg"
     ],
     "localizedDescription": "Apollo-Reborn is the community-maintained Apollo sideload build powered by the Apollo-Reborn tweak.\n\nIt restores custom API support, media fixes, uploads, inline media, translation, saved categories, Home Screen and Lock Screen widgets, Liquid Glass support on iOS 26+, and the rest of the project’s ongoing fixes and enhancements.\n\nThese sources are intended for AltStore Classic, SideStore, and Feather. Apollo-Reborn is not compatible with AltStore PAL.\n\nChoose the source variant that matches how you sideload:\n\n• Standard: full app bundle with Apollo’s working extensions plus Apollo-Reborn widgets\n• No Extensions: strips app extensions, including widgets, to reduce App ID usage on free Apple IDs\n• GLASS: adds the Liquid Glass iOS 26 patch and bundled Liquid Glass icon catalog\n• No Extensions + GLASS: combines both options\n\nThe extension-bearing builds (Standard and GLASS) register about 7 App IDs, one per bundled app extension. A free Apple ID can register 10 App IDs per 7 days, so a clean single install fits, but it is easy to exceed if you install under more than one bundle ID, reinstall within the same week, or sideload other extension-bearing apps. If an install fails with an App ID error, use a No Extensions build (1 App ID) or wait for older App IDs to expire. A paid Apple Developer account has a much higher cap.\n\nThis project is not affiliated with Apollo or Christian Selig.",
     "appPermissions": {
@@ -51,7 +51,7 @@
   },
   "news": {
     "caption": "Apollo-Reborn update available",
-    "imageURL": "https://raw.githubusercontent.com/Apollo-Reborn/Apollo-Reborn/main/img/lg-icons.jpg"
+    "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg"
   },
   "variants": [
     {
@@ -60,7 +60,7 @@
       "notesLabel": null,
       "newsLabel": "Standard",
       "source": {
-        "identifier": "app.apolloreborn.standard",
+        "identifier": "app.apolloreborn.nightly.standard",
         "name": "Apollo-Reborn",
         "subtitle": "Standard Apollo-Reborn source",
         "description": "Standard Apollo-Reborn source for AltStore Classic, SideStore, and Feather. Includes the main app, Apollo’s working bundled app extensions, and the Apollo-Reborn widget extension. Registers about 7 App IDs, one per bundled extension; on a free Apple ID (limited to 10 App IDs per 7 days) a clean install fits but leaves little headroom, so use the No Extensions source if you hit the App ID limit. Not compatible with AltStore PAL."
@@ -76,7 +76,7 @@
       "notesLabel": "No Extensions build.",
       "newsLabel": "No Extensions",
       "source": {
-        "identifier": "app.apolloreborn.noextensions",
+        "identifier": "app.apolloreborn.nightly.noextensions",
         "name": "Apollo-Reborn - No Extensions",
         "subtitle": "Apollo-Reborn source with app extensions removed",
         "description": "No Extensions Apollo-Reborn source for AltStore Classic, SideStore, and Feather. Strips app extensions, including widgets, so the sideloaded app uses just 1 App ID, staying well under a free Apple ID’s limit of 10 App IDs per 7 days — the headroom-friendly choice if the extensions build won’t install. Not compatible with AltStore PAL."
@@ -92,7 +92,7 @@
       "notesLabel": "Liquid Glass build.",
       "newsLabel": "GLASS",
       "source": {
-        "identifier": "app.apolloreborn.glass",
+        "identifier": "app.apolloreborn.nightly.glass",
         "name": "Apollo-Reborn - GLASS",
         "subtitle": "Apollo-Reborn source with Liquid Glass patch",
         "description": "GLASS Apollo-Reborn source for AltStore Classic, SideStore, and Feather. Includes Apollo-Reborn widgets, the Liquid Glass iOS 26 patch, and bundled Liquid Glass alternate icons. Registers about 7 App IDs, one per bundled extension; on a free Apple ID (limited to 10 App IDs per 7 days) a clean install fits but leaves little headroom, so use the No Extensions + GLASS source if you hit the App ID limit. Not compatible with AltStore PAL."
@@ -108,7 +108,7 @@
       "notesLabel": "No Extensions + Liquid Glass build.",
       "newsLabel": "No Extensions + GLASS",
       "source": {
-        "identifier": "app.apolloreborn.noextensionsglass",
+        "identifier": "app.apolloreborn.nightly.noextensionsglass",
         "name": "Apollo-Reborn - No Extensions + GLASS",
         "subtitle": "Apollo-Reborn source without extensions and with Liquid Glass patch",
         "description": "No Extensions + GLASS Apollo-Reborn source for AltStore Classic, SideStore, and Feather. Uses 1 App ID, omits widgets, and includes the Liquid Glass iOS 26 patch plus bundled Liquid Glass alternate icons. Not compatible with AltStore PAL."
@@ -124,7 +124,7 @@
       "notesLabel": "Liquid Glass icons-only build.",
       "newsLabel": "GLASS Icons",
       "source": {
-        "identifier": "app.apolloreborn.glassicons",
+        "identifier": "app.apolloreborn.nightly.glassicons",
         "name": "Apollo-Reborn - GLASS Icons",
         "subtitle": "Apollo-Reborn source with the Liquid Glass icon catalog only",
         "description": "GLASS Icons Apollo-Reborn source for AltStore Classic, SideStore, and Feather. Includes Apollo-Reborn widgets and bundles the Liquid Glass alternate icon catalog without the iOS 26 UI runtime opt-in, so legacy UIKit behaviors (such as the bottom tab bar swipe gesture) are preserved. Registers about 7 App IDs, one per bundled extension; on a free Apple ID (limited to 10 App IDs per 7 days) a clean install fits but leaves little headroom, so use the No Extensions + GLASS Icons source if you hit the App ID limit. Not compatible with AltStore PAL."
@@ -140,7 +140,7 @@
       "notesLabel": "No Extensions + Liquid Glass icons-only build.",
       "newsLabel": "No Extensions + GLASS Icons",
       "source": {
-        "identifier": "app.apolloreborn.noextensionsglassicons",
+        "identifier": "app.apolloreborn.nightly.noextensionsglassicons",
         "name": "Apollo-Reborn - No Extensions + GLASS Icons",
         "subtitle": "Apollo-Reborn source without extensions and with the Liquid Glass icon catalog only",
         "description": "No Extensions + GLASS Icons Apollo-Reborn source for AltStore Classic, SideStore, and Feather. Uses 1 App ID, omits widgets, and bundles the Liquid Glass alternate icon catalog without the iOS 26 UI runtime opt-in. Not compatible with AltStore PAL."

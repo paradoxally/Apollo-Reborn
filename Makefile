@@ -144,6 +144,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloState.m \
     $(SRC_DIR)/ApolloShareLinks.xm \
     $(SRC_DIR)/ApolloSafariDarkLoading.xm \
+    $(SRC_DIR)/ApolloRegexCompileCache.xm \
     $(SRC_DIR)/ApolloMedia.xm \
     $(SRC_DIR)/ApolloAsyncDisplayGuard.xm \
     $(SRC_DIR)/ApolloFeedGalleryCarousel.xm \

@@ -348,6 +348,8 @@ static NSString *const UDKeyIPadTabBarBottom = @"IPadTabBarBottom";
 static NSString *const ApolloIPadTabBarBottomChangedNotification = @"ApolloIPadTabBarBottomChangedNotification";
 // True Black Keyboard mode: 0 Off (default), 1 Dark Only, 2 Light Only, 3 Always.
 static NSString *const UDKeyTrueBlackKeyboardMode = @"TrueBlackKeyboardMode";
+// Settings icons: 0 = System, 1 = Light (default), 2 = Dark.
+static NSString *const UDKeySettingsIconAppearance = @"SettingsIconAppearance";
 // Liquid Glass only. When ON, tab-bar swipe navigates back/forward instead of
 // dragging to switch tabs (an either/or; needs a relaunch to apply). Opt-in;
 // default OFF via registerDefaults. See ApolloLiquidGlass.xm.
@@ -495,6 +497,10 @@ static NSString *const UDKeyEnableAICommentSummaries = @"EnableAICommentSummarie
 static NSString *const UDKeyAIPostWordThreshold = @"AIPostWordThreshold";
 static NSString *const UDKeyAIPostSummaryDetail = @"AIPostSummaryDetail";
 static NSString *const UDKeyAICommentSummaryDetail = @"AICommentSummaryDetail";
+// The language summaries are written in, whatever language the post, article or
+// comments are in: a language code from Translation's list ("ja", "pt", "zh"),
+// or "" for Device Default (the device's own language). Default "".
+static NSString *const UDKeyAISummaryLanguage = @"AISummaryLanguage";
 // When on, summaries are generated only when the user taps the card (rather than
 // automatically on open). Off by default. Cached summaries still show instantly.
 static NSString *const UDKeyEnableTapToSummarize = @"EnableTapToSummarize";

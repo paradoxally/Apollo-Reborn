@@ -44,6 +44,7 @@
 + (instancetype)shared;
 - (NSInteger)availabilityStatus;
 - (BOOL)isModelAvailable;
+- (NSArray<NSString *> *)supportedLanguageCodes;
 - (void)prepareSession:(NSString *)identifier instructions:(NSString *)instructions;
 - (void)discardPreparedSession:(NSString *)identifier;
 - (void)cancelRequest:(NSString *)identifier;
@@ -117,15 +118,149 @@ static NSUInteger ApolloAIMaxPostCharsForDetail(ApolloAISummaryDetail detail) {
     }
 }
 
+#pragma mark - Summary language
+
+// The model writes in the language of its input unless the instructions name
+// one (Apple's FoundationModels locale guide: "By default, the model responds
+// in the language or languages of its inputs"). So a Portuguese article came
+// back as a Portuguese "Link summary" under an English UI, right below a link
+// card the translation feature had already put into English. Every summary
+// prompt now names the reader's language: Apollo AI → Summaries → Language,
+// which defaults to the device language.
+
+// Base language codes the on-device model writes. Read once and kept: the set
+// only changes with an OS model update. An empty answer is not kept, so a model
+// that couldn't say yet is asked again next time. Main thread only, like every
+// caller (generation passes, header restores and the Apollo AI settings screen).
+static NSSet<NSString *> *ApolloAIOnDeviceLanguageCodes(void) {
+    static NSSet<NSString *> *sCodes;
+    if (sCodes.count > 0) return sCodes;
+    Class cls = NSClassFromString(@"ApolloFoundationModels");
+    ApolloFoundationModels *model = cls ? [cls shared] : nil;
+    if (![model respondsToSelector:@selector(supportedLanguageCodes)]) return nil;
+    NSArray<NSString *> *codes = [model supportedLanguageCodes];
+    if (codes.count == 0) return nil;
+    sCodes = [NSSet setWithArray:codes];
+    ApolloLog(@"[AISummary] on-device model writes: %@", [codes componentsJoinedByString:@","]);
+    return sCodes;
+}
+
+// A language code as the model lists it: lowercase, without region or script,
+// and Norwegian "no" (Translation's list, which the summary Language picker
+// shows) as Bokmål "nb".
+static NSString *ApolloAIModelLanguageCode(NSString *identifier) {
+    if (identifier.length == 0) return nil;
+    NSString *language = [[NSLocale componentsFromLocaleIdentifier:identifier][NSLocaleLanguageCode] lowercaseString];
+    return [language isEqualToString:@"no"] ? @"nb" : language;
+}
+
+BOOL ApolloAIOnDeviceCanWrite(NSString *identifier) {
+    NSString *language = ApolloAIModelLanguageCode(identifier);
+    NSSet<NSString *> *writable = ApolloAIOnDeviceLanguageCodes();
+    return language.length > 0 && (!writable || [writable containsObject:language]);
+}
+
+// The language summaries are written in: the one picked in Apollo AI →
+// Summaries → Language, else the device's preferred languages in order (Device
+// Default). A language the on-device model can't write is skipped for the next
+// one: asking for it throws unsupportedLanguageOrLocale. Cloud models write any
+// language. Returns language + script only ("en", "pt", "zh-Hant"): the script
+// separates Simplified from Traditional Chinese, and a region adds nothing a
+// summary needs. nil when no candidate fits; the prompts then name no language
+// and the model answers in the text's language, as before.
+static NSString *ApolloAISummaryLanguageForBackend(BOOL cloud, BOOL *picked) {
+    NSSet<NSString *> *writable = cloud ? nil : ApolloAIOnDeviceLanguageCodes();
+    NSMutableArray<NSString *> *candidates = [NSMutableArray array];
+    // If the on-device model didn't say what it writes, skip the picked language
+    // (it could be one the model can't write) and use the device language: Apple
+    // Intelligence only runs when the device and Siri language are the same
+    // supported language.
+    BOOL choiceIsCandidate = sAISummaryLanguage.length > 0 && (cloud || writable);
+    if (choiceIsCandidate) [candidates addObject:sAISummaryLanguage];
+    [candidates addObjectsFromArray:[NSLocale preferredLanguages] ?: @[]];
+    NSString *summaryLanguage = nil;
+    if (picked) *picked = NO;
+    for (NSUInteger i = 0; i < candidates.count; i++) {
+        NSString *language = ApolloAIModelLanguageCode(candidates[i]);
+        if (language.length == 0 || (writable && ![writable containsObject:language])) continue;
+        NSString *script = [NSLocale componentsFromLocaleIdentifier:candidates[i]][NSLocaleScriptCode];
+        summaryLanguage = script.length > 0 ? [NSString stringWithFormat:@"%@-%@", language, script] : language;
+        if (picked) *picked = choiceIsCandidate && i == 0;
+        break;
+    }
+    return summaryLanguage;
+}
+
+NSString *ApolloAISummaryLanguage(BOOL *picked) {
+    // The router's predicate, not "a cloud provider is selected": with a provider
+    // picked but no key yet, the on-device model writes the summary, so its
+    // language must pass the on-device filter.
+    NSString *summaryLanguage = ApolloAISummaryLanguageForBackend(ApolloAICloudConfigured(), picked);
+    // Logged when it changes (first use, a Language or provider switch),
+    // not per call: header restores ask again on every scroll-in.
+    static NSString *sLoggedLanguage;
+    NSString *logged = summaryLanguage ?: @"(none: the text's own language)";
+    if (![logged isEqualToString:sLoggedLanguage]) {
+        sLoggedLanguage = logged;
+        ApolloLog(@"[AISummary] summary language: %@", logged);
+    }
+    return summaryLanguage;
+}
+
+// `instructions` led by the summary language, worded as Apple's guide words it
+// ("You MUST respond in Italian"). It has to come FIRST: appended after the
+// summary rules, the on-device model still answered the Record (Portuguese)
+// article in Portuguese; leading, it answers in the reader's language for every
+// prompt and detail level here. Unchanged when there is no summary language.
+static NSString *const kApolloAISummaryLanguageLeadOpening = @"You MUST respond in ";
+
+static NSString *ApolloAISummaryLanguageLead(NSString *language) {
+    NSString *name = language.length > 0
+        ? [[NSLocale localeWithLocaleIdentifier:@"en_US"] localizedStringForLocaleIdentifier:language]
+        : nil;
+    return name.length > 0 ? [NSString stringWithFormat:@"%@%@. ", kApolloAISummaryLanguageLeadOpening, name] : nil;
+}
+
+static NSString *ApolloAIInSummaryLanguage(NSString *instructions) {
+    NSString *lead = ApolloAISummaryLanguageLead(ApolloAISummaryLanguage(NULL));
+    return lead ? [lead stringByAppendingString:instructions] : instructions;
+}
+
+// The language the on-device model writes when it takes over from a failed
+// cloud request: the cloud pass's language when the model can write it, else
+// what on-device mode would pick (the next device language it writes).
+static NSString *ApolloAIOnDeviceFallbackLanguage(void) {
+    return ApolloAISummaryLanguageForBackend(NO, NULL);
+}
+
+// The cloud pass's instructions, re-led in `language` for the on-device
+// fallback. Asking the on-device model for a language it can't write throws
+// unsupportedLanguageOrLocale, so a cloud-only pick (Greek, say) falls back in
+// the on-device language instead of failing outright. Whatever lead the
+// instructions were built with is replaced, not one re-derived from the
+// current setting, which may have changed while the cloud request ran.
+static NSString *ApolloAIOnDeviceFallbackInstructions(NSString *instructions, NSString *language) {
+    NSString *rules = instructions ?: @"";
+    if ([rules hasPrefix:kApolloAISummaryLanguageLeadOpening]) {
+        NSRange end = [rules rangeOfString:@". "
+                                   options:0
+                                     range:NSMakeRange(kApolloAISummaryLanguageLeadOpening.length,
+                                                       rules.length - kApolloAISummaryLanguageLeadOpening.length)];
+        if (end.location != NSNotFound) rules = [rules substringFromIndex:NSMaxRange(end)];
+    }
+    NSString *lead = ApolloAISummaryLanguageLead(language);
+    return lead ? [lead stringByAppendingString:rules] : rules;
+}
+
 static NSString *ApolloAIPostInstructionsForDetail(ApolloAISummaryDetail detail) {
     switch (ApolloAISanitizedDetail(detail)) {
         case ApolloAISummaryDetailBrief:
-            return @"Summarize this Reddit post in 1-2 concise plain sentences. Give only the essential point and what the poster asks, claims, or shares. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"Summarize this Reddit post in 1-2 concise plain sentences. Give only the essential point and what the poster asks, claims, or shares. No heading, Markdown, or added facts.");
         case ApolloAISummaryDetailInDepth:
-            return @"Summarize this Reddit post in 3-5 focused plain sentences. Explain the main point, the poster’s reasoning or context, and what they ask, claim, or share. Include useful supporting details, but stay clearly shorter than the post. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"Summarize this Reddit post in 3-5 focused plain sentences. Explain the main point, the poster’s reasoning or context, and what they ask, claim, or share. Include useful supporting details, but stay clearly shorter than the post. No heading, Markdown, or added facts.");
         case ApolloAISummaryDetailBalanced:
         default:
-            return @"Summarize this Reddit post in 2 short plain sentences. State the main point and what the poster asks, claims, or shares. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"Summarize this Reddit post in 2 short plain sentences. State the main point and what the poster asks, claims, or shares. No heading, Markdown, or added facts.");
     }
 }
 
@@ -141,12 +276,12 @@ static NSInteger ApolloAIPostResponseTokensForDetail(ApolloAISummaryDetail detai
 static NSString *ApolloAICommentInstructionsForDetail(ApolloAISummaryDetail detail) {
     switch (ApolloAISanitizedDetail(detail)) {
         case ApolloAISummaryDetailBrief:
-            return @"Summarize these Reddit comments in 1-2 concise plain sentences. Give the overall reaction and the most important takeaway. Summarize commenters, not the post. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"Summarize these Reddit comments in 1-2 concise plain sentences. Give the overall reaction and the most important takeaway. Summarize commenters, not the post. No heading, Markdown, or added facts.");
         case ApolloAISummaryDetailInDepth:
-            return @"Summarize these Reddit comments in 4-5 focused plain sentences. Explain the consensus, useful supporting details, notable alternatives, and an important disagreement when present. Summarize commenters, not the post, and stay clearly shorter than the discussion. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"Summarize these Reddit comments in 4-5 focused plain sentences. Explain the consensus, useful supporting details, notable alternatives, and an important disagreement when present. Summarize commenters, not the post, and stay clearly shorter than the discussion. No heading, Markdown, or added facts.");
         case ApolloAISummaryDetailBalanced:
         default:
-            return @"Summarize these Reddit comments in 2-3 short plain sentences. Cover the consensus, useful details, and one notable disagreement if present. Summarize commenters, not the post. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"Summarize these Reddit comments in 2-3 short plain sentences. Cover the consensus, useful details, and one notable disagreement if present. Summarize commenters, not the post. No heading, Markdown, or added facts.");
     }
 }
 
@@ -162,12 +297,12 @@ static NSInteger ApolloAICommentResponseTokensForDetail(ApolloAISummaryDetail de
 static NSString *ApolloAIArticleInstructionsForDetail(ApolloAISummaryDetail detail) {
     switch (ApolloAISanitizedDetail(detail)) {
         case ApolloAISummaryDetailBrief:
-            return @"Summarize this linked article in 1-2 concise plain sentences. Give the main topic and most important reported fact or conclusion. Summarize the article itself, not website navigation or ads. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"Summarize this linked article in 1-2 concise plain sentences. Give the main topic and most important reported fact or conclusion. Summarize the article itself, not website navigation or ads. No heading, Markdown, or added facts.");
         case ApolloAISummaryDetailInDepth:
-            return @"Summarize this linked article in 4-5 focused plain sentences. Explain the main topic, key facts, supporting context, and important conclusions or implications stated by the source. Stay clearly shorter than the article. Ignore website navigation and ads. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"Summarize this linked article in 4-5 focused plain sentences. Explain the main topic, key facts, supporting context, and important conclusions or implications stated by the source. Stay clearly shorter than the article. Ignore website navigation and ads. No heading, Markdown, or added facts.");
         case ApolloAISummaryDetailBalanced:
         default:
-            return @"Summarize this linked news article in 2-3 short plain sentences. State the main topic and the key facts or points it reports. Summarize the article itself, not website navigation or ads. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"Summarize this linked news article in 2-3 short plain sentences. State the main topic and the key facts or points it reports. Summarize the article itself, not website navigation or ads. No heading, Markdown, or added facts.");
     }
 }
 
@@ -183,12 +318,12 @@ static NSInteger ApolloAIArticleResponseTokensForDetail(ApolloAISummaryDetail de
 static NSString *ApolloAIBothInstructionsForDetail(ApolloAISummaryDetail detail) {
     switch (ApolloAISanitizedDetail(detail)) {
         case ApolloAISummaryDetailBrief:
-            return @"You are given a Reddit post and the article it links to. Summarize both together in 2 concise plain sentences: the post’s point and the article’s essential fact or conclusion. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"You are given a Reddit post and the article it links to. Summarize both together in 2 concise plain sentences: the post’s point and the article’s essential fact or conclusion. No heading, Markdown, or added facts.");
         case ApolloAISummaryDetailInDepth:
-            return @"You are given a Reddit post and the article it links to. Summarize both together in 4-6 focused plain sentences. Explain the post’s point, the article’s key facts and context, and how they relate, while staying clearly shorter than the sources. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"You are given a Reddit post and the article it links to. Summarize both together in 4-6 focused plain sentences. Explain the post’s point, the article’s key facts and context, and how they relate, while staying clearly shorter than the sources. No heading, Markdown, or added facts.");
         case ApolloAISummaryDetailBalanced:
         default:
-            return @"You are given a Reddit post and the article it links to. Summarize both together in 3-4 short plain sentences: the post’s point and the article’s key facts. No heading, Markdown, or added facts.";
+            return ApolloAIInSummaryLanguage(@"You are given a Reddit post and the article it links to. Summarize both together in 3-4 short plain sentences: the post’s point and the article’s key facts. No heading, Markdown, or added facts.");
     }
 }
 
@@ -272,38 +407,13 @@ static inline NSTimeInterval ApolloAIGenerationTimeout(void) {
 #endif
 }
 
-// Language the cloud directive pins output to: the device's preferred language
-// plus its script variant when the locale carries one (zh-Hans vs zh-Hant,
-// sr-Cyrl vs sr-Latn), region dropped — the region never changes the writing
-// system, but the script does.
-static NSString *ApolloAIDirectiveLanguageIdentifier(void) {
-    NSString *preferred = [NSLocale preferredLanguages].firstObject ?: @"en";
-    NSDictionary *parts = [NSLocale componentsFromLocaleIdentifier:preferred];
-    NSString *lang = parts[NSLocaleLanguageCode] ?: @"en";
-    NSString *script = parts[NSLocaleScriptCode];
-    return script.length > 0 ? [NSString stringWithFormat:@"%@-%@", lang, script] : lang;
-}
-
-// English display name for the directive ("Portuguese", "Chinese (Simplified)").
-static NSString *ApolloAIDirectiveLanguageName(void) {
-    NSString *identifier = ApolloAIDirectiveLanguageIdentifier();
-    NSLocale *english = [NSLocale localeWithLocaleIdentifier:@"en_US"];
-    NSString *name = [english localizedStringForLocaleIdentifier:identifier]
-        ?: [english localizedStringForLanguageCode:identifier];
-    return name ?: @"English";
-}
-
 // v5: retuned prompts (per-detail instructions + token budgets from #687) plus
-// the leading cloud language directive — cached summaries generated under the
-// old scheme must regenerate. The directive language is folded in so a
-// device-language change also invalidates summaries made in the previous one.
-// Per-entry (detail, generation-profile) invalidation (below) handles model and
-// detail-level changes without dropping the whole cache.
-static NSString *const kApolloAICacheVersionBase = @"5";
-static NSString *ApolloAIEffectiveCacheVersion(void) {
-    return [NSString stringWithFormat:@"%@/%@",
-            kApolloAICacheVersionBase, ApolloAIDirectiveLanguageIdentifier()];
-}
+// the leading cloud language directive. The summary language lives in each
+// entry's generation profile, so a language change regenerates per entry; the
+// fork's old "5/<device language>" versions are dropped once on upgrade.
+// Per-entry (detail, generation-profile) invalidation (below) also handles
+// model and detail-level changes without dropping the whole cache.
+static NSString *const kApolloAICacheVersion = @"5";
 
 #pragma mark - Per-session caches / in-flight guard
 
@@ -313,38 +423,57 @@ static NSMutableDictionary<NSString *, NSString *> *sCommentSummaryCache;
 // fullName -> ApolloAISummaryDetail used to generate the cached text.
 static NSMutableDictionary<NSString *, NSNumber *> *sPostSummaryDetails;
 static NSMutableDictionary<NSString *, NSNumber *> *sCommentSummaryDetails;
-// fullName -> stable backend/model identity used to generate the cached text.
-// Invalidates a cached summary when the user switches between on-device and
-// cloud, changes cloud provider, or changes the model/endpoint within one.
+// fullName -> stable backend/model/language identity used to generate the
+// cached text. Invalidates a cached summary when the user switches between
+// on-device and cloud, changes cloud provider, model/endpoint, or summary
+// language.
 static NSMutableDictionary<NSString *, NSString *> *sPostSummaryProfiles;
 static NSMutableDictionary<NSString *, NSString *> *sCommentSummaryProfiles;
+// "post|fullName" / "comment|fullName" for summaries the on-device fallback wrote
+// during the current visit. Their "apple|<lang>" profile never matches while a
+// cloud provider is configured, which is what retries cloud on the next open;
+// until then they must still count, or the card empties on the next header
+// restore and a same-visit generation pass writes the summary a second time.
+// Cleared in viewDidDisappear, like sTapRequested.
+static NSMutableSet<NSString *> *sAIFallbackAcceptedThisVisit;
 
 static NSString *ApolloAICurrentGenerationProfile(void) {
+    // The summary language is part of what produced the text, so a summary in
+    // another language regenerates instead of being reused. That includes every
+    // summary cached before the prompts named a language ("apple" never equals
+    // "apple|en").
+    NSString *language = ApolloAISummaryLanguage(NULL) ?: @"";
     // Must match the BACKEND ROUTER's predicate (ApolloAICloudConfigured), not
     // merely "a cloud provider is selected": with a provider chosen but no key
     // yet, generation falls back to on-device, and keying that summary as
     // "openai|…" would make it survive as a stale cloud entry the moment the
     // key is added.
-    if (!ApolloAICloudConfigured()) return @"apple";
+    if (!ApolloAICloudConfigured()) return [@"apple|" stringByAppendingString:language];
     // Same effective model the cloud bridge would actually send (stored value or
     // the provider default), so switching models invalidates cached summaries.
     NSString *model = ApolloAICloudEffectiveModel() ?: @"";
     NSString *endpoint = [sAISummaryProvider isEqualToString:@"custom"] ? (sCustomAIBaseURL ?: @"") : @"";
-    return [NSString stringWithFormat:@"%@|%@|%@", sAISummaryProvider, model, endpoint];
+    return [NSString stringWithFormat:@"%@|%@|%@|%@", sAISummaryProvider, model, endpoint, language];
+}
+
+static BOOL ApolloAIProfileIsCurrent(NSString *storedProfile, BOOL isPost, NSString *fullName) {
+    if ([storedProfile isEqualToString:ApolloAICurrentGenerationProfile()]) return YES;
+    NSString *key = [(isPost ? @"post|" : @"comment|") stringByAppendingString:fullName];
+    return storedProfile.length > 0 && [sAIFallbackAcceptedThisVisit containsObject:key];
 }
 
 static BOOL ApolloAIPostCacheMatchesCurrentDetail(NSString *fullName) {
     return sPostSummaryCache[fullName].length > 0 &&
         [sPostSummaryDetails[fullName] integerValue] ==
             ApolloAISanitizedDetail(sAIPostSummaryDetail) &&
-        [sPostSummaryProfiles[fullName] isEqualToString:ApolloAICurrentGenerationProfile()];
+        ApolloAIProfileIsCurrent(sPostSummaryProfiles[fullName], YES, fullName);
 }
 
 static BOOL ApolloAICommentCacheMatchesCurrentDetail(NSString *fullName) {
     return sCommentSummaryCache[fullName].length > 0 &&
         [sCommentSummaryDetails[fullName] integerValue] ==
             ApolloAISanitizedDetail(sAICommentSummaryDetail) &&
-        [sCommentSummaryProfiles[fullName] isEqualToString:ApolloAICurrentGenerationProfile()];
+        ApolloAIProfileIsCurrent(sCommentSummaryProfiles[fullName], NO, fullName);
 }
 // fullName -> unix time (seconds) the post/comment summary was last generated.
 // Drives age-based cache expiry so old (and stale-discussion) summaries are
@@ -593,7 +722,7 @@ static void ApolloAIEvictOldestEntries(NSMutableDictionary *cache, NSDictionary 
 static void ApolloAILoadPersistedSummaries(void) {
     NSDictionary *root = [NSDictionary dictionaryWithContentsOfFile:ApolloAISummariesCachePath()];
     if (![root isKindOfClass:[NSDictionary class]]) return;
-    if (![root[@"version"] isEqualToString:ApolloAIEffectiveCacheVersion()]) {
+    if (![root[@"version"] isEqualToString:kApolloAICacheVersion]) {
         ApolloLog(@"[AISummary] ignoring stale summary cache version %@", root[@"version"] ?: @"(none)");
         return;
     }
@@ -673,7 +802,7 @@ static void ApolloAIPersistSummaries(void) {
                 return m;
             };
         NSDictionary *root = @{
-            @"version": ApolloAIEffectiveCacheVersion(),
+            @"version": kApolloAICacheVersion,
             @"post": post,
             @"comment": comment,
             @"commentSourceCounts": prune(sourceCountSnapshot, commentKeys),
@@ -723,6 +852,7 @@ static void ApolloAIEnsureState(void) {
         sPostSuppressed = [NSMutableSet set];
         sPostEmpty = [NSMutableSet set];
         sTapRequested = [NSMutableSet set];
+        sAIFallbackAcceptedThisVisit = [NSMutableSet set];
         ApolloAILoadPersistedSummaries();
     });
 }
@@ -762,6 +892,7 @@ NSUInteger ApolloAIClearSummaryCache(void) {
     [sPostSuppressed removeAllObjects];
     [sPostEmpty removeAllObjects];
     [sTapRequested removeAllObjects];
+    [sAIFallbackAcceptedThisVisit removeAllObjects];
     [sLinkSummaryPosts removeAllObjects];
     [sBothSummaryPosts removeAllObjects];
 
@@ -2832,19 +2963,38 @@ static NSString *ApolloAITruncateForFM(NSString *prompt) {
 // User-facing label for a summary produced by the on-device model.
 static NSString *const kApolloAIOnDeviceModelLabel = @"Apple Intelligence";
 
-// Leading language directive for CLOUD requests only. Cloud models mirror the
-// thread's language unless told otherwise (the on-device model always answers
-// in the instruction language), so pin the output to the device locale; the
-// alphabet clause suppresses mixed-script glitches some small models exhibit
-// when generating non-English text. Both clauses must LEAD the instructions —
-// models ignore trailing directives at low reasoning effort. The FM leg keeps
-// the bare instructions: it already behaves, and its ~4k window shouldn't
-// spend tokens on a directive it doesn't need.
+// Stores the profile of the backend that actually wrote the summary. A cloud
+// pass that fell back to on-device carries `fallbackProfile` ("apple|<lang>",
+// in the language the fallback wrote), so the next open retries cloud;
+// ApolloAIProfileIsCurrent keeps it valid for the rest of this visit.
+static void ApolloAIRecordGenerationProfile(BOOL isPost, NSString *fullName,
+                                            NSString *generationProfile, NSString *fallbackProfile) {
+    NSMutableDictionary<NSString *, NSString *> *profiles = isPost ? sPostSummaryProfiles : sCommentSummaryProfiles;
+    profiles[fullName] = fallbackProfile ?: generationProfile;
+    if (fallbackProfile) {
+        [sAIFallbackAcceptedThisVisit addObject:[(isPost ? @"post|" : @"comment|") stringByAppendingString:fullName]];
+    }
+}
+
+// Leading language directive for CLOUD requests only, in the summary language
+// (ApolloAISummaryLanguage). The instructions already open with upstream's
+// "You MUST respond in X", but cloud models still mirrored the thread's
+// language without "regardless of the language of the content", and the
+// alphabet clause suppresses the mixed-script glitches gpt-5.4-mini shows in
+// non-English output. Both clauses must LEAD the instructions — models ignore
+// trailing directives at low reasoning effort. The FM leg keeps the bare
+// instructions: its ~4k window shouldn't spend tokens on a directive it
+// doesn't need.
 static NSString *ApolloAICloudLanguageDirective(void) {
+    NSString *language = ApolloAISummaryLanguage(NULL);
+    NSString *name = language.length > 0
+        ? [[NSLocale localeWithLocaleIdentifier:@"en_US"] localizedStringForLocaleIdentifier:language]
+        : nil;
+    if (name.length == 0) return @"";
     return [NSString stringWithFormat:
             @"Write your entire response in %@, regardless of the language of the "
             @"content. Use only that language's standard alphabet; never mix in "
-            @"characters from other writing systems. ", ApolloAIDirectiveLanguageName()];
+            @"characters from other writing systems. ", name];
 }
 
 // The single seam every summary generation goes through. With the on-device
@@ -2864,11 +3014,14 @@ static NSString *ApolloAICloudLanguageDirective(void) {
 //
 // `modelLabel` names the backend that produced `final` ("gpt-5.4-mini",
 // "Apple Intelligence", ...) so callers can record it next to the cached
-// summary for the card's trust caption; nil on error.
+// summary for the card's trust caption; nil on error. `fallbackProfile` is set
+// only when the on-device fallback wrote `final`: "apple|<lang>" in the
+// language it was asked for, fixed when the fallback started.
 static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, NSString *instructions,
                                           NSInteger cloudResponseTokens, NSInteger fmResponseTokens,
                                           void (^onPartial)(NSString *partial),
-                                          void (^onComplete)(NSString *final, NSError *error, NSString *modelLabel)) {
+                                          void (^onComplete)(NSString *final, NSError *error, NSString *modelLabel,
+                                                             NSString *fallbackProfile)) {
     // Explicitly the FM backend, not ApolloAIBridge() — while a cloud provider
     // is selected that would hand back the cloud bridge and the "fallback"
     // would re-run the request that just failed.
@@ -2888,26 +3041,29 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
         // prepareSession is a cheap no-op when the identifier was already
         // prewarmed with the same instructions (viewWillAppear), and stages a
         // correct session otherwise (e.g. a fallback whose prewarm was consumed).
-        [fmBridge prepareSession:identifier instructions:instructions];
+        NSString *fmLanguage = cloudError ? ApolloAIOnDeviceFallbackLanguage() : nil;
+        NSString *fmInstructions = cloudError ? ApolloAIOnDeviceFallbackInstructions(instructions, fmLanguage) : instructions;
+        NSString *fallbackProfile = cloudError ? [@"apple|" stringByAppendingString:fmLanguage ?: @""] : nil;
+        [fmBridge prepareSession:identifier instructions:fmInstructions];
         [fmBridge summarize:fmText
                  identifier:identifier
-               instructions:instructions
+               instructions:fmInstructions
       maximumResponseTokens:fmResponseTokens
                   onPartial:onPartial
                  onComplete:^(NSString *final, NSError *error) {
-                      if (!error) { onComplete(final, nil, kApolloAIOnDeviceModelLabel); return; }
+                      if (!error) { onComplete(final, nil, kApolloAIOnDeviceModelLabel, fallbackProfile); return; }
                       // A cancelled fallback keeps its own code-6 sentinel. The
                       // callers' navigation-teardown guards key on 6 and return
                       // silently; substituting the cloud error there would record
                       // a failure and paint an error card for a summary the user
                       // merely navigated away from, and the failure latch can then
                       // block regeneration when the thread is reopened.
-                      if (error.code == 6) { onComplete(nil, error, nil); return; }
+                      if (error.code == 6) { onComplete(nil, error, nil, nil); return; }
                       if (cloudError) {
                           ApolloLog(@"[AISummary] on-device fallback also failed (code %ld); reporting the cloud error (code %ld)",
                                     (long)error.code, (long)cloudError.code);
                       }
-                      onComplete(nil, cloudError ?: error, nil);
+                      onComplete(nil, cloudError ?: error, nil, nil);
                  }];
     };
 
@@ -2927,17 +3083,21 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
                       maximumResponseTokens:cloudResponseTokens
                                   onPartial:onPartial
                                  onComplete:^(NSString *final, NSError *error) {
-        if (!error && final.length > 0) { onComplete(final, nil, cloudModelLabel); return; }
-        if (error.code == 6) { onComplete(nil, error, nil); return; }   // cancelled: never fall back
+        if (!error && final.length > 0) { onComplete(final, nil, cloudModelLabel, nil); return; }
+        if (error.code == 6) { onComplete(nil, error, nil, nil); return; }   // cancelled: never fall back
+        // An empty reply with no error still has to reach runFM as a failure:
+        // a nil cloudError is what marks the plain on-device path, which skips
+        // the fallback's re-lead and its apple|<lang> key.
+        NSError *cloudError = error ?: [NSError errorWithDomain:ApolloAICloudBridgeErrorDomain
+                                                           code:12
+                                                       userInfo:@{NSLocalizedDescriptionKey: @"Cloud generation failed"}];
         if (ApolloAIFMUsable()) {
             ApolloLog(@"[AISummary] cloud failed for %@ (code %ld) — falling back to on-device",
-                      identifier, (long)error.code);
-            runFM(ApolloAITruncateForFM(text), error);
+                      identifier, (long)cloudError.code);
+            runFM(ApolloAITruncateForFM(text), cloudError);
             return;
         }
-        onComplete(nil, error ?: [NSError errorWithDomain:ApolloAICloudBridgeErrorDomain
-                                                     code:12
-                                                 userInfo:@{NSLocalizedDescriptionKey: @"Cloud generation failed"}], nil);
+        onComplete(nil, cloudError, nil, nil);
     }];
 }
 
@@ -3018,7 +3178,7 @@ static void ApolloAISummarizeArticleText(ApolloAISummaryRequest *request, NSStri
             ^(NSString *partial) {
                 ApolloAIApplyStreamingPartial(request, partial);
             },
-            ^(NSString *final, NSError *error, NSString *modelLabel) {
+            ^(NSString *final, NSError *error, NSString *modelLabel, NSString *fallbackProfile) {
                 if (!ApolloAIFinishRequest(request)) return;
                 if (error.code == 6) return; // navigation cancellation
                 final = ApolloAINormalizeGeneratedSummary(final);
@@ -3058,7 +3218,7 @@ static void ApolloAISummarizeArticleText(ApolloAISummaryRequest *request, NSStri
                 sPostSummaryMode[fullName] = @(ApolloAIDesiredPostMode(fullName));
                 if (modelLabel.length > 0) sPostSummaryModelLabels[fullName] = modelLabel;
                 sPostSummaryDetails[fullName] = @(detail);
-                sPostSummaryProfiles[fullName] = generationProfile;
+                ApolloAIRecordGenerationProfile(YES, fullName, generationProfile, fallbackProfile);
                 ApolloAIStampSummary(fullName);
                 ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateReady, final);
                 if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -3299,7 +3459,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                     ^(NSString *partial) {
                         ApolloAIApplyStreamingPartial(request, partial);
                     },
-                    ^(NSString *final, NSError *error, NSString *modelLabel) {
+                    ^(NSString *final, NSError *error, NSString *modelLabel, NSString *fallbackProfile) {
                         if (!ApolloAIFinishRequest(request)) return;
                         if (error.code == 6) return; // navigation cancellation
                         final = ApolloAINormalizeGeneratedSummary(final);
@@ -3328,7 +3488,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                         sPostSummaryMode[fullName] = @(ApolloAIDesiredPostMode(fullName));
                         if (modelLabel.length > 0) sPostSummaryModelLabels[fullName] = modelLabel;
                         sPostSummaryDetails[fullName] = @(postDetail);
-                        sPostSummaryProfiles[fullName] = generationProfile;
+                        ApolloAIRecordGenerationProfile(YES, fullName, generationProfile, fallbackProfile);
                         ApolloAIStampSummary(fullName);
                         ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateReady, final);
                         if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -3431,7 +3591,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                     ^(NSString *partial) {
                         ApolloAIApplyStreamingPartial(request, partial);
                     },
-                    ^(NSString *final, NSError *error, NSString *modelLabel) {
+                    ^(NSString *final, NSError *error, NSString *modelLabel, NSString *fallbackProfile) {
                         if (!ApolloAIFinishRequest(request)) return;
                         if (error.code == 6) return; // navigation cancellation
                         final = ApolloAINormalizeGeneratedSummary(final);
@@ -3459,7 +3619,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                         sCommentSummaryCache[fullName] = final;
                         if (modelLabel.length > 0) sCommentSummaryModelLabels[fullName] = modelLabel;
                         sCommentSummaryDetails[fullName] = @(commentDetail);
-                        sCommentSummaryProfiles[fullName] = generationProfile;
+                        ApolloAIRecordGenerationProfile(NO, fullName, generationProfile, fallbackProfile);
                         ApolloAIStampSummary(fullName);
                         sCommentSummarySourceCounts[fullName] = @(commentCount);
                         if (commentSignature.length > 0) {
@@ -3591,6 +3751,8 @@ static void ApolloAILogTableStructure(UIViewController *vc) {
         // regenerate on reopen without a fresh tap, defeating the point of the mode.
         [sTapRequested removeObject:[@"post|" stringByAppendingString:fullName]];
         [sTapRequested removeObject:[@"comment|" stringByAppendingString:fullName]];
+        [sAIFallbackAcceptedThisVisit removeObject:[@"post|" stringByAppendingString:fullName]];
+        [sAIFallbackAcceptedThisVisit removeObject:[@"comment|" stringByAppendingString:fullName]];
         if (!ApolloAIPostCacheMatchesCurrentDetail(fullName)) {
             ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateNone, nil);
         }

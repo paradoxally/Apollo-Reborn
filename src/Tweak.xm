@@ -457,19 +457,27 @@ static BOOL ApolloIsSingleItemValetQuery(NSDictionary *query) {
 //
 // Valet.canAccessKeychain() reads its canary item, and Apollo asks it while building Reddit
 // requests on the main thread, so a scrolling feed pays a ~7 ms securityd round trip each time.
-// An item stored AfterFirstUnlock or Always stays readable until the device reboots, which ends
-// this process, so a successful canary read is served from memory until something writes,
-// updates or deletes a Valet canary again. WhenUnlocked canaries are never cached: those
-// legitimately turn unreadable when the device locks.
+// An item stored AfterFirstUnlock stays readable until the device reboots, which ends this
+// process, so a successful canary read is served from memory until something writes, updates
+// or deletes a Valet canary again. Every other class is left alone: WhenUnlocked canaries
+// legitimately turn unreadable when the device locks. The service name only says what Valet
+// asked for, and the accessibility heal path below exists because stored protection classes
+// can differ, so the item's real kSecAttrAccessible is checked once before the first fill.
+//
+// A read that is in flight while a canary write lands could otherwise put the pre-write value
+// back after the write cleared the cache. Every canary write bumps the generation before and
+// after the real keychain call, and a fill only lands if the generation it started under still
+// holds.
 static NSString *const kApolloValetCanaryAccount = @"VAL_KeychainCanaryUsername";
 static os_unfair_lock sCanaryLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableDictionary<NSString *, NSData *> *sCanaryCache;
+static uint64_t sCanaryGeneration;
 
 static BOOL ApolloIsCacheableCanaryQuery(NSDictionary *query) {
     if (!ApolloIsSingleItemValetQuery(query)) return NO;
     if (![query[(__bridge id)kSecAttrAccount] isEqual:kApolloValetCanaryAccount]) return NO;
     NSString *service = query[(__bridge id)kSecAttrService];
-    return [service containsString:@"AfterFirstUnlock"] || [service containsString:@"AccessibleAlways"];
+    return [service containsString:@"AfterFirstUnlock"];
 }
 
 static NSData *ApolloCanaryCacheGet(NSString *service) {
@@ -479,23 +487,62 @@ static NSData *ApolloCanaryCacheGet(NSString *service) {
     return data;
 }
 
-static void ApolloCanaryCacheStore(NSString *service, NSData *data) {
+static uint64_t ApolloCanaryGeneration(void) {
     os_unfair_lock_lock(&sCanaryLock);
-    if (!sCanaryCache) sCanaryCache = [NSMutableDictionary dictionary];
-    sCanaryCache[service] = data;
+    uint64_t generation = sCanaryGeneration;
+    os_unfair_lock_unlock(&sCanaryLock);
+    return generation;
+}
+
+static void ApolloCanaryCacheStore(NSString *service, NSData *data, uint64_t readGeneration) {
+    os_unfair_lock_lock(&sCanaryLock);
+    if (readGeneration == sCanaryGeneration) {
+        if (!sCanaryCache) sCanaryCache = [NSMutableDictionary dictionary];
+        sCanaryCache[service] = data;
+    }
     os_unfair_lock_unlock(&sCanaryLock);
 }
 
-// A write without an account can match the canary too, so only an explicit other account is
-// known not to touch it.
-static void ApolloCanaryCacheInvalidateForWrite(NSDictionary *query) {
-    if (!IsValetQuery(query)) return;
+static BOOL ApolloCanaryItemHasPersistentClass(NSDictionary *query) {
+    NSMutableDictionary *attributesQuery = [query mutableCopy];
+    [attributesQuery removeObjectForKey:(__bridge id)kSecReturnData];
+    attributesQuery[(__bridge id)kSecReturnAttributes] = @YES;
+    attributesQuery[(__bridge id)kSecMatchLimit] = (__bridge id)kSecMatchLimitOne;
+    CFTypeRef found = NULL;
+    if (ApolloRealSecItemCopyMatching(attributesQuery, &found) != errSecSuccess || !found) return NO;
+    NSDictionary *attributes = CFBridgingRelease(found);
+    if (![attributes isKindOfClass:[NSDictionary class]]) return NO;
+    id protection = attributes[(__bridge id)kSecAttrAccessible];
+    return [protection isEqual:(__bridge id)kSecAttrAccessibleAfterFirstUnlock]
+        || [protection isEqual:(__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly];
+}
+
+// Absent attributes act as wildcards in a keychain write, so only an explicit other account or
+// a non-Valet service rules the canary out.
+static BOOL ApolloCanaryWriteMayTouch(NSDictionary *query) {
     id account = query[(__bridge id)kSecAttrAccount];
-    if (account && ![account isEqual:kApolloValetCanaryAccount]) return;
+    if (account && ![account isEqual:kApolloValetCanaryAccount]) return NO;
+    if (query[(__bridge id)kSecAttrService] && !IsValetQuery(query)) return NO;
+    return YES;
+}
+
+static void ApolloCanaryCacheInvalidate(void) {
     os_unfair_lock_lock(&sCanaryLock);
+    sCanaryGeneration++;
     [sCanaryCache removeAllObjects];
     os_unfair_lock_unlock(&sCanaryLock);
 }
+
+// Brackets a keychain write: invalidates on entry and again on every return path.
+struct ApolloCanaryWriteScope {
+    bool touches;
+    explicit ApolloCanaryWriteScope(NSDictionary *query) : touches(ApolloCanaryWriteMayTouch(query)) {
+        if (touches) ApolloCanaryCacheInvalidate();
+    }
+    ~ApolloCanaryWriteScope() {
+        if (touches) ApolloCanaryCacheInvalidate();
+    }
+};
 
 // MARK: - Scoped-read recovery via enumeration
 //
@@ -1289,7 +1336,7 @@ static void ApolloDeleteStaleKeychainItem(NSDictionary *query) {
 
 static OSStatus SecItemAdd_replacement(CFDictionaryRef query, CFTypeRef *result) {
     NSDictionary *strippedQuery = stripGroupAccessAttr(query);
-    ApolloCanaryCacheInvalidateForWrite(strippedQuery);
+    ApolloCanaryWriteScope canaryWriteScope(strippedQuery);
 #if APOLLO_SIM_BUILD
     if (IsValetQuery(strippedQuery) || IsMessageDraftQuery(strippedQuery)) {
         id value = strippedQuery[(__bridge id)kSecValueData];
@@ -1420,9 +1467,11 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
     }
 
     BOOL canaryQuery = ApolloIsCacheableCanaryQuery(strippedQuery);
+    uint64_t canaryGeneration = 0;
     if (canaryQuery) {
         NSData *cached = ApolloCanaryCacheGet(strippedQuery[(__bridge id)kSecAttrService]);
         if (cached) return ApolloMirrorServe(strippedQuery, cached, result);
+        canaryGeneration = ApolloCanaryGeneration();
     }
 
     // Dev-only fault injection: force the account scoped read to miss so the wipe->recover chain
@@ -1448,7 +1497,9 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
     if (canaryQuery && status == errSecSuccess && result && *result) {
         id served = (__bridge id)*result;
         NSData *data = [served isKindOfClass:[NSDictionary class]] ? served[(__bridge id)kSecValueData] : served;
-        if ([data isKindOfClass:[NSData class]]) ApolloCanaryCacheStore(strippedQuery[(__bridge id)kSecAttrService], data);
+        if ([data isKindOfClass:[NSData class]] && ApolloCanaryItemHasPersistentClass(strippedQuery)) {
+            ApolloCanaryCacheStore(strippedQuery[(__bridge id)kSecAttrService], data, canaryGeneration);
+        }
     }
 
     // Last-resort read recovery (see "Scoped-read recovery via enumeration" above): on the
@@ -1514,7 +1565,7 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
 
 static OSStatus SecItemUpdate_replacement(CFDictionaryRef query, CFDictionaryRef attributesToUpdate) {
     NSDictionary *strippedQuery = stripGroupAccessAttr(query);
-    ApolloCanaryCacheInvalidateForWrite(strippedQuery);
+    ApolloCanaryWriteScope canaryWriteScope(strippedQuery);
     NSDictionary *attrs = (__bridge NSDictionary *)attributesToUpdate;
 
     // Block attempts to disable Ultra/Pro
@@ -1605,7 +1656,7 @@ static OSStatus SecItemUpdate_replacement(CFDictionaryRef query, CFDictionaryRef
 
 static OSStatus SecItemDelete_replacement(CFDictionaryRef query) {
     NSDictionary *strippedQuery = stripGroupAccessAttr(query);
-    ApolloCanaryCacheInvalidateForWrite(strippedQuery);
+    ApolloCanaryWriteScope canaryWriteScope(strippedQuery);
 #if APOLLO_SIM_BUILD
     if (IsValetQuery(strippedQuery) || IsMessageDraftQuery(strippedQuery)) {
         NSString *key = SimKeychainKey(strippedQuery[(__bridge id)kSecAttrService], strippedQuery[(__bridge id)kSecAttrAccount]);

@@ -453,6 +453,50 @@ static BOOL ApolloIsSingleItemValetQuery(NSDictionary *query) {
     return YES;
 }
 
+// MARK: - Valet canary cache
+//
+// Valet.canAccessKeychain() reads its canary item, and Apollo asks it while building Reddit
+// requests on the main thread, so a scrolling feed pays a ~7 ms securityd round trip each time.
+// An item stored AfterFirstUnlock or Always stays readable until the device reboots, which ends
+// this process, so a successful canary read is served from memory until something writes,
+// updates or deletes a Valet canary again. WhenUnlocked canaries are never cached: those
+// legitimately turn unreadable when the device locks.
+static NSString *const kApolloValetCanaryAccount = @"VAL_KeychainCanaryUsername";
+static os_unfair_lock sCanaryLock = OS_UNFAIR_LOCK_INIT;
+static NSMutableDictionary<NSString *, NSData *> *sCanaryCache;
+
+static BOOL ApolloIsCacheableCanaryQuery(NSDictionary *query) {
+    if (!ApolloIsSingleItemValetQuery(query)) return NO;
+    if (![query[(__bridge id)kSecAttrAccount] isEqual:kApolloValetCanaryAccount]) return NO;
+    NSString *service = query[(__bridge id)kSecAttrService];
+    return [service containsString:@"AfterFirstUnlock"] || [service containsString:@"AccessibleAlways"];
+}
+
+static NSData *ApolloCanaryCacheGet(NSString *service) {
+    os_unfair_lock_lock(&sCanaryLock);
+    NSData *data = sCanaryCache[service];
+    os_unfair_lock_unlock(&sCanaryLock);
+    return data;
+}
+
+static void ApolloCanaryCacheStore(NSString *service, NSData *data) {
+    os_unfair_lock_lock(&sCanaryLock);
+    if (!sCanaryCache) sCanaryCache = [NSMutableDictionary dictionary];
+    sCanaryCache[service] = data;
+    os_unfair_lock_unlock(&sCanaryLock);
+}
+
+// A write without an account can match the canary too, so only an explicit other account is
+// known not to touch it.
+static void ApolloCanaryCacheInvalidateForWrite(NSDictionary *query) {
+    if (!IsValetQuery(query)) return;
+    id account = query[(__bridge id)kSecAttrAccount];
+    if (account && ![account isEqual:kApolloValetCanaryAccount]) return;
+    os_unfair_lock_lock(&sCanaryLock);
+    [sCanaryCache removeAllObjects];
+    os_unfair_lock_unlock(&sCanaryLock);
+}
+
 // MARK: - Scoped-read recovery via enumeration
 //
 // Confirmed root cause (device logs, two signers). On these keychains every SCOPED Valet read
@@ -1245,6 +1289,7 @@ static void ApolloDeleteStaleKeychainItem(NSDictionary *query) {
 
 static OSStatus SecItemAdd_replacement(CFDictionaryRef query, CFTypeRef *result) {
     NSDictionary *strippedQuery = stripGroupAccessAttr(query);
+    ApolloCanaryCacheInvalidateForWrite(strippedQuery);
 #if APOLLO_SIM_BUILD
     if (IsValetQuery(strippedQuery) || IsMessageDraftQuery(strippedQuery)) {
         id value = strippedQuery[(__bridge id)kSecValueData];
@@ -1374,6 +1419,12 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
         }
     }
 
+    BOOL canaryQuery = ApolloIsCacheableCanaryQuery(strippedQuery);
+    if (canaryQuery) {
+        NSData *cached = ApolloCanaryCacheGet(strippedQuery[(__bridge id)kSecAttrService]);
+        if (cached) return ApolloMirrorServe(strippedQuery, cached, result);
+    }
+
     // Dev-only fault injection: force the account scoped read to miss so the wipe->recover chain
     // can be exercised on a healthy device (see "fault injection" above). Skips the real reads
     // for the accounts item and drops straight to -25300, exactly as an affected device does.
@@ -1392,6 +1443,12 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
                 ApolloKeychainTrace(@"COPY-broadened", strippedQuery, status, nil);
             }
         }
+    }
+
+    if (canaryQuery && status == errSecSuccess && result && *result) {
+        id served = (__bridge id)*result;
+        NSData *data = [served isKindOfClass:[NSDictionary class]] ? served[(__bridge id)kSecValueData] : served;
+        if ([data isKindOfClass:[NSData class]]) ApolloCanaryCacheStore(strippedQuery[(__bridge id)kSecAttrService], data);
     }
 
     // Last-resort read recovery (see "Scoped-read recovery via enumeration" above): on the
@@ -1457,6 +1514,7 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
 
 static OSStatus SecItemUpdate_replacement(CFDictionaryRef query, CFDictionaryRef attributesToUpdate) {
     NSDictionary *strippedQuery = stripGroupAccessAttr(query);
+    ApolloCanaryCacheInvalidateForWrite(strippedQuery);
     NSDictionary *attrs = (__bridge NSDictionary *)attributesToUpdate;
 
     // Block attempts to disable Ultra/Pro
@@ -1547,6 +1605,7 @@ static OSStatus SecItemUpdate_replacement(CFDictionaryRef query, CFDictionaryRef
 
 static OSStatus SecItemDelete_replacement(CFDictionaryRef query) {
     NSDictionary *strippedQuery = stripGroupAccessAttr(query);
+    ApolloCanaryCacheInvalidateForWrite(strippedQuery);
 #if APOLLO_SIM_BUILD
     if (IsValetQuery(strippedQuery) || IsMessageDraftQuery(strippedQuery)) {
         NSString *key = SimKeychainKey(strippedQuery[(__bridge id)kSecAttrService], strippedQuery[(__bridge id)kSecAttrAccount]);

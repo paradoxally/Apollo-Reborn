@@ -131,6 +131,13 @@ void ApolloApplyInheritedSettingsTableTheme(UITableViewController *controller);
 // cells' colors can be stale — callers sampling a cell's color from an
 // inherited source table should check this before trusting the sample.
 BOOL ApolloThemeSourceTableIsStale(UITableView *sourceTable);
+UIImage *ApolloSettingsIconImage(UIImage *lightImage, UIImage *darkImage, UITraitCollection *traits);
+UIImage *ApolloResizeSettingsIconImage(UIImage *image, CGFloat size, UITraitCollection *traits);
+UIImage *ApolloResolveSettingsIconImage(UIImage *image, UITraitCollection *traits);
+void ApolloSetSettingsIconAppearance(NSInteger appearance);
+// Draws both tile appearances; nil traits uses current traits.
+UIImage *ApolloSettingsTileImage(UIColor *color, CGFloat size, UITraitCollection *traits,
+                                void (^drawContent)(BOOL dark, UIColor *resolvedColor));
 UIImage *ApolloEmojiSettingsIcon(NSString *emoji, UIColor *backgroundColor, CGFloat size);
 UIImage *ApolloBuyMeACoffeeSettingsIcon(CGFloat size);
 UIImage *ApolloRebornOptionsSettingsIcon(CGFloat size);
@@ -181,6 +188,12 @@ BOOL ApolloIsJunkNumericTitle(NSString *title);
 // labels are uppercased as acronyms; longer ones are title-cased. Returns nil
 // when no usable name can be derived (e.g. a raw IP host).
 NSString *ApolloWebsiteNameFromHost(NSString *host);
+
+// Real mobile Safari user agent for this OS version (the same string the
+// scrape web views send). WKWebView's default UA is missing the trailing
+// "Version/x ... Safari" token, which marks requests as coming from an
+// embedded web view; Google's sign-in can refuse those.
+NSString *ApolloMobileSafariUserAgent(void);
 
 // Returns the URL string a LinkButtonNode is presenting, by reading either
 // the obj-c .url getter (older iOS) or the urlTextNode's attributed text

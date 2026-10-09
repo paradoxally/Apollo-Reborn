@@ -159,6 +159,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloFindInCommentsGlass.xm \
     $(SRC_DIR)/ApolloStatsRowTouch.xm \
     $(SRC_DIR)/ApolloCommentVoteFlicker.xm \
+    $(SRC_DIR)/ApolloFeedSubredditIcons.xm \
     $(SRC_DIR)/ApolloPostedCommentInsert.xm \
     $(SRC_DIR)/ApolloLoadMoreComments.xm \
     $(SRC_DIR)/ApolloCommentSubmitFailure.xm \
@@ -173,6 +174,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloTabBarTitles.xm \
     $(SRC_DIR)/ApolloScrollEdgePopFix.xm \
     $(SRC_DIR)/ApolloInterruptibleNavTransition.xm \
+    $(SRC_DIR)/ApolloSystemBackSwipeGuard.xm \
     $(SRC_DIR)/ApolloLiquidGlassIconPicker.xm \
     $(SRC_DIR)/ApolloModmailLayout.xm \
     $(SRC_DIR)/ApolloModmailSubjectCounter.xm \
@@ -241,6 +243,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloVideoSwipeFix.xm \
     $(SRC_DIR)/ApolloVideoPlaybackSpeed.xm \
     $(SRC_DIR)/ApolloVideoHoldSpeed.xm \
+    $(SRC_DIR)/ApolloYouTubeCaptions.xm \
     $(SRC_DIR)/ApolloPictureInPicture.xm \
     $(SRC_DIR)/ApolloScrollToTop.xm \
     $(SRC_DIR)/ApolloFloatingTabs.xm \
@@ -310,11 +313,13 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloVisionOSHover.xm \
     $(SRC_DIR)/ApolloVisionOSMultiwindow.xm \
     $(SRC_DIR)/ApolloWebAuthViewController.m \
+    $(SRC_DIR)/ApolloWebAuthPopupViewController.m \
     $(SRC_DIR)/ApolloWebJSON.m \
     $(SRC_DIR)/ApolloWebJSONWriteRepair.m \
     $(SRC_DIR)/ApolloWebJSONIdentity.xm \
     $(SRC_DIR)/ApolloWebSessionLoginViewController.m \
     $(SRC_DIR)/ApolloWebSessionStore.m \
+    $(SRC_DIR)/ApolloProfileEditorWebViewController.m \
     $(SRC_DIR)/ApolloPollVoting.xm \
     $(SRC_DIR)/ApolloPollCompose.xm \
     $(SRC_DIR)/settings/ApolloPollSettingsViewController.m \
@@ -366,6 +371,8 @@ ApolloReborn_FILES = \
     $(KSCRASH_FILES) \
     $(SSZIPARCHIVE_FILES)
 ApolloReborn_FRAMEWORKS = UIKit Security AVFoundation AVKit OSLog NaturalLanguage ImageIO StoreKit Photos PhotosUI SafariServices SystemConfiguration WebKit AuthenticationServices CoreImage Vision LinkPresentation SwiftUI UniformTypeIdentifiers Metal QuartzCore CoreMotion
+# The YouTube caption guard reads the per-app subtitle setting (ApolloYouTubeCaptions.xm).
+ApolloReborn_FRAMEWORKS += MediaAccessibility
 ApolloReborn_LIBRARIES = z iconv
 # FoundationModels (Apple on-device AI) only ships in the iOS 26+ SDK. Weak-link
 # it so the dylib still loads on older OSes (the Swift bridge guards every call
@@ -417,7 +424,8 @@ ApolloReborn_CFLAGS += \
 # the Swift module-interface build, where a C++ -std flag is a hard error.
 ApolloReborn_LIBRARIES += c++
 
-ApolloReborn_BUNDLE_RESOURCE_DIRS = Resources
+SETTINGS_ICON_RESOURCES = $(THEOS_PROJECT_DIR)/.theos/settings-icon-resources
+ApolloReborn_BUNDLE_RESOURCE_DIRS = Resources $(SETTINGS_ICON_RESOURCES)
 ApolloReborn_BUNDLE_RESOURCES = \
     assets/bark-icons/low-battery.png \
     assets/bark-icons/palette.png \
@@ -483,7 +491,14 @@ endif
 CONTROL_FILE = $(THEOS_PROJECT_DIR)/control
 
 # Generate Version.h and the checked-in catalogs/asset manifests.
-before-all:: generate_version_h generate_theme_gallery_catalog generate_whats_new_catalog generate_bark_icon_names
+before-all:: generate_version_h generate_theme_gallery_catalog generate_whats_new_catalog generate_bark_icon_names generate_settings_icon_resources
+
+# Reuse picker artwork in builds that don't bundle the extended app catalog.
+.PHONY: generate_settings_icon_resources
+generate_settings_icon_resources:
+	@mkdir -p "$(SETTINGS_ICON_RESOURCES)"
+	@cp "$(THEOS_PROJECT_DIR)/liquid-glass/icons/helios/default.png" "$(SETTINGS_ICON_RESOURCES)/lg-preview-helios-default.png"
+	@cp "$(THEOS_PROJECT_DIR)/liquid-glass/icons/helios/dark.png" "$(SETTINGS_ICON_RESOURCES)/lg-preview-helios-dark.png"
 
 generate_version_h:
 	@echo "Generating Version.h from control file"

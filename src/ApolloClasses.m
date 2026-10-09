@@ -55,6 +55,7 @@ Class ApolloClassLGFeaturedStripCell;
 Class ApolloClassLGPackGridRowCell;
 Class ApolloClassLargePostCellNode;
 Class ApolloClassLinkButtonNode;
+Class ApolloClassListAdapter;
 Class ApolloClassMFMailComposeViewController;
 Class ApolloClassMFMessageComposeViewController;
 Class ApolloClassMarkdownNode;
@@ -184,6 +185,7 @@ __attribute__((constructor)) static void ApolloClassesResolve(void) {
     ApolloClassLGPackGridRowCell = objc_getClass("LGPackGridRowCell");
     ApolloClassLargePostCellNode = objc_getClass("_TtC6Apollo17LargePostCellNode");
     ApolloClassLinkButtonNode = objc_getClass("_TtC6Apollo14LinkButtonNode");
+    ApolloClassListAdapter = objc_getClass("_TtC6Apollo11ListAdapter");
     ApolloClassMFMailComposeViewController = objc_getClass("MFMailComposeViewController");
     ApolloClassMFMessageComposeViewController = objc_getClass("MFMessageComposeViewController");
     ApolloClassMarkdownNode = objc_getClass("_TtC6Apollo12MarkdownNode");

@@ -472,6 +472,9 @@ static NSString *const kApolloValetCanaryAccount = @"VAL_KeychainCanaryUsername"
 static os_unfair_lock sCanaryLock = OS_UNFAIR_LOCK_INIT;
 static NSMutableDictionary<NSString *, NSData *> *sCanaryCache;
 static uint64_t sCanaryGeneration;
+// Services whose canary failed the class check; cleared by the next canary write, so a read
+// pays that extra attributes query at most once per write instead of on every read.
+static NSMutableSet<NSString *> *sCanaryRejected;
 
 static BOOL ApolloIsCacheableCanaryQuery(NSDictionary *query) {
     if (!ApolloIsSingleItemValetQuery(query)) return NO;
@@ -517,6 +520,22 @@ static BOOL ApolloCanaryItemHasPersistentClass(NSDictionary *query) {
         || [protection isEqual:(__bridge id)kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly];
 }
 
+static BOOL ApolloCanaryIsRejected(NSString *service) {
+    os_unfair_lock_lock(&sCanaryLock);
+    BOOL rejected = [sCanaryRejected containsObject:service];
+    os_unfair_lock_unlock(&sCanaryLock);
+    return rejected;
+}
+
+static void ApolloCanaryReject(NSString *service, uint64_t readGeneration) {
+    os_unfair_lock_lock(&sCanaryLock);
+    if (readGeneration == sCanaryGeneration) {
+        if (!sCanaryRejected) sCanaryRejected = [NSMutableSet set];
+        [sCanaryRejected addObject:service];
+    }
+    os_unfair_lock_unlock(&sCanaryLock);
+}
+
 // Absent attributes act as wildcards in a keychain write, so only an explicit other account or
 // a non-Valet service rules the canary out.
 static BOOL ApolloCanaryWriteMayTouch(NSDictionary *query) {
@@ -530,6 +549,7 @@ static void ApolloCanaryCacheInvalidate(void) {
     os_unfair_lock_lock(&sCanaryLock);
     sCanaryGeneration++;
     [sCanaryCache removeAllObjects];
+    [sCanaryRejected removeAllObjects];
     os_unfair_lock_unlock(&sCanaryLock);
 }
 
@@ -1468,6 +1488,7 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
 
     BOOL canaryQuery = ApolloIsCacheableCanaryQuery(strippedQuery);
     uint64_t canaryGeneration = 0;
+    NSDictionary *servedQuery = strippedQuery;
     if (canaryQuery) {
         NSData *cached = ApolloCanaryCacheGet(strippedQuery[(__bridge id)kSecAttrService]);
         if (cached) return ApolloMirrorServe(strippedQuery, cached, result);
@@ -1489,6 +1510,7 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
             NSDictionary *broadened = ApolloQueryByBroadeningSynchronizable(strippedQuery);
             if (broadened != strippedQuery) {
                 status = ApolloRealSecItemCopyMatching(broadened, result);
+                if (status == errSecSuccess) servedQuery = broadened;
                 ApolloKeychainTrace(@"COPY-broadened", strippedQuery, status, nil);
             }
         }
@@ -1497,8 +1519,13 @@ static OSStatus SecItemCopyMatching_replacement(CFDictionaryRef query, CFTypeRef
     if (canaryQuery && status == errSecSuccess && result && *result) {
         id served = (__bridge id)*result;
         NSData *data = [served isKindOfClass:[NSDictionary class]] ? served[(__bridge id)kSecValueData] : served;
-        if ([data isKindOfClass:[NSData class]] && ApolloCanaryItemHasPersistentClass(strippedQuery)) {
-            ApolloCanaryCacheStore(strippedQuery[(__bridge id)kSecAttrService], data, canaryGeneration);
+        NSString *service = strippedQuery[(__bridge id)kSecAttrService];
+        if ([data isKindOfClass:[NSData class]] && !ApolloCanaryIsRejected(service)) {
+            if (ApolloCanaryItemHasPersistentClass(servedQuery)) {
+                ApolloCanaryCacheStore(service, data, canaryGeneration);
+            } else {
+                ApolloCanaryReject(service, canaryGeneration);
+            }
         }
     }
 

@@ -1186,10 +1186,11 @@ static NSString *ApolloAMMenuSummary(NSString *context) {
 
     // The summary can add or remove a subtitle, so let the table ask each
     // affected row for its new measured height without reloading the cells.
-    [UIView performWithoutAnimation:^{
+    // Kept in place: from viewWillAppear: an updates pass otherwise moves the
+    // list when the top edge sits inside a section footer (settings README).
+    [self performUpdateKeepingVisibleRowsInPlace:^{
         [self.tableView beginUpdates];
         [self.tableView endUpdates];
-        [self.tableView layoutIfNeeded];
     }];
 }
 

@@ -161,7 +161,10 @@ static UIImage *ApolloPixelPalsSettingsIcon(UIImage *artwork, UITraitCollection 
                                           29.0, traits, ^(__unused BOOL dark, __unused UIColor *resolvedColor) {
         CGFloat displayScale = traits.displayScale ?: UIScreen.mainScreen.scale;
         // Whole screen pixels per sprite pixel keep the original pixel art crisp.
-        CGFloat factor = floor(24.0 * displayScale / MAX(pet.size.width, pet.size.height)) / displayScale;
+        CGFloat maxSide = MAX(pet.size.width, pet.size.height);
+        CGFloat factor = floor(24.0 * displayScale / maxSide) / displayScale;
+        // A sprite wider than the tile's pixels would floor to zero and vanish.
+        if (factor <= 0) factor = 24.0 / maxSide;
         CGSize size = CGSizeMake(pet.size.width * factor, pet.size.height * factor);
         CGPoint origin = CGPointMake(round((29 - size.width) * displayScale / 2) / displayScale,
                                      round((29 - size.height) * displayScale / 2) / displayScale);

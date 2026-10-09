@@ -25,8 +25,11 @@ grep -Fq 'if (selfType == sStringMetadata && otherType == sStringMetadata) {' "$
     fail 'only String/String calls may take the fast path'
 grep -Fq 'if (decided >= 0) return decided == 1;' "$source_file" || \
     fail 'a deferred decision must fall through to Foundation'
-grep -Fq 'header->filetype != MH_EXECUTE' "$source_file" || \
-    fail 'the rebind must stay limited to Apollo'"'"'s executable'
+grep -Fq 'class_getImageName(ApolloClassPostsViewController)' "$source_file" || \
+    fail 'the rebind must target the image that defines Apollo'"'"'s classes (LiveContainer loads Apollo as a dylib)'
+if grep -Fq 'MH_EXECUTE' "$source_file"; then
+    fail 'do not pick the image by MH_EXECUTE; under LiveContainer that is the host'
+fi
 if grep -En 'rebind_symbols\(' "$source_file"; then
     fail 'use rebind_symbols_image on Apollo only, never a global rebind'
 fi

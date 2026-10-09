@@ -8,13 +8,16 @@
 // ASCII-keyword case with a byte search and leaves every other call to
 // Foundation.
 //
-// Only the main executable (Apollo) is rebound; other images keep
-// Foundation's implementation.
+// Only Apollo's own image is rebound; other images keep Foundation's
+// implementation.
 
 #import <Foundation/Foundation.h>
 #import <dlfcn.h>
 #import <mach-o/dyld.h>
+#import <objc/runtime.h>
+#import <string.h>
 
+#import "ApolloClasses.h"
 #import "ApolloCommon.h"
 #import "fishhook.h"
 
@@ -54,10 +57,13 @@ __attribute__((constructor)) static void ApolloFastStringContainsInit(void) {
     sStringMetadata = dlsym(RTLD_DEFAULT, "$sSSN");
     if (!sStringMetadata) return;
 
-    for (uint32_t i = 0; i < _dyld_image_count(); i++) {
-        const struct mach_header *header = _dyld_get_image_header(i);
-        if (!header || header->filetype != MH_EXECUTE) continue;
-        rebind_symbols_image((void *)header, _dyld_get_image_vmaddr_slide(i), (struct rebinding[1]){
+    // Apollo's executable normally, a dylib under LiveContainer, where the
+    // host app is the main executable.
+    const char *imageName = ApolloClassPostsViewController ? class_getImageName(ApolloClassPostsViewController) : NULL;
+    for (uint32_t i = 0; imageName && i < _dyld_image_count(); i++) {
+        const char *candidate = _dyld_get_image_name(i);
+        if (!candidate || strcmp(candidate, imageName) != 0) continue;
+        rebind_symbols_image((void *)_dyld_get_image_header(i), _dyld_get_image_vmaddr_slide(i), (struct rebinding[1]){
             {kApolloContainsSymbol, (void *)ApolloFastContains, (void **)&sOriginalContains}
         }, 1);
         ApolloLog(@"[FastStringContains] installed: original=%p", sOriginalContains);

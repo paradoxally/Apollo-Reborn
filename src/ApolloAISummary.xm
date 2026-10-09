@@ -168,11 +168,7 @@ BOOL ApolloAIOnDeviceCanWrite(NSString *identifier) {
 // separates Simplified from Traditional Chinese, and a region adds nothing a
 // summary needs. nil when no candidate fits; the prompts then name no language
 // and the model answers in the text's language, as before.
-NSString *ApolloAISummaryLanguage(BOOL *picked) {
-    // The router's predicate, not "a cloud provider is selected": with a provider
-    // picked but no key yet, the on-device model writes the summary, so its
-    // language must pass the on-device filter.
-    BOOL cloud = ApolloAICloudConfigured();
+static NSString *ApolloAISummaryLanguageForBackend(BOOL cloud, BOOL *picked) {
     NSSet<NSString *> *writable = cloud ? nil : ApolloAIOnDeviceLanguageCodes();
     NSMutableArray<NSString *> *candidates = [NSMutableArray array];
     // If the on-device model didn't say what it writes, skip the picked language
@@ -192,6 +188,14 @@ NSString *ApolloAISummaryLanguage(BOOL *picked) {
         if (picked) *picked = choiceIsCandidate && i == 0;
         break;
     }
+    return summaryLanguage;
+}
+
+NSString *ApolloAISummaryLanguage(BOOL *picked) {
+    // The router's predicate, not "a cloud provider is selected": with a provider
+    // picked but no key yet, the on-device model writes the summary, so its
+    // language must pass the on-device filter.
+    NSString *summaryLanguage = ApolloAISummaryLanguageForBackend(ApolloAICloudConfigured(), picked);
     // Logged when it changes (first use, a Language or provider switch),
     // not per call: header restores ask again on every scroll-in.
     static NSString *sLoggedLanguage;
@@ -208,13 +212,37 @@ NSString *ApolloAISummaryLanguage(BOOL *picked) {
 // summary rules, the on-device model still answered the Record (Portuguese)
 // article in Portuguese; leading, it answers in the reader's language for every
 // prompt and detail level here. Unchanged when there is no summary language.
-static NSString *ApolloAIInSummaryLanguage(NSString *instructions) {
-    NSString *language = ApolloAISummaryLanguage(NULL);
+static NSString *ApolloAISummaryLanguageLead(NSString *language) {
     NSString *name = language.length > 0
         ? [[NSLocale localeWithLocaleIdentifier:@"en_US"] localizedStringForLocaleIdentifier:language]
         : nil;
-    if (name.length == 0) return instructions;
-    return [NSString stringWithFormat:@"You MUST respond in %@. %@", name, instructions];
+    return name.length > 0 ? [NSString stringWithFormat:@"You MUST respond in %@. ", name] : nil;
+}
+
+static NSString *ApolloAIInSummaryLanguage(NSString *instructions) {
+    NSString *lead = ApolloAISummaryLanguageLead(ApolloAISummaryLanguage(NULL));
+    return lead ? [lead stringByAppendingString:instructions] : instructions;
+}
+
+// The language the on-device model writes when it takes over from a failed
+// cloud request: the cloud pass's language when the model can write it, else
+// what on-device mode would pick (the next device language it writes).
+static NSString *ApolloAIOnDeviceFallbackLanguage(void) {
+    return ApolloAISummaryLanguageForBackend(NO, NULL);
+}
+
+// The cloud pass's instructions, re-led for the on-device fallback. Asking the
+// on-device model for a language it can't write throws
+// unsupportedLanguageOrLocale, so a cloud-only pick (Greek, say) falls back in
+// the on-device language instead of failing outright.
+static NSString *ApolloAIOnDeviceFallbackInstructions(NSString *instructions) {
+    NSString *cloudLead = ApolloAISummaryLanguageLead(ApolloAISummaryLanguageForBackend(YES, NULL));
+    NSString *deviceLead = ApolloAISummaryLanguageLead(ApolloAIOnDeviceFallbackLanguage());
+    if (cloudLead.length == 0 || ![instructions hasPrefix:cloudLead] || [cloudLead isEqualToString:deviceLead]) {
+        return instructions;
+    }
+    NSString *rules = [instructions substringFromIndex:cloudLead.length];
+    return deviceLead ? [deviceLead stringByAppendingString:rules] : rules;
 }
 
 static NSString *ApolloAIPostInstructionsForDetail(ApolloAISummaryDetail detail) {
@@ -2929,9 +2957,10 @@ static NSString *ApolloAITruncateForFM(NSString *prompt) {
 static NSString *const kApolloAIOnDeviceModelLabel = @"Apple Intelligence";
 
 // Stores the profile of the backend that actually wrote the summary. A cloud
-// pass that fell back to on-device is keyed "apple|<lang>", in the language
-// the pass used (the captured profile's last field), so the next open retries
-// cloud; ApolloAIProfileIsCurrent keeps it valid for the rest of this visit.
+// pass that fell back to on-device is keyed "apple|<lang>" in the language the
+// fallback wrote (ApolloAIOnDeviceFallbackInstructions), so the next open
+// retries cloud; ApolloAIProfileIsCurrent keeps it valid for the rest of this
+// visit.
 static void ApolloAIRecordGenerationProfile(BOOL isPost, NSString *fullName,
                                             NSString *generationProfile, NSString *modelLabel) {
     NSMutableDictionary<NSString *, NSString *> *profiles = isPost ? sPostSummaryProfiles : sCommentSummaryProfiles;
@@ -2939,8 +2968,7 @@ static void ApolloAIRecordGenerationProfile(BOOL isPost, NSString *fullName,
         profiles[fullName] = generationProfile;
         return;
     }
-    NSString *language = [generationProfile componentsSeparatedByString:@"|"].lastObject ?: @"";
-    profiles[fullName] = [@"apple|" stringByAppendingString:language];
+    profiles[fullName] = [@"apple|" stringByAppendingString:ApolloAIOnDeviceFallbackLanguage() ?: @""];
     [sAIFallbackAcceptedThisVisit addObject:[(isPost ? @"post|" : @"comment|") stringByAppendingString:fullName]];
 }
 
@@ -3006,10 +3034,11 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
         // prepareSession is a cheap no-op when the identifier was already
         // prewarmed with the same instructions (viewWillAppear), and stages a
         // correct session otherwise (e.g. a fallback whose prewarm was consumed).
-        [fmBridge prepareSession:identifier instructions:instructions];
+        NSString *fmInstructions = cloudError ? ApolloAIOnDeviceFallbackInstructions(instructions) : instructions;
+        [fmBridge prepareSession:identifier instructions:fmInstructions];
         [fmBridge summarize:fmText
                  identifier:identifier
-               instructions:instructions
+               instructions:fmInstructions
       maximumResponseTokens:fmResponseTokens
                   onPartial:onPartial
                  onComplete:^(NSString *final, NSError *error) {

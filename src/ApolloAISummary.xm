@@ -394,6 +394,13 @@ static NSMutableDictionary<NSString *, NSNumber *> *sCommentSummaryDetails;
 // language.
 static NSMutableDictionary<NSString *, NSString *> *sPostSummaryProfiles;
 static NSMutableDictionary<NSString *, NSString *> *sCommentSummaryProfiles;
+// "post|fullName" / "comment|fullName" for summaries the on-device fallback wrote
+// during the current visit. Their "apple|<lang>" profile never matches while a
+// cloud provider is configured, which is what retries cloud on the next open;
+// until then they must still count, or the card empties on the next header
+// restore and a same-visit generation pass writes the summary a second time.
+// Cleared in viewDidDisappear, like sTapRequested.
+static NSMutableSet<NSString *> *sAIFallbackAcceptedThisVisit;
 
 static NSString *ApolloAICurrentGenerationProfile(void) {
     // The summary language is part of what produced the text, so a summary in
@@ -414,18 +421,24 @@ static NSString *ApolloAICurrentGenerationProfile(void) {
     return [NSString stringWithFormat:@"%@|%@|%@|%@", sAISummaryProvider, model, endpoint, language];
 }
 
+static BOOL ApolloAIProfileIsCurrent(NSString *storedProfile, BOOL isPost, NSString *fullName) {
+    if ([storedProfile isEqualToString:ApolloAICurrentGenerationProfile()]) return YES;
+    NSString *key = [(isPost ? @"post|" : @"comment|") stringByAppendingString:fullName];
+    return storedProfile.length > 0 && [sAIFallbackAcceptedThisVisit containsObject:key];
+}
+
 static BOOL ApolloAIPostCacheMatchesCurrentDetail(NSString *fullName) {
     return sPostSummaryCache[fullName].length > 0 &&
         [sPostSummaryDetails[fullName] integerValue] ==
             ApolloAISanitizedDetail(sAIPostSummaryDetail) &&
-        [sPostSummaryProfiles[fullName] isEqualToString:ApolloAICurrentGenerationProfile()];
+        ApolloAIProfileIsCurrent(sPostSummaryProfiles[fullName], YES, fullName);
 }
 
 static BOOL ApolloAICommentCacheMatchesCurrentDetail(NSString *fullName) {
     return sCommentSummaryCache[fullName].length > 0 &&
         [sCommentSummaryDetails[fullName] integerValue] ==
             ApolloAISanitizedDetail(sAICommentSummaryDetail) &&
-        [sCommentSummaryProfiles[fullName] isEqualToString:ApolloAICurrentGenerationProfile()];
+        ApolloAIProfileIsCurrent(sCommentSummaryProfiles[fullName], NO, fullName);
 }
 // fullName -> unix time (seconds) the post/comment summary was last generated.
 // Drives age-based cache expiry so old (and stale-discussion) summaries are
@@ -804,6 +817,7 @@ static void ApolloAIEnsureState(void) {
         sPostSuppressed = [NSMutableSet set];
         sPostEmpty = [NSMutableSet set];
         sTapRequested = [NSMutableSet set];
+        sAIFallbackAcceptedThisVisit = [NSMutableSet set];
         ApolloAILoadPersistedSummaries();
     });
 }
@@ -843,6 +857,7 @@ NSUInteger ApolloAIClearSummaryCache(void) {
     [sPostSuppressed removeAllObjects];
     [sPostEmpty removeAllObjects];
     [sTapRequested removeAllObjects];
+    [sAIFallbackAcceptedThisVisit removeAllObjects];
     [sLinkSummaryPosts removeAllObjects];
     [sBothSummaryPosts removeAllObjects];
 
@@ -2913,6 +2928,22 @@ static NSString *ApolloAITruncateForFM(NSString *prompt) {
 // User-facing label for a summary produced by the on-device model.
 static NSString *const kApolloAIOnDeviceModelLabel = @"Apple Intelligence";
 
+// Stores the profile of the backend that actually wrote the summary. A cloud
+// pass that fell back to on-device is keyed "apple|<lang>", in the language
+// the pass used (the captured profile's last field), so the next open retries
+// cloud; ApolloAIProfileIsCurrent keeps it valid for the rest of this visit.
+static void ApolloAIRecordGenerationProfile(BOOL isPost, NSString *fullName,
+                                            NSString *generationProfile, NSString *modelLabel) {
+    NSMutableDictionary<NSString *, NSString *> *profiles = isPost ? sPostSummaryProfiles : sCommentSummaryProfiles;
+    if (![modelLabel isEqualToString:kApolloAIOnDeviceModelLabel] || [generationProfile hasPrefix:@"apple|"]) {
+        profiles[fullName] = generationProfile;
+        return;
+    }
+    NSString *language = [generationProfile componentsSeparatedByString:@"|"].lastObject ?: @"";
+    profiles[fullName] = [@"apple|" stringByAppendingString:language];
+    [sAIFallbackAcceptedThisVisit addObject:[(isPost ? @"post|" : @"comment|") stringByAppendingString:fullName]];
+}
+
 // Leading language directive for CLOUD requests only, in the summary language
 // (ApolloAISummaryLanguage). The instructions already open with upstream's
 // "You MUST respond in X", but cloud models still mirrored the thread's
@@ -3145,7 +3176,7 @@ static void ApolloAISummarizeArticleText(ApolloAISummaryRequest *request, NSStri
                 sPostSummaryMode[fullName] = @(ApolloAIDesiredPostMode(fullName));
                 if (modelLabel.length > 0) sPostSummaryModelLabels[fullName] = modelLabel;
                 sPostSummaryDetails[fullName] = @(detail);
-                sPostSummaryProfiles[fullName] = generationProfile;
+                ApolloAIRecordGenerationProfile(YES, fullName, generationProfile, modelLabel);
                 ApolloAIStampSummary(fullName);
                 ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateReady, final);
                 if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -3415,7 +3446,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                         sPostSummaryMode[fullName] = @(ApolloAIDesiredPostMode(fullName));
                         if (modelLabel.length > 0) sPostSummaryModelLabels[fullName] = modelLabel;
                         sPostSummaryDetails[fullName] = @(postDetail);
-                        sPostSummaryProfiles[fullName] = generationProfile;
+                        ApolloAIRecordGenerationProfile(YES, fullName, generationProfile, modelLabel);
                         ApolloAIStampSummary(fullName);
                         ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateReady, final);
                         if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -3546,7 +3577,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                         sCommentSummaryCache[fullName] = final;
                         if (modelLabel.length > 0) sCommentSummaryModelLabels[fullName] = modelLabel;
                         sCommentSummaryDetails[fullName] = @(commentDetail);
-                        sCommentSummaryProfiles[fullName] = generationProfile;
+                        ApolloAIRecordGenerationProfile(NO, fullName, generationProfile, modelLabel);
                         ApolloAIStampSummary(fullName);
                         sCommentSummarySourceCounts[fullName] = @(commentCount);
                         if (commentSignature.length > 0) {
@@ -3678,6 +3709,8 @@ static void ApolloAILogTableStructure(UIViewController *vc) {
         // regenerate on reopen without a fresh tap, defeating the point of the mode.
         [sTapRequested removeObject:[@"post|" stringByAppendingString:fullName]];
         [sTapRequested removeObject:[@"comment|" stringByAppendingString:fullName]];
+        [sAIFallbackAcceptedThisVisit removeObject:[@"post|" stringByAppendingString:fullName]];
+        [sAIFallbackAcceptedThisVisit removeObject:[@"comment|" stringByAppendingString:fullName]];
         if (!ApolloAIPostCacheMatchesCurrentDetail(fullName)) {
             ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateNone, nil);
         }

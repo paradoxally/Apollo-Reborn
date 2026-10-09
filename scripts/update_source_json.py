@@ -25,6 +25,10 @@ REBORN_ASSET_RE = re.compile(
     r"(?:-(?P<suffix>GLASSICONS-NOEXTENSIONS|GLASS-NOEXTENSIONS|GLASSICONS|NOEXTENSIONS|GLASS))?"
     r"\.ipa$"
 )
+# Any tag-shaped span. Autolinks never match: the scheme's ":" can't follow a
+# tag name. Code spans are skipped, so placeholders like `<key>` survive.
+HTML_TAG_RE = re.compile(r"</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>")
+CODE_SPAN_RE = re.compile(r"(`[^`]+`)")
 REBORN_SUFFIX_TO_PREFIX = {
     None: "",
     "GLASS": "GLASS",
@@ -72,6 +76,15 @@ def load_existing_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def strip_html_tags(text: str) -> str:
+    # split() with one capturing group leaves the code spans at odd indices.
+    segments = CODE_SPAN_RE.split(text)
+    for i in range(0, len(segments), 2):
+        segment = re.sub(r"<br\s*/?>", "\n", segments[i], flags=re.IGNORECASE)
+        segments[i] = HTML_TAG_RE.sub("", segment)
+    return "".join(segments)
+
+
 def markdown_to_plain_text(markdown: str) -> str:
     text = markdown.strip()
     if not text:
@@ -80,6 +93,16 @@ def markdown_to_plain_text(markdown: str) -> str:
     # AltStore/Feather version history renders descriptions as plain text, so
     # remove the most visible Markdown syntax while keeping the curated wording.
     text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    # Release bodies end with an HTML image table under "Screenshots", which
+    # plain-text renderers (sideloaders, the in-app release notes) show as raw
+    # tags. Drop that section up to the next heading, then any stray tags.
+    text = re.sub(
+        r"^#{1,6}[ \t]*Screenshots[ \t]*(?:\r?\n|\Z).*?(?=^#{1,6}[ \t]|\Z)",
+        "",
+        text,
+        flags=re.DOTALL | re.MULTILINE | re.IGNORECASE,
+    )
+    text = strip_html_tags(text)
     text = re.sub(r"`([^`]+)`", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"__([^_]+)__", r"\1", text)

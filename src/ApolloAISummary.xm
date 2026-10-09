@@ -212,11 +212,13 @@ NSString *ApolloAISummaryLanguage(BOOL *picked) {
 // summary rules, the on-device model still answered the Record (Portuguese)
 // article in Portuguese; leading, it answers in the reader's language for every
 // prompt and detail level here. Unchanged when there is no summary language.
+static NSString *const kApolloAISummaryLanguageLeadOpening = @"You MUST respond in ";
+
 static NSString *ApolloAISummaryLanguageLead(NSString *language) {
     NSString *name = language.length > 0
         ? [[NSLocale localeWithLocaleIdentifier:@"en_US"] localizedStringForLocaleIdentifier:language]
         : nil;
-    return name.length > 0 ? [NSString stringWithFormat:@"You MUST respond in %@. ", name] : nil;
+    return name.length > 0 ? [NSString stringWithFormat:@"%@%@. ", kApolloAISummaryLanguageLeadOpening, name] : nil;
 }
 
 static NSString *ApolloAIInSummaryLanguage(NSString *instructions) {
@@ -231,18 +233,23 @@ static NSString *ApolloAIOnDeviceFallbackLanguage(void) {
     return ApolloAISummaryLanguageForBackend(NO, NULL);
 }
 
-// The cloud pass's instructions, re-led for the on-device fallback. Asking the
-// on-device model for a language it can't write throws
+// The cloud pass's instructions, re-led in `language` for the on-device
+// fallback. Asking the on-device model for a language it can't write throws
 // unsupportedLanguageOrLocale, so a cloud-only pick (Greek, say) falls back in
-// the on-device language instead of failing outright.
-static NSString *ApolloAIOnDeviceFallbackInstructions(NSString *instructions) {
-    NSString *cloudLead = ApolloAISummaryLanguageLead(ApolloAISummaryLanguageForBackend(YES, NULL));
-    NSString *deviceLead = ApolloAISummaryLanguageLead(ApolloAIOnDeviceFallbackLanguage());
-    if (cloudLead.length == 0 || ![instructions hasPrefix:cloudLead] || [cloudLead isEqualToString:deviceLead]) {
-        return instructions;
+// the on-device language instead of failing outright. Whatever lead the
+// instructions were built with is replaced, not one re-derived from the
+// current setting, which may have changed while the cloud request ran.
+static NSString *ApolloAIOnDeviceFallbackInstructions(NSString *instructions, NSString *language) {
+    NSString *rules = instructions ?: @"";
+    if ([rules hasPrefix:kApolloAISummaryLanguageLeadOpening]) {
+        NSRange end = [rules rangeOfString:@". "
+                                   options:0
+                                     range:NSMakeRange(kApolloAISummaryLanguageLeadOpening.length,
+                                                       rules.length - kApolloAISummaryLanguageLeadOpening.length)];
+        if (end.location != NSNotFound) rules = [rules substringFromIndex:NSMaxRange(end)];
     }
-    NSString *rules = [instructions substringFromIndex:cloudLead.length];
-    return deviceLead ? [deviceLead stringByAppendingString:rules] : rules;
+    NSString *lead = ApolloAISummaryLanguageLead(language);
+    return lead ? [lead stringByAppendingString:rules] : rules;
 }
 
 static NSString *ApolloAIPostInstructionsForDetail(ApolloAISummaryDetail detail) {
@@ -2957,19 +2964,16 @@ static NSString *ApolloAITruncateForFM(NSString *prompt) {
 static NSString *const kApolloAIOnDeviceModelLabel = @"Apple Intelligence";
 
 // Stores the profile of the backend that actually wrote the summary. A cloud
-// pass that fell back to on-device is keyed "apple|<lang>" in the language the
-// fallback wrote (ApolloAIOnDeviceFallbackInstructions), so the next open
-// retries cloud; ApolloAIProfileIsCurrent keeps it valid for the rest of this
-// visit.
+// pass that fell back to on-device carries `fallbackProfile` ("apple|<lang>",
+// in the language the fallback wrote), so the next open retries cloud;
+// ApolloAIProfileIsCurrent keeps it valid for the rest of this visit.
 static void ApolloAIRecordGenerationProfile(BOOL isPost, NSString *fullName,
-                                            NSString *generationProfile, NSString *modelLabel) {
+                                            NSString *generationProfile, NSString *fallbackProfile) {
     NSMutableDictionary<NSString *, NSString *> *profiles = isPost ? sPostSummaryProfiles : sCommentSummaryProfiles;
-    if (![modelLabel isEqualToString:kApolloAIOnDeviceModelLabel] || [generationProfile hasPrefix:@"apple|"]) {
-        profiles[fullName] = generationProfile;
-        return;
+    profiles[fullName] = fallbackProfile ?: generationProfile;
+    if (fallbackProfile) {
+        [sAIFallbackAcceptedThisVisit addObject:[(isPost ? @"post|" : @"comment|") stringByAppendingString:fullName]];
     }
-    profiles[fullName] = [@"apple|" stringByAppendingString:ApolloAIOnDeviceFallbackLanguage() ?: @""];
-    [sAIFallbackAcceptedThisVisit addObject:[(isPost ? @"post|" : @"comment|") stringByAppendingString:fullName]];
 }
 
 // Leading language directive for CLOUD requests only, in the summary language
@@ -3010,11 +3014,14 @@ static NSString *ApolloAICloudLanguageDirective(void) {
 //
 // `modelLabel` names the backend that produced `final` ("gpt-5.4-mini",
 // "Apple Intelligence", ...) so callers can record it next to the cached
-// summary for the card's trust caption; nil on error.
+// summary for the card's trust caption; nil on error. `fallbackProfile` is set
+// only when the on-device fallback wrote `final`: "apple|<lang>" in the
+// language it was asked for, fixed when the fallback started.
 static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, NSString *instructions,
                                           NSInteger cloudResponseTokens, NSInteger fmResponseTokens,
                                           void (^onPartial)(NSString *partial),
-                                          void (^onComplete)(NSString *final, NSError *error, NSString *modelLabel)) {
+                                          void (^onComplete)(NSString *final, NSError *error, NSString *modelLabel,
+                                                             NSString *fallbackProfile)) {
     // Explicitly the FM backend, not ApolloAIBridge() — while a cloud provider
     // is selected that would hand back the cloud bridge and the "fallback"
     // would re-run the request that just failed.
@@ -3034,7 +3041,9 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
         // prepareSession is a cheap no-op when the identifier was already
         // prewarmed with the same instructions (viewWillAppear), and stages a
         // correct session otherwise (e.g. a fallback whose prewarm was consumed).
-        NSString *fmInstructions = cloudError ? ApolloAIOnDeviceFallbackInstructions(instructions) : instructions;
+        NSString *fmLanguage = cloudError ? ApolloAIOnDeviceFallbackLanguage() : nil;
+        NSString *fmInstructions = cloudError ? ApolloAIOnDeviceFallbackInstructions(instructions, fmLanguage) : instructions;
+        NSString *fallbackProfile = cloudError ? [@"apple|" stringByAppendingString:fmLanguage ?: @""] : nil;
         [fmBridge prepareSession:identifier instructions:fmInstructions];
         [fmBridge summarize:fmText
                  identifier:identifier
@@ -3042,19 +3051,19 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
       maximumResponseTokens:fmResponseTokens
                   onPartial:onPartial
                  onComplete:^(NSString *final, NSError *error) {
-                      if (!error) { onComplete(final, nil, kApolloAIOnDeviceModelLabel); return; }
+                      if (!error) { onComplete(final, nil, kApolloAIOnDeviceModelLabel, fallbackProfile); return; }
                       // A cancelled fallback keeps its own code-6 sentinel. The
                       // callers' navigation-teardown guards key on 6 and return
                       // silently; substituting the cloud error there would record
                       // a failure and paint an error card for a summary the user
                       // merely navigated away from, and the failure latch can then
                       // block regeneration when the thread is reopened.
-                      if (error.code == 6) { onComplete(nil, error, nil); return; }
+                      if (error.code == 6) { onComplete(nil, error, nil, nil); return; }
                       if (cloudError) {
                           ApolloLog(@"[AISummary] on-device fallback also failed (code %ld); reporting the cloud error (code %ld)",
                                     (long)error.code, (long)cloudError.code);
                       }
-                      onComplete(nil, cloudError ?: error, nil);
+                      onComplete(nil, cloudError ?: error, nil, nil);
                  }];
     };
 
@@ -3074,8 +3083,8 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
                       maximumResponseTokens:cloudResponseTokens
                                   onPartial:onPartial
                                  onComplete:^(NSString *final, NSError *error) {
-        if (!error && final.length > 0) { onComplete(final, nil, cloudModelLabel); return; }
-        if (error.code == 6) { onComplete(nil, error, nil); return; }   // cancelled: never fall back
+        if (!error && final.length > 0) { onComplete(final, nil, cloudModelLabel, nil); return; }
+        if (error.code == 6) { onComplete(nil, error, nil, nil); return; }   // cancelled: never fall back
         if (ApolloAIFMUsable()) {
             ApolloLog(@"[AISummary] cloud failed for %@ (code %ld) — falling back to on-device",
                       identifier, (long)error.code);
@@ -3084,7 +3093,7 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
         }
         onComplete(nil, error ?: [NSError errorWithDomain:ApolloAICloudBridgeErrorDomain
                                                      code:12
-                                                 userInfo:@{NSLocalizedDescriptionKey: @"Cloud generation failed"}], nil);
+                                                 userInfo:@{NSLocalizedDescriptionKey: @"Cloud generation failed"}], nil, nil);
     }];
 }
 
@@ -3165,7 +3174,7 @@ static void ApolloAISummarizeArticleText(ApolloAISummaryRequest *request, NSStri
             ^(NSString *partial) {
                 ApolloAIApplyStreamingPartial(request, partial);
             },
-            ^(NSString *final, NSError *error, NSString *modelLabel) {
+            ^(NSString *final, NSError *error, NSString *modelLabel, NSString *fallbackProfile) {
                 if (!ApolloAIFinishRequest(request)) return;
                 if (error.code == 6) return; // navigation cancellation
                 final = ApolloAINormalizeGeneratedSummary(final);
@@ -3205,7 +3214,7 @@ static void ApolloAISummarizeArticleText(ApolloAISummaryRequest *request, NSStri
                 sPostSummaryMode[fullName] = @(ApolloAIDesiredPostMode(fullName));
                 if (modelLabel.length > 0) sPostSummaryModelLabels[fullName] = modelLabel;
                 sPostSummaryDetails[fullName] = @(detail);
-                ApolloAIRecordGenerationProfile(YES, fullName, generationProfile, modelLabel);
+                ApolloAIRecordGenerationProfile(YES, fullName, generationProfile, fallbackProfile);
                 ApolloAIStampSummary(fullName);
                 ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateReady, final);
                 if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -3446,7 +3455,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                     ^(NSString *partial) {
                         ApolloAIApplyStreamingPartial(request, partial);
                     },
-                    ^(NSString *final, NSError *error, NSString *modelLabel) {
+                    ^(NSString *final, NSError *error, NSString *modelLabel, NSString *fallbackProfile) {
                         if (!ApolloAIFinishRequest(request)) return;
                         if (error.code == 6) return; // navigation cancellation
                         final = ApolloAINormalizeGeneratedSummary(final);
@@ -3475,7 +3484,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                         sPostSummaryMode[fullName] = @(ApolloAIDesiredPostMode(fullName));
                         if (modelLabel.length > 0) sPostSummaryModelLabels[fullName] = modelLabel;
                         sPostSummaryDetails[fullName] = @(postDetail);
-                        ApolloAIRecordGenerationProfile(YES, fullName, generationProfile, modelLabel);
+                        ApolloAIRecordGenerationProfile(YES, fullName, generationProfile, fallbackProfile);
                         ApolloAIStampSummary(fullName);
                         ApolloAISetBoxStateOnMatchingHeaders(fullName, YES, ApolloAIBoxStateReady, final);
                         if (ApolloAIAnyHeaderExpanded(fullName, YES)) {
@@ -3578,7 +3587,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                     ^(NSString *partial) {
                         ApolloAIApplyStreamingPartial(request, partial);
                     },
-                    ^(NSString *final, NSError *error, NSString *modelLabel) {
+                    ^(NSString *final, NSError *error, NSString *modelLabel, NSString *fallbackProfile) {
                         if (!ApolloAIFinishRequest(request)) return;
                         if (error.code == 6) return; // navigation cancellation
                         final = ApolloAINormalizeGeneratedSummary(final);
@@ -3606,7 +3615,7 @@ static void ApolloAIGenerateForController(UIViewController *vc) {
                         sCommentSummaryCache[fullName] = final;
                         if (modelLabel.length > 0) sCommentSummaryModelLabels[fullName] = modelLabel;
                         sCommentSummaryDetails[fullName] = @(commentDetail);
-                        ApolloAIRecordGenerationProfile(NO, fullName, generationProfile, modelLabel);
+                        ApolloAIRecordGenerationProfile(NO, fullName, generationProfile, fallbackProfile);
                         ApolloAIStampSummary(fullName);
                         sCommentSummarySourceCounts[fullName] = @(commentCount);
                         if (commentSignature.length > 0) {

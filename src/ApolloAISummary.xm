@@ -169,7 +169,10 @@ BOOL ApolloAIOnDeviceCanWrite(NSString *identifier) {
 // summary needs. nil when no candidate fits; the prompts then name no language
 // and the model answers in the text's language, as before.
 NSString *ApolloAISummaryLanguage(BOOL *picked) {
-    BOOL cloud = sAISummaryProvider.length > 0 && ![sAISummaryProvider isEqualToString:@"apple"];
+    // The router's predicate, not "a cloud provider is selected": with a provider
+    // picked but no key yet, the on-device model writes the summary, so its
+    // language must pass the on-device filter.
+    BOOL cloud = ApolloAICloudConfigured();
     NSSet<NSString *> *writable = cloud ? nil : ApolloAIOnDeviceLanguageCodes();
     NSMutableArray<NSString *> *candidates = [NSMutableArray array];
     // If the on-device model didn't say what it writes, skip the picked language
@@ -369,38 +372,13 @@ static inline NSTimeInterval ApolloAIGenerationTimeout(void) {
 #endif
 }
 
-// Language the cloud directive pins output to: the device's preferred language
-// plus its script variant when the locale carries one (zh-Hans vs zh-Hant,
-// sr-Cyrl vs sr-Latn), region dropped — the region never changes the writing
-// system, but the script does.
-static NSString *ApolloAIDirectiveLanguageIdentifier(void) {
-    NSString *preferred = [NSLocale preferredLanguages].firstObject ?: @"en";
-    NSDictionary *parts = [NSLocale componentsFromLocaleIdentifier:preferred];
-    NSString *lang = parts[NSLocaleLanguageCode] ?: @"en";
-    NSString *script = parts[NSLocaleScriptCode];
-    return script.length > 0 ? [NSString stringWithFormat:@"%@-%@", lang, script] : lang;
-}
-
-// English display name for the directive ("Portuguese", "Chinese (Simplified)").
-static NSString *ApolloAIDirectiveLanguageName(void) {
-    NSString *identifier = ApolloAIDirectiveLanguageIdentifier();
-    NSLocale *english = [NSLocale localeWithLocaleIdentifier:@"en_US"];
-    NSString *name = [english localizedStringForLocaleIdentifier:identifier]
-        ?: [english localizedStringForLanguageCode:identifier];
-    return name ?: @"English";
-}
-
 // v5: retuned prompts (per-detail instructions + token budgets from #687) plus
-// the leading cloud language directive — cached summaries generated under the
-// old scheme must regenerate. The directive language is folded in so a
-// device-language change also invalidates summaries made in the previous one.
-// Per-entry (detail, generation-profile) invalidation (below) handles model and
-// detail-level changes without dropping the whole cache.
-static NSString *const kApolloAICacheVersionBase = @"5";
-static NSString *ApolloAIEffectiveCacheVersion(void) {
-    return [NSString stringWithFormat:@"%@/%@",
-            kApolloAICacheVersionBase, ApolloAIDirectiveLanguageIdentifier()];
-}
+// the leading cloud language directive. The summary language lives in each
+// entry's generation profile, so a language change regenerates per entry; the
+// fork's old "5/<device language>" versions are dropped once on upgrade.
+// Per-entry (detail, generation-profile) invalidation (below) also handles
+// model and detail-level changes without dropping the whole cache.
+static NSString *const kApolloAICacheVersion = @"5";
 
 #pragma mark - Per-session caches / in-flight guard
 
@@ -696,7 +674,7 @@ static void ApolloAIEvictOldestEntries(NSMutableDictionary *cache, NSDictionary 
 static void ApolloAILoadPersistedSummaries(void) {
     NSDictionary *root = [NSDictionary dictionaryWithContentsOfFile:ApolloAISummariesCachePath()];
     if (![root isKindOfClass:[NSDictionary class]]) return;
-    if (![root[@"version"] isEqualToString:ApolloAIEffectiveCacheVersion()]) {
+    if (![root[@"version"] isEqualToString:kApolloAICacheVersion]) {
         ApolloLog(@"[AISummary] ignoring stale summary cache version %@", root[@"version"] ?: @"(none)");
         return;
     }
@@ -776,7 +754,7 @@ static void ApolloAIPersistSummaries(void) {
                 return m;
             };
         NSDictionary *root = @{
-            @"version": ApolloAIEffectiveCacheVersion(),
+            @"version": kApolloAICacheVersion,
             @"post": post,
             @"comment": comment,
             @"commentSourceCounts": prune(sourceCountSnapshot, commentKeys),
@@ -2935,19 +2913,25 @@ static NSString *ApolloAITruncateForFM(NSString *prompt) {
 // User-facing label for a summary produced by the on-device model.
 static NSString *const kApolloAIOnDeviceModelLabel = @"Apple Intelligence";
 
-// Leading language directive for CLOUD requests only. Cloud models mirror the
-// thread's language unless told otherwise (the on-device model always answers
-// in the instruction language), so pin the output to the device locale; the
-// alphabet clause suppresses mixed-script glitches some small models exhibit
-// when generating non-English text. Both clauses must LEAD the instructions —
-// models ignore trailing directives at low reasoning effort. The FM leg keeps
-// the bare instructions: it already behaves, and its ~4k window shouldn't
-// spend tokens on a directive it doesn't need.
+// Leading language directive for CLOUD requests only, in the summary language
+// (ApolloAISummaryLanguage). The instructions already open with upstream's
+// "You MUST respond in X", but cloud models still mirrored the thread's
+// language without "regardless of the language of the content", and the
+// alphabet clause suppresses the mixed-script glitches gpt-5.4-mini shows in
+// non-English output. Both clauses must LEAD the instructions — models ignore
+// trailing directives at low reasoning effort. The FM leg keeps the bare
+// instructions: its ~4k window shouldn't spend tokens on a directive it
+// doesn't need.
 static NSString *ApolloAICloudLanguageDirective(void) {
+    NSString *language = ApolloAISummaryLanguage(NULL);
+    NSString *name = language.length > 0
+        ? [[NSLocale localeWithLocaleIdentifier:@"en_US"] localizedStringForLocaleIdentifier:language]
+        : nil;
+    if (name.length == 0) return @"";
     return [NSString stringWithFormat:
             @"Write your entire response in %@, regardless of the language of the "
             @"content. Use only that language's standard alphabet; never mix in "
-            @"characters from other writing systems. ", ApolloAIDirectiveLanguageName()];
+            @"characters from other writing systems. ", name];
 }
 
 // The single seam every summary generation goes through. With the on-device

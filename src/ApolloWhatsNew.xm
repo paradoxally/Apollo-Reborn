@@ -36,6 +36,7 @@
 #import "ApolloCommon.h"
 #import "ApolloThemeRuntime.h"
 #import "ApolloWhatsNew.h"
+#import "ApolloWhatsNewHalloween.h"
 #import "ApolloWhatsNewCatalog.gen.h"
 #import "UIWindow+Apollo.h"
 #import "UserDefaultConstants.h"
@@ -85,6 +86,7 @@ static const CGFloat kScrolledBottomClearance = kBottomFadeHeight - kContinueBut
 
     UIScrollView *_scrollView;
     UIStackView *_headerStack;
+    UIImageView *_iconView;
     UILabel *_titleLabel;
     NSLayoutConstraint *_headerTopConstraint;
     NSArray<UIView *> *_rowViews;
@@ -93,6 +95,7 @@ static const CGFloat kScrolledBottomClearance = kBottomFadeHeight - kContinueBut
     CAGradientLayer *_bottomFadeLayer;
 
     BOOL _hasAnimatedIn;
+    BOOL _halloween;
 }
 
 - (instancetype)initWithHeadline:(NSString *)headline items:(NSArray<NSDictionary *> *)items {
@@ -108,7 +111,11 @@ static const CGFloat kScrolledBottomClearance = kBottomFadeHeight - kContinueBut
     [super viewDidLoad];
     self.view.backgroundColor = [UIColor systemBackgroundColor];
 
-    UIColor *accent = ApolloThemeAccentColor() ?: self.view.tintColor;
+    // 3.9.0 only: a one-off Halloween look (ApolloWhatsNewHalloween.m) with a
+    // pumpkin-orange accent, Count Helios in the header and a flock of bats.
+    _halloween = ApolloWhatsNewHalloweenWantedForVersion(ApolloWhatsNewCurrentVersion());
+
+    UIColor *accent = (_halloween ? ApolloWhatsNewHalloweenAccent() : nil) ?: ApolloThemeAccentColor() ?: self.view.tintColor;
     _accent = accent;
 
     _continueButton = [self apollo_makeContinueButtonWithAccent:accent];
@@ -182,12 +189,14 @@ static const CGFloat kScrolledBottomClearance = kBottomFadeHeight - kContinueBut
         [content.widthAnchor constraintEqualToAnchor:_scrollView.frameLayoutGuide.widthAnchor],
     ]];
 
-    UIImageView *iconView = [[UIImageView alloc] initWithImage:ApolloCurrentAppIcon()];
+    UIImage *headerIcon = (_halloween ? ApolloWhatsNewHalloweenIcon() : nil) ?: ApolloCurrentAppIcon();
+    UIImageView *iconView = [[UIImageView alloc] initWithImage:headerIcon];
     iconView.contentMode = UIViewContentModeScaleAspectFit;
     iconView.layer.cornerRadius = 16;
     iconView.layer.cornerCurve = kCACornerCurveContinuous;
     iconView.clipsToBounds = YES;
     iconView.hidden = (iconView.image == nil);
+    _iconView = iconView;
     [NSLayoutConstraint activateConstraints:@[
         [iconView.widthAnchor constraintEqualToConstant:64],
         [iconView.heightAnchor constraintEqualToConstant:64],
@@ -261,6 +270,21 @@ static const CGFloat kScrolledBottomClearance = kBottomFadeHeight - kContinueBut
     if (_hasAnimatedIn) return;
     _hasAnimatedIn = YES;
     [self apollo_animateEntrance];
+    [self apollo_playBatsIfNeeded];
+}
+
+// 3.9.0 only (ApolloWhatsNewHalloween.m): a small flock of bats bursts out of
+// the header icon as the header lands. Measured after apollo_animateEntrance, whose
+// animation blocks have already applied the header's final layout to the
+// model layers, so this is where the icon ends up, not where it starts.
+- (void)apollo_playBatsIfNeeded {
+    if (!_halloween) return;
+    CGPoint origin = CGPointMake(CGRectGetMidX(self.view.bounds), CGRectGetHeight(self.view.bounds) * 0.2);
+    if (_iconView && !_iconView.hidden) {
+        origin = [_iconView convertPoint:CGPointMake(CGRectGetMidX(_iconView.bounds), CGRectGetMidY(_iconView.bounds))
+                                  toView:self.view];
+    }
+    ApolloWhatsNewPlayBats(self.view, origin, 0.7);
 }
 
 // Roughly centers the (still hidden) icon+title+version header in the

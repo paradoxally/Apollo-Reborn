@@ -3,6 +3,8 @@
 // under test are dropped at every level; no check depends on log output.
 #define ApolloLog(...) do { if (NO) NSLog(__VA_ARGS__); } while (0)
 static BOOL sWebJSONEnabled = YES;
+// Reduce Rate Limiting off: the session check keeps its one-minute spacing.
+static BOOL sReduceRateLimiting = NO;
 static NSString *const kApolloWebJSONProbeMarker = @"probe";
 static NSString *const ApolloWebJSONSessionExpiredNotification = @"Expired";
 @interface Entry : NSObject

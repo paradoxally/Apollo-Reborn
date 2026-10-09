@@ -51,6 +51,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloAutoHideMetaFeeds.xm \
     $(SRC_DIR)/ApolloDevvitPosts.xm \
     $(SRC_DIR)/ApolloWhatsNew.xm \
+    $(SRC_DIR)/ApolloWhatsNewHalloween.m \
     $(WHATS_NEW_GEN_M) \
     $(SRC_DIR)/Tweak.xm \
     $(SRC_DIR)/ApolloCommon.m \
@@ -148,6 +149,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloRegexCompileCache.xm \
     $(SRC_DIR)/ApolloMedia.xm \
     $(SRC_DIR)/ApolloAsyncDisplayGuard.xm \
+    $(SRC_DIR)/ApolloTiledText.m \
     $(SRC_DIR)/ApolloFeedGalleryCarousel.xm \
     $(SRC_DIR)/ApolloSwipeUpComments.xm \
     $(SRC_DIR)/ApolloMediaMetadata.m \
@@ -315,6 +317,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloWebAuthViewController.m \
     $(SRC_DIR)/ApolloWebAuthPopupViewController.m \
     $(SRC_DIR)/ApolloWebJSON.m \
+    $(SRC_DIR)/ApolloReduceRateLimiting.m \
     $(SRC_DIR)/ApolloWebJSONWriteRepair.m \
     $(SRC_DIR)/ApolloWebJSONIdentity.xm \
     $(SRC_DIR)/ApolloWebSessionLoginViewController.m \

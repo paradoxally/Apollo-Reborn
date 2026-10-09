@@ -3085,15 +3085,19 @@ static void ApolloAISummarizeWithBackends(NSString *text, NSString *identifier, 
                                  onComplete:^(NSString *final, NSError *error) {
         if (!error && final.length > 0) { onComplete(final, nil, cloudModelLabel, nil); return; }
         if (error.code == 6) { onComplete(nil, error, nil, nil); return; }   // cancelled: never fall back
+        // An empty reply with no error still has to reach runFM as a failure:
+        // a nil cloudError is what marks the plain on-device path, which skips
+        // the fallback's re-lead and its apple|<lang> key.
+        NSError *cloudError = error ?: [NSError errorWithDomain:ApolloAICloudBridgeErrorDomain
+                                                           code:12
+                                                       userInfo:@{NSLocalizedDescriptionKey: @"Cloud generation failed"}];
         if (ApolloAIFMUsable()) {
             ApolloLog(@"[AISummary] cloud failed for %@ (code %ld) — falling back to on-device",
-                      identifier, (long)error.code);
-            runFM(ApolloAITruncateForFM(text), error);
+                      identifier, (long)cloudError.code);
+            runFM(ApolloAITruncateForFM(text), cloudError);
             return;
         }
-        onComplete(nil, error ?: [NSError errorWithDomain:ApolloAICloudBridgeErrorDomain
-                                                     code:12
-                                                 userInfo:@{NSLocalizedDescriptionKey: @"Cloud generation failed"}], nil, nil);
+        onComplete(nil, cloudError, nil, nil);
     }];
 }
 

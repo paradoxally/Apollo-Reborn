@@ -65,6 +65,7 @@ extern Class ApolloClassLGFeaturedStripCell;
 extern Class ApolloClassLGPackGridRowCell;
 extern Class ApolloClassLargePostCellNode;
 extern Class ApolloClassLinkButtonNode;
+extern Class ApolloClassListAdapter;
 extern Class ApolloClassMFMailComposeViewController;
 extern Class ApolloClassMFMessageComposeViewController;
 extern Class ApolloClassMarkdownNode;

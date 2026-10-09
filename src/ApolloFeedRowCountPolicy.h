@@ -34,7 +34,11 @@ typedef struct {
     bool dataSourceIsListAdapter;
     bool ownerIsPostsViewController;
     long objectsCount;        // adapter's stored `objects`; < 0 when unreadable
-    long pendingRowCount;     // Texture's committed rows before this batch; < 0 when unreadable
+    // Rows in Texture's pendingMap before this batch; < 0 when unreadable.
+    // -[ASDataController updateWithChangeSet:] waits for the previous batch,
+    // builds this batch's map from pendingMap and sets it straight away;
+    // visibleMap follows asynchronously and can lag, so it is not the baseline.
+    long pendingRowCount;
     long diffInserts;
     long diffDeletes;
 } ApolloFeedRowCountWindowInput;

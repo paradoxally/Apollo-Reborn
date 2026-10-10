@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixes
 
-- Fix lists sticking at the top for a moment when a fast flick to the top is reversed — the bounce animation kept pulling the list back while the finger dragged it down, and it now stops the moment a drag begins, in every scroll view. On an iPhone 16 Pro the stall showed up in **9 of 10** reversals before and **0 of 20** after (#85: @paradoxally)
+- Fix lists sticking at the top for a moment when a fast flick to the top is reversed — the bounce animation kept pulling the list back while the finger dragged it down, and it now stops the moment a drag begins, in feeds, comments and other standard lists on iOS 17.4 and later. On an iPhone 16 Pro the stall showed up in **9 of 10** reversals before and **0 of 20** after (#85: @paradoxally)
 
 ## [v3.23.0] - 2026-10-10
 

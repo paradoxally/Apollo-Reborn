@@ -29,7 +29,7 @@ Feeds now scroll smoother, most of all deep into a feed and with keyword filters
 - Add **Settings Icon Theme** (**Settings > Appearance > Other**) to show settings icons as colored symbols on dark tiles, always or only in dark mode; the duplicate **Apollo Ultra** row moves to About ([#1377](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1377): @IllIIllIllIllII)
 - Press and hold the **Posts** tab to open the **subreddit switcher** while a feed is open, now on Liquid Glass too ([#1387](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1387): @IllIIllIllIllII)
 - Add tile size buttons to **Gallery View** to switch between four tile sizes, from a denser grid to a single column ([#1357](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1357): @jordanearle)
-- Add **Witching Hour** and **Count Helios**, two Halloween icons, to the Helios icon pack, and give this release's What's New a one-time Halloween look ([#1378](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1378): @IllIIllIllIllII, [#1386](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1386): @icpryde, #PREP: @paradoxally)
+- Add **Witching Hour** and **Count Helios**, two Halloween icons, to the Helios icon pack, and give this release's What's New a one-time Halloween look ([#1378](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1378): @IllIIllIllIllII, [#1386](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1386): @icpryde, #84: @paradoxally)
 
 ### Fixes
 

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.23.1] - 2026-10-10
+
+### Fixes
+
+- Fix lists sticking at the top for a moment when a fast flick to the top is reversed — the bounce animation kept pulling the list back while the finger dragged it down, and it now stops the moment a drag begins, in every scroll view. On an iPhone 16 Pro the stall showed up in **9 of 10** reversals before and **0 of 20** after (#85: @paradoxally)
+
 ## [v3.23.0] - 2026-10-10
 
 ### Performance
@@ -1563,6 +1569,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.23.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.23.0...v1.15.11_3.23.1
 [v3.23.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.22.2...v1.15.11_3.23.0
 [v3.22.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.22.1...v1.15.11_3.22.2
 [v3.22.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.22.0...v1.15.11_3.22.1

@@ -42,6 +42,15 @@
       "subtitle": "Standard Apollo-Reborn build",
       "versions": [
         {
+          "version": "3.23.1",
+          "buildVersion": "300",
+          "marketingVersion": "3.23.1",
+          "date": "2026-10-10T19:49:49Z",
+          "localizedDescription": "Fixes\n- Fix lists sticking at the top for a moment when a fast flick to the top is reversed — the bounce animation kept pulling the list back while the finger dragged it down, and it now stops the moment a drag begins, in feeds, comments and other standard lists on iOS 17.4 and later. On an iPhone 16 Pro the stall showed up in 9 of 10 reversals before and 0 of 20 after (#85: @paradoxally)",
+          "downloadURL": "https://github.com/paradoxally/Apollo-Reborn/releases/download/v1.15.11_3.23.1/Apollo-Reborn-3.23.1.ipa",
+          "size": 97088672
+        },
+        {
           "version": "3.23.0",
           "buildVersion": "300",
           "marketingVersion": "3.23.0",
@@ -60,24 +69,15 @@
           "size": 96839226
         }
       ],
-      "version": "3.23.0",
-      "marketingVersion": "3.23.0",
-      "versionDate": "2026-10-10T01:58:21Z",
-      "versionDescription": "Performance\n\nFeeds now scroll smoother, most of all deep into a feed and with keyword filters on. Every number below was measured on an iPhone 16 Pro before and after the change.\n- Improve scrolling — keychain reads and text-pattern building no longer run while a feed scrolls, cutting stutters (frames over 25 ms) from 5 to 2.5 per 32-second scroll and the time lost to late frames from 166 ms to 62 ms (#80: @paradoxally)\n- Improve loading more posts — each new page rebuilds the post list 3 times instead of 5, and each skipped rebuild saves 9.5 ms at page 10 and 13.5 ms at page 20, so long stalls (over 50 ms) on a deep scroll drop from 10 to 6 (#81: @paradoxally)\n- Improve keyword filters — checking every loaded post against the Filters & Blocks keywords takes 30 ms instead of up to 398 ms per deep scroll, and with 7 keywords set the stalls over 50 ms go from 1.3 to 0; feeds without keywords are unaffected (#82: @paradoxally)\n- Use less memory for very large images in Gallery View, Image Chest albums and Chat, which now load at the size they're shown instead of at full resolution (#1320 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1320): @ryannair05)\n\nFeatures\n- Add an in-app update prompt — Apollo Reborn checks for a new release once a day and hands it to AltStore, SideStore, Feather or FlareStore, or downloads the IPA, with the release notes a tap away; Check for Updates is in Settings > Apollo Reborn > About and Automatic Update Checks in Privacy (#1343 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1343): @IllIIllIllIllII, #77, #79: @paradoxally)\n- Add a Liquid Glass switch (Settings > Apollo Reborn > Interface > Appearance, on by default) so Liquid Glass builds can use Apollo's classic look without installing a different IPA; Apollo asks to quit and reopen for it to apply (#1384 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1384): @IllIIllIllIllII)\n- Add a Minimize Hide Style to Hide Bars on Scroll (Settings > Apollo Reborn > Interface > Tab Bar, Liquid Glass) that shrinks the tab bar into a small glass pill showing the current tab, like Safari, and bring hidden bars back when a page opens or you go back (#1349 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1349), #1384 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1384): @IllIIllIllIllII)\n- Add Reduce Rate Limiting (Settings > Apollo Reborn > Accounts & API Keys > Experimental, off by default) so API-Key-Free accounts hit Reddit's request limit less often — profile pictures load in batches, Community Highlights refresh every 30 minutes instead of every 2, and sign-ins are checked less often; even with it off, these accounts send fewer requests at launch (#1369 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1369): @icpryde)\n- Write Apollo AI summaries in a chosen Language (Settings > Apollo Reborn > Apollo AI > Summaries, Device Default by default), on device and with every cloud provider including OpenAI; when a cloud summary fails, Apple Intelligence writes it in a language it supports, and the next visit tries the cloud again (#1362 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1362): @icpryde, #83: @paradoxally)\n- Open Edit Profile (a profile's ••• menu) inside Apollo on iOS 16 and later, signed in as the current account and themed, instead of in Safari (#1367 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1367): @icpryde)\n- Add a User Profiles settings page (Settings > Apollo Reborn > User Profiles) that brings Profile Layout, Show User Profile Pictures and Profile Picture Shape together, with a live sample comment (#1352 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1352): @IllIIllIllIllII)\n- Reorganize Subreddits settings into Subreddit List, Subreddit Appearance and Search Tab Sources, and redesign Subreddit List Sections with a preview that looks like the real subreddit list (#1350 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1350), #1351 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1351): @IllIIllIllIllII)\n- Rework Customize Action Menus (Settings > Apollo Reborn > Interface) with clearer descriptions, an All Menus view showing where each action is hidden, and a Reset Menu… that can reset just the order; Remind Me In… is back in the ••• menus on Liquid Glass (#1323 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1323): @AcornElf, #1368 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1368): @icpryde)\n- Add Settings Icon Theme (Settings > Appearance > Other) to show settings icons as colored symbols on dark tiles, always or only in dark mode; the duplicate Apollo Ultra row moves to About (#1377 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1377): @IllIIllIllIllII)\n- Press and hold the Posts tab to open the subreddit switcher while a feed is open, now on Liquid Glass too (#1387 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1387): @IllIIllIllIllII)\n- Add tile size buttons to Gallery View to switch between four tile sizes, from a denser grid to a single column (#1357 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1357): @jordanearle)\n- Add Witching Hour and Count Helios, two Halloween icons, to the Helios icon pack, and give this release's What's New a one-time Halloween look (#1378 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1378): @IllIIllIllIllII, #1386 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1386): @icpryde, #84: @paradoxally)\n\nFixes\n- Fix crashes when adding or removing a favorite on the Subreddits list, while writing a Media post, and when swiping between pages of the fullscreen media viewer (#1336 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1336): @icpryde)\n- Fix Apollo crashing when switching accounts with the Inbox open (#1379 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1379): @icpryde)\n- Fix very long text posts showing a blank body at the largest text sizes (#1381 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1381): @icpryde)\n- Fix Continue with Google doing nothing and Continue with Apple showing an error on Reddit's sign-in page; both now open in a sheet (#1372 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1372): @icpryde)\n- Stop the pause between Liquid Glass menus when reporting, setting post flair or removing a post as a moderator (#1382 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1382): @icpryde)\n- Fix swiping from the left edge still going back with Disable Navigation Gestures on, and stop a right swipe over a comment on Liquid Glass leaving the thread instead of running the comment's swipe action (#1370 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1370): @icpryde)\n- Stop YouTube videos on iOS 27 playing with captions that can't be turned off (#1371 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1371): @icpryde)\n- Stop the search bar under the header flashing as a feed or post opens with Header Style set to Hard (#1373 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1373): @icpryde)\n- Show a message instead of an endless spinner when a profile's Comments or Posts come back empty (#1341 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1341): @icpryde)\n- Hide profile stats entirely when Stat Cards is off (#1348 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1348): @IllIIllIllIllII)\n- Show every post's subreddit icon in Home, Popular, All and multireddits, not just the first per subreddit (#1363 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1363): @icpryde)\n- Fix tapping the Posts tab sometimes stopping short of the top of a long feed; it now goes all the way up like a status-bar tap (#1360 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1360): @IllIIllIllIllII)\n- Load more replies smoothly — the spinner stays until the replies fade in, and in a translated thread they arrive already translated (#1358 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1358): @icpryde)\n- Fix translation labels naming the wrong language or appearing on text that wasn't translated (#1380 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1380): @icpryde)\n- Stop a comment's rich link card image flashing on every vote (#1356 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1356): @icpryde)\n- Say why a RedGIFs post couldn't load — removed, not found, not available in the region, or unreachable — instead of \"RedGIFs error :(\" (#1359 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1359): @icpryde)\n- Keep Settings Shortcuts section titles in place when adding or removing a shortcut (#1355 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1355): @icpryde)\n- Fade the background when dragging a fullscreen image or video away sideways or at an angle (#1320 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1320): @ryannair05)",
-      "downloadURL": "https://github.com/paradoxally/Apollo-Reborn/releases/download/v1.15.11_3.23.0/Apollo-Reborn-3.23.0.ipa",
-      "size": 97089816
+      "version": "3.23.1",
+      "marketingVersion": "3.23.1",
+      "versionDate": "2026-10-10T19:49:49Z",
+      "versionDescription": "Fixes\n- Fix lists sticking at the top for a moment when a fast flick to the top is reversed — the bounce animation kept pulling the list back while the finger dragged it down, and it now stops the moment a drag begins, in feeds, comments and other standard lists on iOS 17.4 and later. On an iPhone 16 Pro the stall showed up in 9 of 10 reversals before and 0 of 20 after (#85: @paradoxally)",
+      "downloadURL": "https://github.com/paradoxally/Apollo-Reborn/releases/download/v1.15.11_3.23.1/Apollo-Reborn-3.23.1.ipa",
+      "size": 97088672
     }
   ],
   "news": [
-    {
-      "title": "Apollo v1.15.11 / Apollo-Reborn v3.10.0 (Standard)",
-      "identifier": "v1.15.11_3.10.0",
-      "caption": "Apollo-Reborn update available",
-      "date": "2026-07-30T16:03:44Z",
-      "tintColor": "#F0542D",
-      "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
-      "url": "https://github.com/paradoxally/Apollo-Reborn/releases/tag/v1.15.11_3.10.0"
-    },
     {
       "title": "Apollo v1.15.11 / Apollo-Reborn v3.10.1 (Standard)",
       "identifier": "v1.15.11_3.10.1",
@@ -338,6 +338,15 @@
       "tintColor": "#F0542D",
       "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
       "url": "https://github.com/paradoxally/Apollo-Reborn/releases/tag/v1.15.11_3.23.0"
+    },
+    {
+      "title": "Apollo v1.15.11 / Apollo-Reborn v3.23.1 (Standard)",
+      "identifier": "v1.15.11_3.23.1",
+      "caption": "Apollo-Reborn update available",
+      "date": "2026-10-10T19:49:49Z",
+      "tintColor": "#F0542D",
+      "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
+      "url": "https://github.com/paradoxally/Apollo-Reborn/releases/tag/v1.15.11_3.23.1"
     }
   ],
   "iconURL": "https://apolloreborn.app/assets/icon.png",

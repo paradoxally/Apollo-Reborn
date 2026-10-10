@@ -1,4 +1,4 @@
-// ApolloWhatsNewHalloween — one-off Halloween look for the 3.9.0 What's New
+// ApolloWhatsNewHalloween — one-off Halloween look for the 3.23.0 What's New
 // sheet (Count Helios icon, pumpkin-orange accent, bats). See
 // ApolloWhatsNewHalloween.h for when it applies and how to remove it.
 //
@@ -24,7 +24,7 @@
 
 #import "ApolloCommon.h"
 
-static NSString *const kApolloWhatsNewHalloweenVersion = @"3.9.0";
+static NSString *const kApolloWhatsNewHalloweenVersion = @"3.23.0";
 
 static const NSUInteger kApolloBatCount = 9;
 // Wing angle above horizontal, in radians, at the top and bottom of a stroke.

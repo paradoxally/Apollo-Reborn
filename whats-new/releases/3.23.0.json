@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "version": "3.23.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "arrow.down.app.fill", "title": "Update Alerts", "subtitle": "Apollo Reborn now tells you when an update is out and hands it to your sideloader." },
+    { "icon": "speedometer", "title": "Smoother Scrolling", "subtitle": "Feeds stutter less, especially deep into a feed and with keyword filters on." },
+    { "icon": "dock.rectangle", "title": "Liquid Glass, Your Way", "subtitle": "Switch to the classic look under Interface > Appearance, or shrink the tab bar into a small pill as you scroll." },
+    { "icon": "network", "title": "Fewer Rate Limits", "subtitle": "API-Key-Free accounts send fewer Reddit requests, and Reduce Rate Limiting cuts them further." },
+    { "icon": "character.bubble.fill", "title": "Summaries in Your Language", "subtitle": "Pick the language Apollo AI writes summaries in, on device or in the cloud." },
+    { "icon": "person.crop.circle.fill", "title": "Profiles", "subtitle": "Edit your Reddit profile right in Apollo, and find profile settings on a new User Profiles page." },
+    { "icon": "checkmark.shield.fill", "title": "Fixes Across the App", "subtitle": "Crash fixes, Google and Apple sign-in, and no forced YouTube captions on iOS 27." }
+  ]
+}

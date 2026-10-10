@@ -248,6 +248,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloYouTubeCaptions.xm \
     $(SRC_DIR)/ApolloPictureInPicture.xm \
     $(SRC_DIR)/ApolloScrollToTop.xm \
+    $(SRC_DIR)/ApolloScrollDragHandoff.xm \
     $(SRC_DIR)/ApolloFloatingTabs.xm \
     $(SRC_DIR)/ApolloFloatingTabsCrests.m \
     $(SRC_DIR)/ApolloMediaPreviewErrorFix.xm \

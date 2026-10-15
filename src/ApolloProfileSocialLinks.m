@@ -1354,6 +1354,10 @@ static void ApolloSocialLinkOpenURL(NSURL *url, UIViewController *opener) {
     if (!url) return;
     NSString *scheme = url.scheme.lowercaseString;
     BOOL web = [scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"];
+    if (web && ApolloRouteResolvedURLViaApolloScheme(url)) {
+        ApolloLog(@"[SocialLinks] opened Reddit link in Apollo");
+        return;
+    }
     if (web && opener) {
         ApolloPresentWebURLFromViewController(opener, url);
         return;

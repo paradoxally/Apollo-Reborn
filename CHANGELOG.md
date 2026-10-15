@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.24.0] - 2026-10-15
+
+### Features
+
+- Add **Recently Visited** to the **Search** tab, listing the subreddits you've opened, newest first; reorder it alongside **Trending Subreddits** and **Random Subreddit** in **Settings > Apollo Reborn > Subreddits > Search Tab**, and set how many subreddits Trending and Recently Visited show under **Section Limits**. The list is kept in memory only and clears on restart or account change ([#1404](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1404): @IllIIllIllIllII)
+- Add **Add Downvote Tap** (**Settings > Apollo Reborn > Posts & Feeds > Info Row**, off by default) so tapping a post or comment score goes from upvote to downvote before clearing the vote ([#1403](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1403): @AcornElf)
+- Tint the usernames of Apollo Reborn maintainers purple in posts, comments and the inbox, the same way Apollo marks its own developer ([#1411](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1411): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix Apollo crashing when opening an **album** from its press-and-hold preview in the compact layout ([#1398](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1398): @IllIIllIllIllII)
+- Fix **Poll** in a subreddit's menu opening the post composer without any poll options; Poll, Media, Link and Text now open straight to their editor, and Poll has a new checklist icon ([#1414](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1414): @IllIIllIllIllII)
+- Fix Reddit image uploads being posted as a broken link when **Imgur** was still the selected upload host, and hide the long upload URL that pushed the flair out of place on posts that already failed ([#1406](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1406): @IllIIllIllIllII)
+- Fix the **Notifications** settings screen loading forever on push-capable installs with no notification backend; it now explains what's missing and points to **Settings > Apollo Reborn > Advanced > Notification Backend** ([#1399](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1399): @IllIIllIllIllII)
+- Fix inline images and GIFs in comments fading to black before opening fullscreen; their press-and-hold menu is now **Copy Image**, **Save Image** and **Share** ([#1400](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1400): @IllIIllIllIllII)
+- Fix outdated **subreddit icons and banners**, such as r/apple's; saved subreddit list icons are checked for updates weekly and change on the next launch ([#1396](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1396): @IllIIllIllIllII)
+- Fix the separator below Home's first post disappearing after switching tabs and pulling to refresh ([#1405](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1405): @IllIIllIllIllII)
+- Fix Reddit links in a user's **Social Links** opening in the browser instead of in Apollo ([#1407](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1407): @IllIIllIllIllII)
+- Fix the **Boxes** title shortening to "Box…" after swiping back from an inbox on Liquid Glass ([#1395](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1395): @IllIIllIllIllII)
+- Fix the **Portrait Lock** settings page using full-width sections instead of the rounded style of the rest of Settings ([#1410](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1410): @IllIIllIllIllII)
+
 ## [v3.23.1] - 2026-10-10
 
 ### Fixes
@@ -1569,6 +1590,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.24.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.23.1...v1.15.11_3.24.0
 [v3.23.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.23.0...v1.15.11_3.23.1
 [v3.23.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.22.2...v1.15.11_3.23.0
 [v3.22.2]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.22.1...v1.15.11_3.22.2

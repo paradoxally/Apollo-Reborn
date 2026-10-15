@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "3.24.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "clock.arrow.circlepath", "title": "Recently Visited", "subtitle": "The Search tab now lists the subreddits you've opened. Reorder its sections under Subreddits > Search Tab." },
+    { "icon": "arrow.up.arrow.down", "title": "Downvote Tap", "subtitle": "Tap a score again to downvote. Turn it on under Posts & Feeds > Info Row." },
+    { "icon": "photo.fill", "title": "Better Images", "subtitle": "Inline images open fullscreen right away, uploads to Reddit post correctly, and subreddit icons stay current." },
+    { "icon": "checkmark.shield.fill", "title": "Fixes Across the App", "subtitle": "A crash fix for album previews, Poll shortcuts that work, and a Notifications screen that explains itself." }
+  ]
+}

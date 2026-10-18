@@ -42,6 +42,15 @@
       "subtitle": "Apollo-Reborn build with the Liquid Glass icon catalog only",
       "versions": [
         {
+          "version": "3.24.1",
+          "buildVersion": "300",
+          "marketingVersion": "3.24.1",
+          "date": "2026-10-18T03:03:49Z",
+          "localizedDescription": "Liquid Glass icons-only build.\n\nFeatures\n- Add a Subreddit Icon switch to Settings > Apollo Reborn > Subreddits > Subreddit Layout (on by default) to hide the community icon in Compact and Immersive headers; the name, subtitle and description move up into its space (#1426 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1426): @IllIIllIllIllII)",
+          "downloadURL": "https://github.com/paradoxally/Apollo-Reborn/releases/download/v1.15.11_3.24.1/Apollo-Reborn-3.24.1-GLASSICONS.ipa",
+          "size": 128657282
+        },
+        {
           "version": "3.24.0",
           "buildVersion": "300",
           "marketingVersion": "3.24.0",
@@ -78,24 +87,15 @@
           "size": 128214660
         }
       ],
-      "version": "3.24.0",
-      "marketingVersion": "3.24.0",
-      "versionDate": "2026-10-15T12:49:08Z",
-      "versionDescription": "Liquid Glass icons-only build.\n\nFeatures\n- Add Recently Visited to the Search tab, listing the subreddits you've opened, newest first; reorder it alongside Trending Subreddits and Random Subreddit in Settings > Apollo Reborn > Subreddits > Search Tab, and set how many subreddits Trending and Recently Visited show under Section Limits. The list is kept in memory only and clears on restart or account change (#1404 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1404): @IllIIllIllIllII)\n- Add Add Downvote Tap (Settings > Apollo Reborn > Posts & Feeds > Info Row, off by default) so tapping a post or comment score goes from upvote to downvote before clearing the vote (#1403 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1403): @AcornElf)\n- Tint the usernames of Apollo Reborn maintainers purple in posts, comments and the inbox, the same way Apollo marks its own developer (#1411 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1411): @IllIIllIllIllII)\n\nFixes\n- Fix Apollo crashing when opening an album from its press-and-hold preview in the compact layout (#1398 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1398): @IllIIllIllIllII)\n- Fix Poll in a subreddit's menu opening the post composer without any poll options; Poll, Media, Link and Text now open straight to their editor, and Poll has a new checklist icon (#1414 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1414): @IllIIllIllIllII)\n- Fix Reddit image uploads being posted as a broken link when Imgur was still the selected upload host, and hide the long upload URL that pushed the flair out of place on posts that already failed (#1406 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1406): @IllIIllIllIllII)\n- Fix the Notifications settings screen loading forever on push-capable installs with no notification backend; it now explains what's missing and points to Settings > Apollo Reborn > Advanced > Notification Backend (#1399 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1399): @IllIIllIllIllII)\n- Fix inline images and GIFs in comments fading to black before opening fullscreen; their press-and-hold menu is now Copy Image, Save Image and Share (#1400 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1400): @IllIIllIllIllII)\n- Fix outdated subreddit icons and banners, such as r/apple's; saved subreddit list icons are checked for updates weekly and change on the next launch (#1396 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1396): @IllIIllIllIllII)\n- Fix the separator below Home's first post disappearing after switching tabs and pulling to refresh (#1405 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1405): @IllIIllIllIllII)\n- Fix Reddit links in a user's Social Links opening in the browser instead of in Apollo (#1407 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1407): @IllIIllIllIllII)\n- Fix the Boxes title shortening to \"Box…\" after swiping back from an inbox on Liquid Glass (#1395 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1395): @IllIIllIllIllII)\n- Fix the Portrait Lock settings page using full-width sections instead of the rounded style of the rest of Settings (#1410 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1410): @IllIIllIllIllII)",
-      "downloadURL": "https://github.com/paradoxally/Apollo-Reborn/releases/download/v1.15.11_3.24.0/Apollo-Reborn-3.24.0-GLASSICONS.ipa",
-      "size": 128657468
+      "version": "3.24.1",
+      "marketingVersion": "3.24.1",
+      "versionDate": "2026-10-18T03:03:49Z",
+      "versionDescription": "Liquid Glass icons-only build.\n\nFeatures\n- Add a Subreddit Icon switch to Settings > Apollo Reborn > Subreddits > Subreddit Layout (on by default) to hide the community icon in Compact and Immersive headers; the name, subtitle and description move up into its space (#1426 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1426): @IllIIllIllIllII)",
+      "downloadURL": "https://github.com/paradoxally/Apollo-Reborn/releases/download/v1.15.11_3.24.1/Apollo-Reborn-3.24.1-GLASSICONS.ipa",
+      "size": 128657282
     }
   ],
   "news": [
-    {
-      "title": "Apollo v1.15.11 / Apollo-Reborn v3.10.2 (GLASS Icons)",
-      "identifier": "v1.15.11_3.10.2",
-      "caption": "Apollo-Reborn update available",
-      "date": "2026-08-01T12:34:54Z",
-      "tintColor": "#F0542D",
-      "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
-      "url": "https://github.com/paradoxally/Apollo-Reborn/releases/tag/v1.15.11_3.10.2"
-    },
     {
       "title": "Apollo v1.15.11 / Apollo-Reborn v3.10.3 (GLASS Icons)",
       "identifier": "v1.15.11_3.10.3",
@@ -356,6 +356,15 @@
       "tintColor": "#F0542D",
       "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
       "url": "https://github.com/paradoxally/Apollo-Reborn/releases/tag/v1.15.11_3.24.0"
+    },
+    {
+      "title": "Apollo v1.15.11 / Apollo-Reborn v3.24.1 (GLASS Icons)",
+      "identifier": "v1.15.11_3.24.1",
+      "caption": "Apollo-Reborn update available",
+      "date": "2026-10-18T03:03:49Z",
+      "tintColor": "#F0542D",
+      "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
+      "url": "https://github.com/paradoxally/Apollo-Reborn/releases/tag/v1.15.11_3.24.1"
     }
   ],
   "iconURL": "https://apolloreborn.app/assets/icon.png",

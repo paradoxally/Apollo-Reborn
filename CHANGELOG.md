@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.24.1] - 2026-10-18
+
+### Features
+
+- Add a **Subreddit Icon** switch to **Settings > Apollo Reborn > Subreddits > Subreddit Layout** (on by default) to hide the community icon in Compact and Immersive headers; the name, subtitle and description move up into its space ([#1426](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1426): @IllIIllIllIllII)
+
 ## [v3.24.0] - 2026-10-15
 
 ### Features
@@ -1590,6 +1596,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.24.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.24.0...v1.15.11_3.24.1
 [v3.24.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.23.1...v1.15.11_3.24.0
 [v3.23.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.23.0...v1.15.11_3.23.1
 [v3.23.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.22.2...v1.15.11_3.23.0

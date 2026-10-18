@@ -3913,6 +3913,7 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
                                     UDKeyShowSubredditHeaders: @NO,
                                     UDKeySubredditHeaderImmersive: @YES,
                                     UDKeySubredditShowBanner: @YES,
+                                    UDKeySubredditShowIcon: @YES,
                                     UDKeySubredditShowJoinButton: @YES,
                                     UDKeySubredditShowUserFlairButton: @NO,
                                     UDKeySubredditShowSidebarButton: @NO,
@@ -4221,6 +4222,7 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
     sShowSubredditHeaders = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyShowSubredditHeaders];
     sSubredditHeaderImmersive = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySubredditHeaderImmersive];
     sSubredditShowBanner = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySubredditShowBanner];
+    sSubredditShowIcon = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySubredditShowIcon];
     sSubredditShowJoinButton = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySubredditShowJoinButton];
     sSubredditShowUserFlairButton = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySubredditShowUserFlairButton];
     sSubredditShowSidebarButton = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeySubredditShowSidebarButton];

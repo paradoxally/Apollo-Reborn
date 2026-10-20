@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "3.25.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "play.rectangle.on.rectangle.fill", "title": "Sports Clips in Gallery View", "subtitle": "Streamable and sports-clip tiles now play in the grid, and every video on screen starts." },
+    { "icon": "moon.stars.fill", "title": "Holiday Icons", "subtitle": "Daily Spotlight leans toward holiday icons. From October 25 to 31, all five picks are for Halloween." },
+    { "icon": "arrow.down.circle.fill", "title": "Faster Update Alerts", "subtitle": "Apollo Reborn checks for updates every 15 minutes while open. Later quiets a version for 24 hours." },
+    { "icon": "checkmark.shield.fill", "title": "Feeds That Keep Going", "subtitle": "Hide Read and API-Key-Free feeds load the next page instead of stopping, plus video and Liquid Glass fixes." }
+  ]
+}

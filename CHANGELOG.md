@@ -4,6 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.25.0] - 2026-10-20
+
+### Features
+
+- Play **sports clips** in **Gallery View** — streamin, streamff, dubz and Streamable tiles, which Reddit gives no preview video, now play muted in the grid like v.redd.it ones, every video tile on screen starts, and opening a clip afterwards plays it straight away (**Settings > Apollo Reborn > Media > Browsing > Play Videos in Gallery View**) ([#1389](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1389): @icpryde)
+- Lean the **Daily Spotlight** in the icon picker toward holiday icons around Halloween, Christmas, Pride Month and other holidays; from October 25 to 31 all five picks are Halloween icons, and the header names the holiday ([#1390](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1390): @icpryde)
+- Check for updates every **15 minutes** while Apollo is open instead of once a day, so a new release shows up soon after it's published; **Later** now quiets that version for 24 hours, even across restarts, and a failed check retries after 5 minutes ([#1436](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1436): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix a feed sitting on a spinner forever after **Hide Read** hides every loaded post; it now loads the next page ([#1412](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1412): @icpryde)
+- Fix **API-Key-Free** feeds stopping for good after a few pages when Reddit refuses a page with a rate limit or a block page; Apollo shows "Loading next page failed" and asks for the same page again on the next scroll ([#1424](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1424): @icpryde)
+- Fix a post's mute button working backwards after opening a feed video that was playing with sound, with **Unmute Videos in Feed** on ([#1425](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1425): @icpryde)
+- Fix a crash in feed videos with **Unmute Videos in Feed** on ([#1428](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1428): @Thetromboneman1)
+- Fix the **Liquid Glass** tab bar coming back without its glass after swiping back from **Edit Profile**, leaving the icons floating over the page ([#1431](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1431): @icpryde)
+
 ## [v3.24.1] - 2026-10-18
 
 ### Features
@@ -1596,6 +1612,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.25.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.24.1...v1.15.11_3.25.0
 [v3.24.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.24.0...v1.15.11_3.24.1
 [v3.24.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.23.1...v1.15.11_3.24.0
 [v3.23.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.23.0...v1.15.11_3.23.1

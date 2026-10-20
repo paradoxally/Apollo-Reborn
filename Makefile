@@ -58,6 +58,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloInlineImageMetadata.m \
     $(SRC_DIR)/ApolloProfilePagination.xm \
     $(SRC_DIR)/ApolloListEmptyState.xm \
+    $(SRC_DIR)/ApolloEmptyFeedNextPage.xm \
     $(SRC_DIR)/ApolloWebTextDecoding.m \
     $(SRC_DIR)/ApolloNitterInstances.m \
     $(SRC_DIR)/ApolloMemoryDiagnostics.m \
@@ -87,6 +88,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloUsageHeartbeat.m \
     $(SRC_DIR)/ApolloAppIcon.m \
     $(SRC_DIR)/ApolloUpdateManifest.m \
+    $(SRC_DIR)/ApolloUpdateManifestCache.m \
     $(SRC_DIR)/ApolloUpdatePromptViewController.m \
     $(SRC_DIR)/ApolloUpdateChecker.m \
     $(SRC_DIR)/ApolloPushNotifications.m \
@@ -182,6 +184,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloInterruptibleNavTransition.xm \
     $(SRC_DIR)/ApolloSystemBackSwipeGuard.xm \
     $(SRC_DIR)/ApolloLiquidGlassIconPicker.xm \
+    $(SRC_DIR)/ApolloLiquidGlassSpotlight.m \
     $(SRC_DIR)/ApolloModmailLayout.xm \
     $(SRC_DIR)/ApolloModmailSubjectCounter.xm \
     $(SRC_DIR)/ApolloCrosspostTitle.xm \

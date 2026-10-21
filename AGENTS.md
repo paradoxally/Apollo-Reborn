@@ -33,7 +33,7 @@ The fix is to pin the build to an iOS 26.0 SDK explicitly instead of `latest`, w
 
 **This same trick does not work for the simulator build** (`scripts/run-in-sim.sh`) — see the "Fast iteration in the iOS Simulator" section below for why pairing an old Simulator SDK with a newer clang is a real, blocked incompatibility rather than something to route around. The simulator script instead just bumped its own floor to iOS 15.0, which only affects local dev convenience, not real device support.
 
-Because the device build (14.0) and simulator build (15.0) have different floors, code using an iOS-15-deprecated API (`UIApplication.windows`, `UIButton.contentEdgeInsets`/`imageEdgeInsets`, `adjustsImageWhenHighlighted`/`adjustsImageWhenDisabled`, etc.) only trips `-Wdeprecated-declarations` under the simulator target, not the device one. Theos turns on `-Werror` globally (`$THEOS/makefiles/common.mk`), so without intervention that warning would fail simulator-only builds. Rather than wrapping every call site in `#pragma clang diagnostic ignored "-Wdeprecated-declarations"`, `Makefile`'s `ApolloReborn_CFLAGS` carries `-Wno-error=deprecated-declarations` — this demotes the diagnostic back to a non-fatal warning (still visible in build output) without fully hiding it via `-Wno-deprecated-declarations`, and without needing a pragma anywhere. Prefer migrating off a deprecated API outright when there's a safe non-deprecated replacement (e.g. `ApolloAllWindows()` for `UIApplication.windows`); reach for the deprecated API only when the replacement (e.g. `UIButtonConfiguration`) isn't available at the device build's iOS 14 floor.
+Because the device build (14.0) and simulator build (15.0) have different floors, code using an iOS-15-deprecated API (`UIApplication.windows`, `UIButton.contentEdgeInsets`/`imageEdgeInsets`, `adjustsImageWhenHighlighted`/`adjustsImageWhenDisabled`, etc.) only trips `-Wdeprecated-declarations` under the simulator target, not the device one. Theos turns on `-Werror` globally (`$THEOS/makefiles/common.mk`), so without intervention that warning would fail simulator-only builds. Rather than wrapping every call site in `#pragma clang diagnostic ignored "-Wdeprecated-declarations"`, the Makefile's `APOLLO_SIM_BUILD` branch adds `-Wno-deprecated-declarations`, which hides the diagnostic in simulator builds. The device build's `ApolloReborn_CFLAGS` carries `-Wno-error=deprecated-declarations`, which keeps deprecations there a visible, non-fatal warning. Prefer migrating off a deprecated API outright when there's a safe non-deprecated replacement (e.g. `ApolloAllWindows()` for `UIApplication.windows`); reach for the deprecated API only when the replacement (e.g. `UIButtonConfiguration`) isn't available at the device build's iOS 14 floor.
 
 **If `$THEOS/sdks/iPhoneOS26.0.sdk` is missing on a local dev machine** (fresh setup, etc.), get it one of these ways, in order of preference:
 
@@ -82,7 +82,7 @@ How it works (and why each piece is needed):
 - **Appearance** is set with `xcrun simctl ui <DEV> appearance dark|light` via `--dark`/`--light` (or `APPEARANCE=`); it persists on the device until changed.
 - **Liquid Glass** is off by default (the raw `apollo-base.ipa` links against the iOS 16 SDK, so `IsLiquidGlass()` is NO and both UIKit's iOS-26 chrome and the tweak's LG hooks stay dormant). **This assumes `apollo-base.ipa` is a fresh, unpatched decryption of the Apollo binary** — since it's gitignored and supplied per-developer, if yours has already been run through `patch.sh --liquid-glass` (or came from a pre-patched/glass distribution build) it'll read as glass-linked (`sdk 19.0`+) no matter what flags you pass, and `--no-glass` won't undo it, since the re-prep just re-extracts your already-glass base — re-source a clean, unpatched IPA instead of trying to downgrade it in place. `--glass` (or `GLASS=1`) prepares the shell from a `patch.sh --liquid-glass` base — the canonical glass patcher, reused so it stays in sync: it bumps the main binary's linked SDK to iOS 26 (which flips `IsLiquidGlass()`, since `GetLinkedSDKVersion()` reads that field), drops the duplicate `@executable_path/Frameworks` LC_RPATH (iOS-26 dyld rejects it — otherwise the launch dies with an `SBMainWorkspace` denial), swaps in the prebuilt `Assets.car`, and writes the `CFBundleAlternateIcons` metadata that turns on the in-app icon picker. The glass base is cached at `./.sim/glass-base.ipa` (regenerated only when `apollo-base.ipa` changes); toggling `--glass`/`--no-glass` re-prepares the app shell (detected from the cached main binary's SDK).
 
-**Verify the tweak actually loaded** (don't assume from a clean launch): check os_log for the `apollofix` subsystem — module load lines and `... hook installed ...` confirm the internal-generator hooks took:
+**Verify the tweak actually loaded** (don't assume from a clean launch): check os_log for the `apollofix` subsystem — module load lines and `... hook installed ...` confirm the internal-generator hooks took. These are `ApolloLog` lines, so they appear only with Verbose Logging on (see Code Style):
 
 ```bash
 xcrun simctl spawn "$(cat .sim/device.txt)" log show --last 2m --predicate 'subsystem == "apollofix"' | grep ApolloFix
@@ -113,7 +113,7 @@ xcrun simctl spawn "$(cat .sim/device.txt)" log show --last 2m --predicate 'subs
 
 Tweak-owned settings screens live under `src/settings/` and are built on a
 declarative form layer — rows are data, indices are derived, no index math in
-screens. See `docs/settings-form-refactor-plan.md`.
+screens.
 
 | Path | Purpose |
 |------|---------|
@@ -189,7 +189,7 @@ Testing: with FLEX debugging enabled, Settings → Privacy → Crash Reports gai
 
 - **Indentation**: 4 spaces
 - **Braces**: Same line as statement
-- **Logging**: Use `ApolloLog` for privacy-friendly diagnostics
+- **Logging**: Use `ApolloLog` for diagnostics. It is off unless the user turns on Verbose Logging (Settings > Apollo Reborn > Advanced); use `ApolloLogAlways` only for lines that must reach exports with it off. `src/ApolloCommon.h` documents the levels
 - When iterating on a feature, if something isn't working, prefer outright replacing the implementation over adding fallback codepaths. Use generous amount of comments and diagnostic/debug logging.
 
 ## Theme Accent in Tweak-Drawn UI
@@ -201,7 +201,15 @@ Testing: with FLEX debugging enabled, Settings → Privacy → Crash Reports gai
 
 ## Testing
 
-No automated test suite, must be validated manually.
+Host tests live in `tests/`. Each `*.sh` script compiles the real source under test (mostly with `xcrun --sdk macosx clang`) or checks source text, and exits non-zero on failure. Run all of them from the repo root:
+
+```bash
+export SDKROOT="$(xcrun --sdk macosx --show-sdk-path)"
+export SIM_DEVICE=<udid>   # optional; run_backup_document_tests.sh needs a booted simulator (default: booted)
+for t in tests/*.sh; do bash "$t" >/dev/null 2>&1 || echo "FAIL $t"; done
+```
+
+`SDKROOT` matters because two runners call `clang`/`xcrun clang++` without `--sdk macosx`; they then link against the Command Line Tools SDK, which can fail with `ld: tapi error: malformed file` when its version doesn't match the selected Xcode. `deleted_comments_tests.m`, `push_notifications_tests.m`, `saved_items_deduplicator_tests.m` and `video_wait_identity_source_test.py` have no runner script. UI behavior still needs a manual check in the simulator or on a device; `tests/*_manual_checklist.md` list the steps for some features.
 
 ## RE Notes
 
@@ -231,7 +239,7 @@ No automated test suite, must be validated manually.
 
 **Pseudocode constant folding of base registers**: Hopper's decompiler sometimes loses track of a base register and folds it into offset constants, producing misleading absolute-looking addresses. For example, if the assembly is `madd x8, x21, x8, x22` then `str w0, [x8, #0x20]` (meaning `buffer + index*stride + 0x20`), the pseudocode may render this as `*(stride * index + 0x50)` — collapsing `buffer + 0x20` into a single constant `0x50`. This is a critical trap: the pseudocode appears to say elements start at offset 0x50, when they actually start at buffer+0x20. **Always verify struct/array element offsets from the raw assembly** (look for `madd`/`add` base register calculations and `ldr`/`str` displacement operands) rather than trusting the pseudocode constants.
 
-**Decoding Swift small strings from assembly**: Strings <=15 bytes are stored inline in two registers (x0/x1) rather than as heap pointers. Hopper's decompiler hides the actual values behind `_bridgeToObjectiveC()` calls — you must read the raw assembly. Layout: x0 holds bytes 0-7 (little-endian), x1 holds bytes 8-14 in bits 0-55 plus a discriminator byte in bits 56-63 (discriminator = `0xE0 + length`). Each `mov`/`movk` with `#0xXXYY` stores two ASCII bytes in little-endian order (YY first, XX second). Strings >15 bytes use buffer pointers (`x1 = addr | 0x8000000000000000`, UTF-8 at `addr+0x20`) and appear in Hopper's string table. See `docs/sekrit-icon-keys-RE.md` for a worked example.
+**Decoding Swift small strings from assembly**: Strings <=15 bytes are stored inline in two registers (x0/x1) rather than as heap pointers. Hopper's decompiler hides the actual values behind `_bridgeToObjectiveC()` calls — you must read the raw assembly. Layout: x0 holds bytes 0-7 (little-endian), x1 holds bytes 8-14 in bits 0-55 plus a discriminator byte in bits 56-63 (discriminator = `0xE0 + length`). Each `mov`/`movk` with `#0xXXYY` stores two ASCII bytes in little-endian order (YY first, XX second). Strings >15 bytes use buffer pointers (`x1 = addr | 0x8000000000000000`, UTF-8 at `addr+0x20`) and appear in Hopper's string table.
 
 **Extracting Swift enum metadata from jump tables**: Swift switch helpers for enum titles/icons often compile to a small dispatcher that masks the enum case, loads a jump-table offset, adds it to a code base, then `br`s there. In assembly this looks like `and x8, x0, #0xffff` + `ldrh/ldrsw` from a table + `add x10, base, offset` + `br x10`. To replace a private helper safely, extract the table data and emulate each target block offline instead of calling a hardcoded app address at runtime. For the Apollo action menu metadata this recovered the exact `actionKind -> title/icon asset` mapping used in `ApolloNativeActionMetadata.h`.
 

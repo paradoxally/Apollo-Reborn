@@ -955,6 +955,13 @@ static BOOL ApolloGallerySmartRotationLockEnabled(void) {
     return stored ? [stored boolValue] : YES;
 }
 
+// Forcing interface orientation needs -requestGeometryUpdateWithPreferences:,
+// so below iOS 16 the offer could never act on a tap.
+static BOOL ApolloGalleryCanForceRotation(void) {
+    if (@available(iOS 16.0, *)) return YES;
+    return NO;
+}
+
 static UIInterfaceOrientation ApolloGalleryInterfaceOrientationForDevice(UIDeviceOrientation device) {
     // The landscape cases are deliberately crossed: a device rotated left
     // presents a right-hand-side-up interface.
@@ -987,7 +994,7 @@ static UIInterfaceOrientation ApolloGalleryInterfaceOrientationForDevice(UIDevic
 }
 
 - (void)apollo_updateRotationOffer {
-    if (self.isDismissing || !ApolloGallerySmartRotationLockEnabled()) {
+    if (self.isDismissing || !ApolloGallerySmartRotationLockEnabled() || !ApolloGalleryCanForceRotation()) {
         [self apollo_hideRotationOffer];
         return;
     }
@@ -1012,10 +1019,12 @@ static UIInterfaceOrientation ApolloGalleryInterfaceOrientationForDevice(UIDevic
 
     self.rotateOfferTargetOrientation = wanted;
     [self.rotateOfferButton setTitle:title forState:UIControlStateNormal];
-    if (self.rotateOfferButton.configuration) {
-        UIButtonConfiguration *configuration = self.rotateOfferButton.configuration;
-        configuration.title = title;
-        self.rotateOfferButton.configuration = configuration;
+    if (@available(iOS 15.0, *)) {
+        if (self.rotateOfferButton.configuration) {
+            UIButtonConfiguration *configuration = self.rotateOfferButton.configuration;
+            configuration.title = title;
+            self.rotateOfferButton.configuration = configuration;
+        }
     }
     if (self.rotateOfferHost.hidden) {
         self.rotateOfferHost.hidden = NO;

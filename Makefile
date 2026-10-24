@@ -55,6 +55,8 @@ ApolloReborn_FILES = \
     $(WHATS_NEW_GEN_M) \
     $(SRC_DIR)/Tweak.xm \
     $(SRC_DIR)/ApolloCommon.m \
+    $(SRC_DIR)/ApolloSessionState.m \
+    $(SRC_DIR)/ApolloSessionRestoration.xm \
     $(SRC_DIR)/ApolloInlineImageMetadata.m \
     $(SRC_DIR)/ApolloProfilePagination.xm \
     $(SRC_DIR)/ApolloListEmptyState.xm \
@@ -64,6 +66,8 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloMemoryDiagnostics.m \
     $(SRC_DIR)/settings/ApolloSettingsTableViewController.m \
     $(SRC_DIR)/settings/ApolloSettingsForm.m \
+    $(SRC_DIR)/settings/ApolloSetupPreset.m \
+    $(SRC_DIR)/settings/ApolloSetupAssistant.m \
     $(SRC_DIR)/settings/ApolloSettingsShortcutsViewController.m \
     $(SRC_DIR)/settings/ApolloSettingsPinnedPreview.m \
     $(SRC_DIR)/settings/ApolloProfilePicturesPreview.m \
@@ -83,6 +87,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/settings/ApolloSettingsSearch.m \
     $(SRC_DIR)/ApolloToast.m \
     $(SRC_DIR)/ApolloRedditMediaUpload.m \
+    $(SRC_DIR)/ApolloUploadAlbumCompatibility.m \
     $(SRC_DIR)/ApolloNotificationBackend.m \
     $(SRC_DIR)/ApolloBarkIconResolver.m \
     $(SRC_DIR)/ApolloUsageHeartbeat.m \
@@ -199,6 +204,24 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloListBottomInsetGuard.xm \
     $(SRC_DIR)/ApolloTabBarHideStyle.xm \
     $(SRC_DIR)/ApolloIPadTabBarBottom.xm \
+    $(SRC_DIR)/ipad/ApolloPaneLayout.m \
+    $(SRC_DIR)/ipad/ApolloIPadLayoutWelcome.m \
+    $(SRC_DIR)/ipad/ApolloPaneDiagnostics.m \
+    $(SRC_DIR)/ipad/ApolloPaneGeometry.m \
+    $(SRC_DIR)/ipad/ApolloPaneTransitionObserver.m \
+    $(SRC_DIR)/ipad/ApolloPaneChrome.m \
+    $(SRC_DIR)/ipad/ApolloPaneSidebar.m \
+    $(SRC_DIR)/ipad/ApolloPaneFocus.m \
+    $(SRC_DIR)/ipad/ApolloPaneMenus.xm \
+    $(SRC_DIR)/ipad/ApolloPaneContent.xm \
+    $(SRC_DIR)/ipad/ApolloPaneColumnHostViewController.m \
+    $(SRC_DIR)/ipad/ApolloPaneRouting.m \
+    $(SRC_DIR)/ipad/ApolloPaneForwardHistory.m \
+    $(SRC_DIR)/ipad/ApolloPaneSplitViewController.m \
+    $(SRC_DIR)/ipad/ApolloPaneInstall.xm \
+    $(SRC_DIR)/ipad/ApolloPaneEntryPoints.xm \
+    $(SRC_DIR)/ipad/ApolloPaneRouter.xm \
+    $(SRC_DIR)/ipad/ApolloPaneGallery.m \
     $(SRC_DIR)/ApolloScrollEdgeEffect.xm \
     $(SRC_DIR)/ApolloProgressiveBlur.xm \
     $(SRC_DIR)/settings/ApolloSettings.xm \

@@ -3,6 +3,11 @@
 static NSString *const UDKeySettingsTabShortcuts = @"SettingsTabShortcuts";
 
 // UserDefaults keys
+// Not registered: absence distinguishes upgrades from fresh installs before
+// constructors write preferences. 1 pending, 2 completed/restored, 3 skipped,
+// 4 existing installation. The preset records a starting point, never a policy.
+static NSString *const UDKeySetupAssistantState = @"ApolloRebornSetupAssistantState";
+static NSString *const UDKeySetupPreset = @"ApolloRebornSetupPreset";
 // Optional iOS 27 Siri framework's preference; default OFF. The actor owns
 // state, with no duplicate BOOL mirror (Shortcuts can change it out of UI).
 static NSString *const UDKeySiriContentIndexing = @"ApolloSiriContentEnabled";
@@ -360,6 +365,17 @@ static NSString *const UDKeyLiquidGlassEnabled = @"LiquidGlassEnabled";
 // dragging to switch tabs (an either/or; needs a relaunch to apply). Opt-in;
 // default OFF via registerDefaults. See ApolloLiquidGlass.xm.
 static NSString *const UDKeyTabBarSwipeNavigation = @"TabBarSwipeNavigation";
+// iPad only. When ON, replaces each tab's single navigation stack with a
+// multi-column UISplitViewController: sidebar (the tab's own root list) →
+// content → detail. Opt-in; default OFF via registerDefaults. Installation
+// happens at scene connect, so a change needs a relaunch to apply — the
+// settings row confirms and restarts rather than pretending it is live.
+// Supersedes UDKeyIPadTabBarBottom while active (the floating pill is hidden).
+// See src/ipad/ and docs/ipad-pane-layout-plan.md.
+static NSString *const UDKeyIPadPaneLayout = @"IPadPaneLayout";
+// Consumed after the one-time iPad Layout invitation is actually presented.
+// Independent of the layout toggle: declining never enables or re-prompts.
+static NSString *const UDKeyIPadLayoutWelcomeSeen = @"IPadLayoutWelcomeSeen";
 // When ON, press-and-hold anywhere on a post info row (score, comments,
 // timestamp, 🌐 translation marker…) shows the glass-slider magnifier loupe: the
 // row is zoomed in a Liquid Glass card, sliding moves the selection pill
@@ -740,6 +756,9 @@ static NSString *const UDKeyUpdateSkippedVersion = @"UpdateSkippedVersion"; // "
 
 // Feed thumbnails for text posts with embedded images (off = native behavior).
 static NSString *const UDKeyFeedTextPostThumbnails = @"FeedTextPostThumbnails";
+// Restores the last feed, open post and reading position after process eviction.
+// Default YES. Turning it off deletes any saved or pending reading session.
+static NSString *const UDKeyRestoreReadingSession = @"RestoreReadingSession";
 // Replaces Apollo's fixed two/three-tile Reddit-gallery mosaic in large feed
 // cards with a horizontally paging image carousel. Default YES. See
 // ApolloFeedGalleryCarousel.xm.

@@ -2,6 +2,8 @@
 #import "ApolloSettingsShortcutsViewController.h"
 #import "ApolloSearchLandingPreferences.h"
 #import "settings/CustomAPIViewController.h"
+#import "settings/ApolloSetupAssistant.h"
+#import "ApolloSignInSplash.h"
 #import "settings/ApolloSiriSettingsViewController.h"
 #import "ApolloCommon.h"
 #import "ApolloAppIcon.h"
@@ -32,6 +34,7 @@
 #import "ApolloFavoritesSorting.h"
 #import "ApolloState.h"
 #import "ApolloScrollToTop.h"
+#import "ApolloSessionRestoration.h"
 #import "ApolloTabBarHideStyle.h"
 #import "ApolloTagFilters.h"
 #import "ApolloBadgeBookScraper.h"   // ApolloBadgeBookInvalidate() — Clear Tweak Caches
@@ -76,6 +79,8 @@
 #import "settings/TranslationSettingsViewController.h"
 #import "PictureInPictureViewController.h"
 #import "TagFiltersViewController.h"
+#import "ipad/ApolloPaneLayout.h"
+#import "ipad/ApolloIPadLayoutWelcome.h"
 
 // The six speeds the "Hold for Video Speed" picker offers, in display order. They
 // mirror the video player's own speed menu minus 1.0× (holding at normal speed
@@ -245,6 +250,17 @@ static UIImage *ApolloAboutGitHubMark(UIImage *artwork) {
         free(pixels);
     });
     return mark;
+}
+
+static NSString *ApolloIPadPaneLayoutSettingDetail(void) {
+    BOOL desired = [NSUserDefaults.standardUserDefaults boolForKey:UDKeyIPadPaneLayout];
+    BOOL active = ApolloPaneLayoutActive();
+    if (desired != active) {
+        return desired
+            ? @"Will turn on after Apollo quits and reopens. The current single-column layout remains active until then."
+            : @"Will turn off after Apollo quits and reopens. The current iPad Layout remains active until then.";
+    }
+    return @"Beta on iPadOS 18 or newer. Keep favourites in the sidebar and read posts and comments side by side. You can switch back anytime. Reopen Apollo to apply changes.";
 }
 
 @interface ApolloFeedShortcutsPreviewState : NSObject
@@ -1226,6 +1242,12 @@ typedef NS_ENUM(NSInteger, Tag) {
 }
 
 - (ApolloSettingsSection *)buildSetupSection {
+    __weak typeof(self) weakSelf = self;
+    ApolloSettingsRow *assistant =
+        [ApolloSettingsRow buttonRowWithID:@"setup.assistant" title:@"Setup Assistant"
+            action:^{ ApolloSetupAssistantPresentFrom(weakSelf); }];
+    assistant.iconSystemName = @"wand.and.stars";
+    assistant.iconTileColor = UIColor.systemPurpleColor;
     ApolloSettingsRow *apiKeys =
         [self hubDisclosureRowWithID:@"setup.apiKeys"
                                title:@"Accounts & API Keys"
@@ -1237,7 +1259,7 @@ typedef NS_ENUM(NSInteger, Tag) {
     apiKeys.iconTileColor = [UIColor systemGrayColor];
     return [ApolloSettingsSection sectionWithTitle:@"Setup"
                                             footer:@"Your Reddit sign-in credentials, plus optional Imgur, Giphy and Image Chest keys for uploads and GIFs, and a Kagi Session Link for searching Reddit with Kagi."
-                                              rows:@[ apiKeys ]];
+                                              rows:@[ assistant, apiKeys ]];
 }
 
 - (ApolloSettingsSection *)buildFeaturesSection {
@@ -1363,9 +1385,20 @@ typedef NS_ENUM(NSInteger, Tag) {
     loginPersistenceDebug.iconSystemName = @"wrench.and.screwdriver.fill"; loginPersistenceDebug.iconTileColor = [UIColor systemGrayColor];
     whatsNewDebug.iconSystemName = @"sparkles"; whatsNewDebug.iconTileColor = [UIColor systemGrayColor];
 
+    ApolloSettingsRow *iPadWelcomeDebug =
+        [ApolloSettingsRow buttonRowWithID:@"adv.iPadWelcomeDebug"
+                                     title:@"Preview iPad Layout Welcome"
+                                    action:^{ ApolloIPadLayoutWelcomePresentForDebug(weakSelf); }];
+    iPadWelcomeDebug.visible = ^BOOL {
+        return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad &&
+            ApolloPaneLayoutSupported() && [NSUserDefaults.standardUserDefaults boolForKey:UDKeyEnableFLEX];
+    };
+    iPadWelcomeDebug.iconSystemName = @"ipad.landscape";
+    iPadWelcomeDebug.iconTileColor = UIColor.systemGrayColor;
+
     return [ApolloSettingsSection sectionWithTitle:@"Advanced"
                                             footer:@"Notification backend, developer tools and diagnostics. Verbose Logging records a detailed log for bug reports; leave it off otherwise."
-                                              rows:@[ backend, flex, verboseLogging, exportLogs, loginPersistenceDebug, whatsNewDebug ]];
+                                              rows:@[ backend, flex, verboseLogging, exportLogs, loginPersistenceDebug, whatsNewDebug, iPadWelcomeDebug ]];
 }
 
 - (ApolloSettingsSection *)buildDataSection {
@@ -2191,7 +2224,8 @@ typedef NS_ENUM(NSInteger, Tag) {
                 });
         }];
     iPadTabBarBottom.visible = ^BOOL {
-        return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad && IsLiquidGlass();
+        return UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad && IsLiquidGlass() &&
+               !ApolloPaneLayoutActive();
     };
 
     // See ApolloLiquidGlass.xm — either/or with drag-to-switch-tab.
@@ -2298,6 +2332,31 @@ typedef NS_ENUM(NSInteger, Tag) {
     // "Color Flairs" now rides Appearance → Flair (native injection) —
     // -flairColorsSwitchToggled: below stays as the shared toggle handler.
 
+    // Experimental multi-column iPad layout. Hidden outright on iPhone rather
+    // than shown-disabled: it is a whole-app restructure with nothing to
+    // preview or explain on a device that will never run it.
+    // Installation happens at scene connect, so the handler confirms and
+    // restarts instead of pretending the change is live.
+    ApolloSettingsRow *iPadPaneLayout =
+        [ApolloSettingsRow customRowWithID:@"gen.iPadPaneLayout"
+                                      cell:^UITableViewCell *(__unused UITableView *tableView, __unused ApolloSettingsRow *row) {
+            UITableViewCell *cell = [weakSelf switchCellWithIdentifier:@"Cell_Gen_IPadPaneLayout"
+                                                                 label:@"iPad Layout"
+                                                                detail:ApolloIPadPaneLayoutSettingDetail()
+                                                                    on:[[NSUserDefaults standardUserDefaults] boolForKey:UDKeyIPadPaneLayout]
+                                                               enabled:YES
+                                                                action:@selector(iPadPaneLayoutSwitchToggled:)];
+            UILabel *title = [cell.contentView viewWithTag:7001];
+            title.attributedText = ApolloIPadLayoutBetaTitle(title.font, weakSelf.traitCollection);
+            title.accessibilityLabel = @"iPad Layout, Beta";
+            [weakSelf apollo_applyPrimaryTextColorToCell:cell];
+            return cell ?: [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+        }
+                                  onSelect:nil];
+    iPadPaneLayout.visible = ^BOOL {
+        return ApolloPaneLayoutSupported();
+    };
+
     // Overrides the top scroll-edge glass under the nav bar (iOS 26+). Liquid
     // Glass only — hidden otherwise rather than shown-disabled, since the row
     // has nothing to preview/explain on a non-Glass device.
@@ -2384,7 +2443,7 @@ typedef NS_ENUM(NSInteger, Tag) {
     }
     return [ApolloSettingsSection sectionWithTitle:@"Display & Navigation"
                                             footer:footer
-                                              rows:@[ scrollReturnButton, trueBlackKeyboard, collapseActions, centerBetween, scrollEdgeEffect ]];
+                                              rows:@[ scrollReturnButton, trueBlackKeyboard, collapseActions, centerBetween, iPadPaneLayout, scrollEdgeEffect ]];
 }
 
 // Display order differs from stored values; Blur is optional, while Hidden
@@ -2603,6 +2662,12 @@ static NSInteger ApolloHeaderStylePickerValue(NSInteger index, BOOL blurAvailabl
 - (ApolloSettingsSection *)buildMediaBrowsingSection {
     __weak typeof(self) weakSelf = self;
 
+    ApolloSettingsRow *restoreReadingSession =
+        [ApolloSettingsRow switchRowWithID:@"media.restoreReadingSession"
+                                     title:@"Restore Reading Session"
+                                      isOn:^BOOL { return sRestoreReadingSession; }
+                                  onToggle:^(UISwitch *sender) { [weakSelf restoreReadingSessionSwitchToggled:sender]; }];
+
     ApolloSettingsRow *feedGalleries =
         [ApolloSettingsRow switchRowWithID:@"media.feedGalleryCarousel"
                                      title:@"Swipe Through Feed Galleries"
@@ -2635,8 +2700,8 @@ static NSInteger ApolloHeaderStylePickerValue(NSInteger index, BOOL blurAvailabl
                                   onToggle:^(UISwitch *sender) { [weakSelf galleryAutoplayGIFsSwitchToggled:sender]; }];
 
     return [ApolloSettingsSection sectionWithTitle:@"Browsing"
-                                            footer:@"Swipe Through Feed Galleries: page through a gallery post's images without leaving the feed.\n\nSwipe Past Gallery to Navigate: at the first or last image, keep swiping to use your normal post swipes (vote, save, back or forward) instead of bouncing. From any image, a swipe that starts at the screen edge goes back or forward. Off by default.\n\nSwipe Up for Comments: in the fullscreen media viewer, swipe up or tap the comments button to open comments over the media. Off by default.\n\nPlay Videos / GIFs in Gallery View: video and GIF tiles play silently while they're on screen; tap one for the full-size viewer with sound. Paused in Low Power Mode."
-                                              rows:@[ feedGalleries, edgeSwipeNav, swipeComments, galleryAutoplayVideos, galleryAutoplayGIFs ]];
+                                            footer:@"Restore Reading Session: after iOS evicts Apollo, reopen the last feed, post and reading position on the next normal launch. Turn it off to delete the saved session immediately.\n\nSwipe Through Feed Galleries: page through a gallery post's images without leaving the feed.\n\nSwipe Past Gallery to Navigate: at the first or last image, keep swiping to use your normal post swipes (vote, save, back or forward) instead of bouncing. From any image, a swipe that starts at the screen edge goes back or forward. Off by default.\n\nSwipe Up for Comments: in the fullscreen media viewer, swipe up or tap the comments button to open comments over the media. Off by default.\n\nPlay Videos / GIFs in Gallery View: video and GIF tiles play silently while they're on screen; tap one for the full-size viewer with sound. Paused in Low Power Mode."
+                                              rows:@[ restoreReadingSession, feedGalleries, edgeSwipeNav, swipeComments, galleryAutoplayVideos, galleryAutoplayGIFs ]];
 }
 
 // NSFW Media. Lives here rather than in Apollo's native Filters & Blocks screen:
@@ -4762,6 +4827,38 @@ static NSDictionary *ApolloWidgetAccountCredentials(void) {
     [self presentViewController:alert animated:YES completion:nil];
 }
 
+// The split controllers are built during scene connect, which already happened
+// for this process, so there is no live path — quit & reopen is the honest
+// option. The default is written FIRST so the choice survives either way: quit
+// now, or next time the user relaunches for any reason. `sIPadPaneLayout` is
+// deliberately NOT updated here — it must keep describing the layout this
+// process actually installed, or every module that gates on it starts lying.
+- (void)iPadPaneLayoutSwitchToggled:(UISwitch *)sender {
+    BOOL on = sender.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:on forKey:UDKeyIPadPaneLayout];
+    [NSUserDefaults.standardUserDefaults setBool:YES forKey:UDKeyIPadLayoutWelcomeSeen];
+    // Dependent rows describe the hierarchy that is active in THIS process,
+    // while this switch and its pending subtitle describe the saved choice.
+    [self visibilityDidChange];
+    [self reloadRowWithID:@"gen.iPadPaneLayout"];
+
+    UIAlertController *alert = [UIAlertController
+        alertControllerWithTitle:@"Restart to Apply"
+                         message:on
+            ? @"iPad Layout is set up when Apollo launches, so it needs to quit and reopen to take effect."
+            : @"Apollo needs to quit and reopen to return to the single-column layout."
+                  preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Quit Apollo"
+                                              style:UIAlertActionStyleDefault
+                                            handler:^(__unused UIAlertAction *action) {
+        exit(0);
+    }]];
+    [alert addAction:[UIAlertAction actionWithTitle:@"Later"
+                                              style:UIAlertActionStyleCancel
+                                            handler:nil]];
+    [self presentViewController:alert animated:YES completion:nil];
+}
+
 - (void)liquidGlassSwitchToggled:(UISwitch *)sender {
     // The current launch keeps its original appearance and hook selection.
     // Only startup consumes this preference; do not refresh row visibility.
@@ -4798,6 +4895,12 @@ static NSDictionary *ApolloWidgetAccountCredentials(void) {
     [[NSNotificationCenter defaultCenter] postNotificationName:ApolloFeedGalleryCarouselChangedNotification object:nil];
     // The edge-swipe navigation row is only shown while the carousel is on.
     [self visibilityDidChange];
+}
+
+- (void)restoreReadingSessionSwitchToggled:(UISwitch *)sender {
+    sRestoreReadingSession = sender.isOn;
+    [[NSUserDefaults standardUserDefaults] setBool:sender.isOn forKey:UDKeyRestoreReadingSession];
+    ApolloSessionRestorationSetEnabled(sender.isOn);
 }
 
 - (void)galleryAutoplayVideosSwitchToggled:(UISwitch *)sender {
@@ -5118,6 +5221,39 @@ static NSDictionary *ApolloWidgetAccountCredentials(void) {
               [self buildAPIKeysSignInSection],
               [self buildAPIKeysExperimentalSection],
               [self buildAPIKeysExtrasSection] ];
+}
+@end
+
+@implementation ApolloSetupAPIKeyViewController
+- (NSString *)apollo_screenTitle { return @"Reddit API Key"; }
+- (NSArray<ApolloSettingsSection *> *)buildForm {
+    ApolloSettingsSection *source = [self buildAPIKeysDefaultSection];
+    NSSet *ids = [NSSet setWithArray:@[@"api.redditKey", @"api.redditSecret", @"api.redirectURI"]];
+    NSMutableArray *fields = [NSMutableArray array];
+    for (ApolloSettingsRow *row in source.rows) {
+        if ([ids containsObject:row.rowID]) [fields addObject:row];
+    }
+    __weak typeof(self) weakSelf = self;
+    ApolloSettingsRow *signIn = [ApolloSettingsRow buttonRowWithID:@"setup.apiSignIn" title:@"Sign In with Reddit"
+        action:^{
+            [weakSelf.view endEditing:YES];
+            if (!sRedditClientId.length) {
+                [weakSelf showAlertWithTitle:@"Reddit API Key Required" message:@"Enter your Reddit API key above before signing in."];
+                return;
+            }
+            if (!ApolloStartAPIKeySignIn()) {
+                [weakSelf showAlertWithTitle:@"Unable to Start Sign-In" message:@"Return to setup and try again once Apollo has finished loading."];
+            }
+        }];
+    ApolloSettingsRow *help = [ApolloSettingsRow buttonRowWithID:@"setup.apiHelp" title:@"Help with Reddit Sign-In"
+        action:^{ [weakSelf pushTroubleshootingViewController]; }];
+    return @[
+        [ApolloSettingsSection sectionWithTitle:@"Reddit Credentials"
+            footer:@"Enter the client ID from your Reddit app as the API key. Installed-app clients do not need a secret. Leave Redirect URI empty to use the Apollo default. Credentials are saved as you edit; your feature preset is applied only when you finish setup."
+            rows:fields],
+        [ApolloSettingsSection sectionWithTitle:nil footer:@"After signing in, return to Setup Assistant to choose your preferences. Optional upload and GIF keys can be added later."
+            rows:@[signIn, help]],
+    ];
 }
 @end
 

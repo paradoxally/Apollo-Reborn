@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v3.26.0] - 2026-10-24
+
+### Features
+
+- Add **iPad Layout (Beta)** for iPadOS 18 and later (**Settings > Apollo Reborn > Interface > Display & Navigation**, off by default): a sidebar with your tabs and favorites, a resizable feed column beside the post you're reading, full-width **Gallery View**, and menu commands for a hardware keyboard. Apollo offers it once after updating, with **Try Now** or **Try Later**, and switching it needs a restart ([#1385](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1385): @jordanearle)
+- Add a **Setup Assistant** that new installs see first: sign in or restore a backup, pick **Classic**, **Balanced** or **Full Featured**, choose an appearance, and review it all before finishing; reopen it any time from **Settings > Apollo Reborn > Setup Assistant** ([#1401](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1401): @jordanearle)
+- Bring back the last feed, the open post and roughly where you were reading when iOS closed Apollo in the background (**Restore Reading Session**, **Settings > Apollo Reborn > Media > Browsing**, on by default). The saved session expires after seven days and holds no account names or post content ([#1441](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1441): @Thetromboneman1)
+- Open **Gallery View** faster and resize its tiles by pinching instead of the − and + buttons, now down to four columns; press and hold on a tile or in the fullscreen viewer opens the same menu as feed media, and closing a fullscreen image no longer flashes a black screen ([#1434](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1434): @IllIIllIllIllII)
+- Add **Gallery View** to **Saved**, for all saved posts or a single saved category ([#1440](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1440): @IllIIllIllIllII)
+- Show **Recently Read** as a regular Apollo feed that follows your post size, thumbnail, theme and swipe settings. It moves to its own row on your profile under **Hidden & Deleted**, its ••• menu has **Compact Posts** / **Large Thumbnails** and **Clear Read History**, and a post's ••• menu gains **Remove from Recently Read**; the separate **Recently Read Thumbnails** setting is gone ([#1442](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1442): @IllIIllIllIllII)
+
+### Fixes
+
+- Keep usernames whole in comment headers and the post header above the comments; a long user flair is now cut short first, and the username only shortens when the flair alone doesn't make room ([#1366](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1366): @AcornElf)
+- Fix press and hold on an image, GIF or video inside a post showing the old link menu; it now opens the media menu with copy, save and share, like in the feed ([#1435](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1435): @IllIIllIllIllII)
+- Fix a single photo in a comment failing to upload with `Unbox.UnboxError` when photos go to Reddit, and multi-photo comments sometimes posting a dead Imgur link instead of the album ([#1402](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1402): @jordanearle)
+- Fix the search bar coming back on **Liquid Glass** feeds after swiping it away and then closing a fullscreen image ([#1447](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1447): @Thetromboneman1)
+- Fix a crash while loading comments with **Show Deleted Comments** on ([#1450](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1450): @Thetromboneman1)
+- Fix a crash in **Gallery View**'s image viewer on iOS 14 (#90: @paradoxally)
+
 ## [v3.25.0] - 2026-10-20
 
 ### Features
@@ -1612,6 +1632,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v3.26.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.25.0...v1.15.11_3.26.0
 [v3.25.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.24.1...v1.15.11_3.25.0
 [v3.24.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.24.0...v1.15.11_3.24.1
 [v3.24.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.23.1...v1.15.11_3.24.0

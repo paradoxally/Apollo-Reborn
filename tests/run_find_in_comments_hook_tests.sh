@@ -22,6 +22,11 @@ state_start = source.index('static BOOL sFICMultiActive')
 state_end = source.index('// MARK: - helpers', state_start)
 hook_start = source.index('// MARK: - hooks: multi-term matching')
 hook_end = source.index('// MARK: - hooks: selection entry points', hook_start)
+# The iPad pane find adapter that follows the string hook needs UIKit and adds
+# an ungrouped hook, so stop the slice before it.
+pane_start = source.find('API_AVAILABLE(ios(16.0))\n@interface ApolloPaneFindAdapter', hook_start, hook_end)
+if pane_start != -1:
+    hook_end = pane_start
 prefix = '#import <Foundation/Foundation.h>\n#import <objc/runtime.h>\n#import <objc/message.h>\n'
 test_source = prefix + source[state_start:state_end] + source[hook_start:hook_end]
 test_source += '\n' + (root / 'tests/find_in_comments_hook_tests.m').read_text()

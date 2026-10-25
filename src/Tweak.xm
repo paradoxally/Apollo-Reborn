@@ -12,6 +12,8 @@
 #import "fishhook.h"
 #import "ApolloCommon.h"
 #import "ApolloAICloudBridge.h"
+#import "ApolloDeviceGeometry.h"
+#import "ApolloDeviceIdentity.h"
 #import "ApolloRedditMediaUpload.h"
 #import "ApolloDeletedCommentsData.h"
 #import "ApolloImageUploadHost.h"
@@ -21,10 +23,13 @@
 #import "ApolloNotificationBackend.h"
 #import "ApolloUsageHeartbeat.h"
 #import "ApolloUpdateChecker.h"
+#import "ApolloWebJSONRouteUpdates.h"
 #import "ApolloPushNotifications.h"
 #import "ApolloBarkNotifications.h"
 #import "ApolloLiquidGlassIconSelectionState.h"
 #import "ApolloState.h"
+#import "ApolloDuoRail.h"
+#import "ApolloDuoCompatibility.h"
 #import "ApolloTranslation.h"
 #import "ApolloRedgifsMissingDuration.h"
 #import "ApolloRedgifsErrorCards.h"
@@ -1225,7 +1230,10 @@ static void ApolloLogAccountSnapshot(NSString *reason) {
 
     ApolloLoginDiag(@"[AccountSnapshot] %@ | device=%@ | keychain: len=%ld status=%d accessible=%@ | defaults: len=%ld index=%ld accounts=%ld withUser=%ld | mirror: len=%ld | active=%@",
                     reason, ApolloProtectedDataString(), kcLen, (int)kcStatus, accessible ?: @"?",
-                    defaultsLen, (long)index, (long)acctCount, (long)acctWithUser, mirrorLen, active ?: @"(nil)");
+                    defaultsLen, (long)index, (long)acctCount, (long)acctWithUser, mirrorLen,
+                    // A fingerprint, not the name: this file outlives sign-outs and
+                    // account removals, so the export scrub can't know every name in it.
+                    active.length ? [@"#" stringByAppendingString:ApolloLogFingerprint(active.lowercaseString)] : @"(nil)");
     // The access-group breakdown (root-cause confirmation) — separate line to keep both legible.
     ApolloLoginDiag(@"[AccountBlobGroups] %@ | %@", reason, ApolloAccountsBlobGroupBreakdown(keychainItems, kcStatus));
 }
@@ -1721,61 +1729,37 @@ static OSStatus SecItemDelete_replacement(CFDictionaryRef query) {
 }
 
 // --- Device detection (for media chrome, Pixel Pals and Dynamic Island behaviour) ---
-// Apollo's device model mapper (sub_1007a3cdc) only recognizes models up to iPhone 14 Pro Max.
-// Newer models return "unknown" (0x3f) and get no Pixel Pals.
-// Remap newer machine identifiers to "iPhone15,2" (iPhone 14 Pro) so Apollo
-// treats them as Dynamic Island devices and enables full Pixel Pals + FauxCutOutView.
-// This also keeps the portrait gallery counter at the top right;
-// unknown devices get the centered "1 of 5" layout.
-// Apollo then lays Pixel Pals out for the 14 Pro's 125x37 island;
-// ApolloPixelPals.xm remaps that onto the device's real island (position on
-// every DI device, and size on the iPhone 18 Pro's smaller island).
+// Apollo's model mapper only recognizes devices through iPhone 14 Pro Max.
+// Map newer models through ApolloDeviceIdentity.h (14 Pro = island, 14 = notch),
+// preserving media chrome and Pixel Pals on regular phones. ApolloPixelPals.xm
+// follows the real island's size and position.
 static void *uname_orig;
 static int uname_replacement(struct utsname *buf) {
     int ret = ((int (*)(struct utsname *))uname_orig)(buf);
     if (ret != 0) return ret;
 
-    // iPhone15,4+ are all unrecognized by Apollo's mapper.
-    // Map Dynamic Island models to iPhone15,2 (iPhone 14 Pro) and notch models to iPhone14,7 (iPhone 14)
-    static NSDictionary *modelRemap;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        NSString *di    = @"iPhone15,2";  // iPhone 14 Pro (Dynamic Island)
-        NSString *notch = @"iPhone14,7";  // iPhone 14 (notch)
-
-        modelRemap = @{
-            @"iPhone15,4": di,    // iPhone 15
-            @"iPhone15,5": di,    // iPhone 15 Plus
-            @"iPhone16,1": di,    // iPhone 15 Pro
-            @"iPhone16,2": di,    // iPhone 15 Pro Max
-            @"iPhone17,1": di,    // iPhone 16 Pro
-            @"iPhone17,2": di,    // iPhone 16 Pro Max
-            @"iPhone17,3": di,    // iPhone 16
-            @"iPhone17,4": di,    // iPhone 16 Plus
-            @"iPhone17,5": notch, // iPhone 16e
-            @"iPhone18,1": di,    // iPhone 17 Pro
-            @"iPhone18,2": di,    // iPhone 17 Pro Max
-            @"iPhone18,3": di,    // iPhone 17
-            @"iPhone18,4": di,    // iPhone Air
-            @"iPhone18,5": notch, // iPhone 17e
-            @"iPhone19,2": di,    // iPhone 18 Pro
-            @"iPhone19,3": di,    // iPhone 18 Pro Max
-        };
-    });
-
     NSString *machine = @(buf->machine);
 #if APOLLO_SIM_BUILD
     // The simulator's uname reports the host arch ("arm64"), so Apollo's
     // device mapper sees "unknown" and hides Pixel Pals. Substitute the
-    // simulated device's identifier so the same remap table below applies.
+    // simulated device's identifier so the same classification applies.
     if (![machine hasPrefix:@"iPhone"]) {
         const char *simModel = getenv("SIMULATOR_MODEL_IDENTIFIER");
         if (simModel) machine = @(simModel);
     }
 #endif
-    NSString *remap = modelRemap[machine];
+
+    // Classification only — uname is called from arbitrary threads before
+    // UIKit is up. A live cutout is applied later per window.
+    ApolloDeviceIdentityKind kind =
+        ApolloDeviceIdentityKindForMachine(machine.UTF8String, false, false);
+    const char *remap = ApolloDeviceIdentityModelForKind(kind);
     if (remap) {
-        strlcpy(buf->machine, remap.UTF8String, sizeof(buf->machine));
+        strlcpy(buf->machine, remap, sizeof(buf->machine));
+        static dispatch_once_t logOnce;
+        dispatch_once(&logOnce, ^{
+            ApolloLog(@"[DeviceIdentity] %@ → %s", machine, remap);
+        });
     }
 #if APOLLO_SIM_BUILD
     else if (![@(buf->machine) isEqualToString:machine]) {
@@ -3931,6 +3915,8 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
                                     UDKeyIPadTabBarBottom: @NO,
                                     UDKeySettingsIconAppearance: @(ApolloSettingsIconAppearanceLight),
                                     UDKeyTabBarSwipeNavigation: @NO,
+                                    UDKeyDuoLandscapeFeedLayout: @0,
+                                    UDKeyDuoSubredditPanelGlassEnabled: @NO,
                                     UDKeyIPadPaneLayout: @NO,
                                     UDKeyLiquidGlassEnabled: @YES,
                                     UDKeyIconRowMagnifier: @YES,
@@ -3991,6 +3977,7 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
                                     UDKeyAutomaticUpdateChecks: @YES,
                                     UDKeyWebJSONEnabled: @NO,
                                     UDKeyReduceRateLimiting: @NO,
+                                    UDKeyKeylessRouteUpdates: @YES,
                                     UDKeyReduceRateLimitingOffered: @NO,
                                     UDKeyUseModernRedditChat: @NO,
                                     UDKeyUseModernRedditModmail: @NO,
@@ -4250,6 +4237,14 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
     // sLiquidGlassEnabled was already latched in ApolloCommon +load. Do not
     // reload it here: UIKit and early hook constructors use that launch choice.
     sTabBarSwipeNavigation = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyTabBarSwipeNavigation];
+    sDuoLandscapeFeedLayout = [standardDefaults integerForKey:UDKeyDuoLandscapeFeedLayout];
+    sDuoSubredditPanelGlassEnabled = [standardDefaults boolForKey:UDKeyDuoSubredditPanelGlassEnabled];
+    // Value 1 belonged to the removed side-by-side experiment. Keep Focused
+    // feed at 2 so existing selections survive this menu cleanup.
+    if (sDuoLandscapeFeedLayout != 0 && sDuoLandscapeFeedLayout != 2) {
+        sDuoLandscapeFeedLayout = 0;
+        [standardDefaults setInteger:0 forKey:UDKeyDuoLandscapeFeedLayout];
+    }
     // Read once here: ApolloPaneInstall.xm builds the split controllers during
     // scene connect, which happens after %ctor and never again for the process.
     sIPadPaneLayout = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyIPadPaneLayout];
@@ -4391,6 +4386,7 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
     // hooks, so reading before they're in place returns nothing.
     sWebJSONEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyWebJSONEnabled];
     sReduceRateLimiting = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyReduceRateLimiting];
+    sKeylessRouteUpdates = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyKeylessRouteUpdates];
     sPollsFeatureEnabled = [[NSUserDefaults standardUserDefaults] boolForKey:UDKeyPollsEnabled];
     sPollOptionAlignment = [[NSUserDefaults standardUserDefaults] integerForKey:UDKeyPollOptionAlignment];
     if (sPollOptionAlignment != ApolloPollOptionAlignmentCenter && sPollOptionAlignment != ApolloPollOptionAlignmentLeft) {
@@ -4731,6 +4727,8 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
                     object:nil
                      queue:[NSOperationQueue mainQueue]
                 usingBlock:^(NSNotification *note) {
+        // Silent, so the Setup Assistant doesn't hold it back.
+        ApolloWebJSONRouteUpdatesCheckIfNeeded();
         if (ApolloSetupAssistantBlocksLaunchPrompts()) return;
         ApolloSendUsageHeartbeatIfNeeded();
         ApolloUpdateCheckIfNeeded();

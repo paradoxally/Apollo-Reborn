@@ -13,5 +13,5 @@ a=s.index('void ApolloWebJSONNoteResponse('); b=s.index('\n}',a)+2
 code += s[a:b]
 (output/'test.m').write_text((root/'tests/session_expiry_tests.m').read_text().replace('// PRODUCTION_EXPIRY',code))
 PY
-xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -fsanitize=address,undefined -framework Foundation "$build/test.m" -o "$build/test"
+xcrun --sdk macosx clang -fobjc-arc -fblocks -Wall -Wextra -Werror -fsanitize=address,undefined -framework Foundation -I "$repo/src" "$build/test.m" "$repo/src/ApolloWebJSONRoutes.m" -o "$build/test"
 "$build/test"

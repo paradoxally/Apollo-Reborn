@@ -18,5 +18,5 @@ test = (root / 'tests/listing_response_tests.m').read_text()
 PYGEN
 perl "${THEOS:-$HOME/theos}/bin/logos.pl" -c generator=internal "$build/ListingResponse.xm" > "$build/ListingResponse.mm"
 xcrun --sdk macosx clang++ -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-unused-function \
-    -fsanitize=address,undefined -framework Foundation "$build/ListingResponse.mm" -o "$build/tests"
+    -fsanitize=address,undefined -framework Foundation -I "$repo/src" "$build/ListingResponse.mm" "$repo/src/ApolloWebJSONRoutes.m" -o "$build/tests"
 "$build/tests"

@@ -1,5 +1,6 @@
 #import "ipad/ApolloPaneChrome.h"
 #import "ApolloImmersiveHeaderBackground.h"
+#import "ApolloDuoSplitView.h"
 
 #import <CoreImage/CoreImage.h>
 #import <QuartzCore/QuartzCore.h>
@@ -332,7 +333,7 @@ static void ApolloImmersiveRequestBackdrop(UIImage *banner, void (^completion)(U
 @property(nonatomic, strong) CAGradientLayer *veilLayer;
 @property(nonatomic, strong) UIView *paneChromeCover;
 @property(nonatomic, strong) UIView *sharpClip;
-@property(nonatomic, strong) UIImageView *sharpView;
+@property(nonatomic, strong) ApolloTopAnchoredImageView *sharpView;
 @property(nonatomic, strong) CAGradientLayer *sharpFeatherMask;
 @property(nonatomic, strong) CAGradientLayer *chromeScrimLayer;
 @property(nonatomic, strong) UIColor *pageColor;
@@ -385,7 +386,7 @@ static void ApolloImmersiveRequestBackdrop(UIImage *banner, void (^completion)(U
     _sharpClip.userInteractionEnabled = NO;
     [_contentContainer addSubview:_sharpClip];
 
-    _sharpView = [[UIImageView alloc] init];
+    _sharpView = [[ApolloTopAnchoredImageView alloc] init];
     _sharpView.contentMode = UIViewContentModeScaleAspectFill;
     _sharpView.clipsToBounds = YES;
     [_sharpClip addSubview:_sharpView];
@@ -496,7 +497,16 @@ static void ApolloImmersiveRequestBackdrop(UIImage *banner, void (^completion)(U
 - (void)layoutSubviews {
     [super layoutSubviews];
     CGFloat fullWidth = self.bounds.size.width;
-    CGFloat width = MAX(1.0, fullWidth - self.artworkInsets.left - self.artworkInsets.right);
+    // Duo confines the artwork to its split detail column; an iPad pane
+    // insets it from a sidebar the table extends underneath.
+    CGRect contentFrame = CGRectMake(self.artworkInsets.left, 0,
+        MAX(1.0, fullWidth - self.artworkInsets.left - self.artworkInsets.right), self.bounds.size.height);
+    CGRect column = ApolloDuoSplitContentFrame(self.contentViewController, self);
+    if (!CGRectIsNull(column) && column.size.width > 0) {
+        contentFrame.origin.x = CGRectGetMinX(column);
+        contentFrame.size.width = CGRectGetWidth(column);
+    }
+    CGFloat width = contentFrame.size.width;
     CGFloat totalHeight = MAX(1.0, self.bounds.size.height);
     CGFloat regionHeight = MIN(self.regionHeight, totalHeight);
     CGFloat extendedHeight = MIN(self.extendedHeight, totalHeight);
@@ -512,7 +522,7 @@ static void ApolloImmersiveRequestBackdrop(UIImage *banner, void (^completion)(U
 
     CGAffineTransform transform = self.contentContainer.transform;
     self.contentContainer.transform = CGAffineTransformIdentity;
-    self.contentContainer.frame = CGRectMake(self.artworkInsets.left, 0, width, totalHeight);
+    self.contentContainer.frame = CGRectMake(CGRectGetMinX(contentFrame), 0, width, totalHeight);
     self.contentContainer.transform = transform;
 
     // Keep ambient artwork when Banner is off: regionHeight == topInset hides
@@ -566,6 +576,7 @@ static void ApolloImmersiveRequestBackdrop(UIImage *banner, void (^completion)(U
         self.sharpFeatherMask.locations = @[@0.0, @0.40, @0.55, @0.64, @0.72, @0.84, @0.98, @1.0];
     }
     self.sharpFeatherMask.frame = self.sharpClip.bounds;
+    self.sharpView.anchorsTop = self.usesProfileHero;
 
     // The veil starts fully clear beneath the sharp banner, reaches a strong
     // wash where the name/bio text sits, and hits solid page color at the
@@ -634,6 +645,51 @@ static void ApolloImmersiveRequestBackdrop(UIImage *banner, void (^completion)(U
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
     [super traitCollectionDidChange:previousTraitCollection];
     [self setNeedsLayout];
+}
+
+@end
+
+@implementation ApolloTopAnchoredImageView
+
+- (void)setAnchorsTop:(BOOL)anchorsTop {
+    if (_anchorsTop == anchorsTop) return;
+    _anchorsTop = anchorsTop;
+    [self apollo_updateContentsRect];
+}
+
+- (void)setImage:(UIImage *)image {
+    [super setImage:image];
+    [self apollo_updateContentsRect];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    [self apollo_updateContentsRect];
+}
+
+// Aspect fill, horizontally centered. Vertically, of the hidden overflow
+// a quarter is cropped from the top and the rest from the bottom (center
+// crop would split it evenly).
+- (void)apollo_updateContentsRect {
+    CGSize view = self.bounds.size;
+    CGSize image = self.image.size;
+    if (!self.anchorsTop || view.width <= 0 || view.height <= 0 || image.width <= 0 || image.height <= 0) {
+        if (self.contentMode != UIViewContentModeScaleAspectFill) self.contentMode = UIViewContentModeScaleAspectFill;
+        if (!CGRectEqualToRect(self.layer.contentsRect, CGRectMake(0, 0, 1, 1))) self.layer.contentsRect = CGRectMake(0, 0, 1, 1);
+        return;
+    }
+    // Many banners (scans, screenshots) carry a light border on their side
+    // edges; with a wide header the full width is otherwise always visible.
+    static const CGFloat kSideTrim = 0.03;
+    CGFloat usableWidth = image.width * (1.0 - 2.0 * kSideTrim);
+    CGFloat scale = MAX(view.width / usableWidth, view.height / image.height);
+    CGFloat visibleWidth = MIN(1.0, view.width / scale / image.width);
+    CGFloat visibleHeight = MIN(1.0, view.height / scale / image.height);
+    static const CGFloat kTopCropShare = 0.25;
+    CGRect rect = CGRectMake((1.0 - visibleWidth) / 2.0, (1.0 - visibleHeight) * kTopCropShare,
+                             visibleWidth, visibleHeight);
+    if (self.contentMode != UIViewContentModeScaleToFill) self.contentMode = UIViewContentModeScaleToFill;
+    if (!CGRectEqualToRect(self.layer.contentsRect, rect)) self.layer.contentsRect = rect;
 }
 
 @end

@@ -1,7 +1,27 @@
 export ARCHS = arm64
 export libFLEX_ARCHS = arm64
 
-TARGET := iphone:clang:26.0:14.0
+# SDK 26.0 preserves the supported iOS 14 device deployment floor. Merely
+# pinning SDK 27.1 by name does not bypass its iOS 15 minimum deployment target.
+# Alternate SDK pins are developer builds and require an explicit iOS 15+ floor.
+# Simulator callers pass TARGET explicitly and bypass this device configuration.
+APOLLO_DEVICE_SDK ?= 26.0
+_APOLLO_XCODE_DEVELOPER := $(or $(DEVELOPER_DIR),$(shell xcode-select -p 2>/dev/null))
+
+ifeq ($(filter command line,$(origin TARGET)),)
+  ifneq ($(APOLLO_DEVICE_SDK),26.0)
+    ifeq ($(origin APOLLO_DEVICE_DEPLOY),undefined)
+      $(error An alternate APOLLO_DEVICE_SDK requires an explicit compatible APOLLO_DEVICE_DEPLOY; SDK 27.1 requires 15.0 or newer)
+    endif
+    ifneq ($(shell printf '%s\n' '$(APOLLO_DEVICE_DEPLOY)' | awk -F. '{ print ($$1 + 0 >= 15) }'),1)
+      $(error Alternate device SDK builds require APOLLO_DEVICE_DEPLOY=15.0 or newer; use SDK 26.0 for iOS 14 support)
+    endif
+  endif
+  APOLLO_DEVICE_DEPLOY ?= 14.0
+  TARGET := iphone:clang:$(APOLLO_DEVICE_SDK):$(APOLLO_DEVICE_DEPLOY)
+  $(info [ApolloReborn] Device Theos SDK pin $(APOLLO_DEVICE_SDK) (TARGET=$(TARGET)))
+endif
+
 INSTALL_TARGET_PROCESSES = Apollo
 THEOS_LEAN_AND_MEAN = 1
 
@@ -55,9 +75,20 @@ ApolloReborn_FILES = \
     $(WHATS_NEW_GEN_M) \
     $(SRC_DIR)/Tweak.xm \
     $(SRC_DIR)/ApolloCommon.m \
+    $(SRC_DIR)/ApolloLogRedaction.m \
     $(SRC_DIR)/ApolloSessionState.m \
     $(SRC_DIR)/ApolloSessionRestoration.xm \
     $(SRC_DIR)/ApolloInlineImageMetadata.m \
+    $(SRC_DIR)/ApolloDeviceGeometry.m \
+    $(SRC_DIR)/ApolloDeviceDisplay.m \
+    $(SRC_DIR)/ApolloDeviceDisplayHooks.xm \
+    $(SRC_DIR)/ApolloDuoSplitView.xm \
+    $(SRC_DIR)/ApolloDuoAccount.m \
+    $(SRC_DIR)/ApolloDuoRailCore.m \
+    $(SRC_DIR)/ApolloDuoNavigationGestures.m \
+    $(SRC_DIR)/ApolloDuoRail.xm \
+    $(SRC_DIR)/ApolloDuoSubsChrome.m \
+    $(SRC_DIR)/ApolloDuoSubsChromeHooks.xm \
     $(SRC_DIR)/ApolloProfilePagination.xm \
     $(SRC_DIR)/ApolloListEmptyState.xm \
     $(SRC_DIR)/ApolloEmptyFeedNextPage.xm \
@@ -76,6 +107,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/settings/ApolloBackupDocument.m \
     $(SRC_DIR)/settings/ApolloAutomaticBackup.m \
     $(SRC_DIR)/settings/ApolloAutomaticBackupViewController.m \
+    $(SRC_DIR)/settings/ApolloKeylessRouteStatusViewController.m \
     $(SRC_DIR)/settings/ApolloLocalBackupsViewController.m \
     $(SRC_DIR)/settings/ApolloBackupActionsCell.m \
     $(SRC_DIR)/settings/ApolloThanksToViewController.m \
@@ -166,6 +198,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloSwipeUpComments.xm \
     $(SRC_DIR)/ApolloMediaMetadata.m \
     $(SRC_DIR)/ApolloMediaAutoplay.m \
+    $(SRC_DIR)/ApolloVideoVisibility.m \
     $(SRC_DIR)/ApolloCommentsCollapse.xm \
     $(SRC_DIR)/ApolloCommentHeaderLayout.xm \
     $(SRC_DIR)/ApolloMaintainerTint.m \
@@ -231,8 +264,6 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloIntelligenceBridge.xm \
     $(SRC_DIR)/settings/ApolloSiriSettingsViewController.m \
     $(SRC_DIR)/ApolloProfileMoreMenu.xm \
-    $(SRC_DIR)/ApolloSaveAllMediaItems.m \
-    $(SRC_DIR)/ApolloSaveAllMedia.xm \
     $(SRC_DIR)/ApolloHiddenContentData.m \
     $(SRC_DIR)/ApolloHiddenContentViewController.m \
     $(SRC_DIR)/ApolloHiddenContentMedia.m \
@@ -320,6 +351,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloSearchNativeBar.xm \
     $(SRC_DIR)/ApolloSearchObserverCleanup.xm \
     $(SRC_DIR)/ApolloJumpBarSuggestionTint.xm \
+    $(SRC_DIR)/ApolloJumpBarTitle.xm \
     $(SRC_DIR)/ApolloSubredditSwitcherSheet.xm \
     $(SRC_DIR)/ApolloSearchHeaderOverlapFix.xm \
     $(SRC_DIR)/ApolloSearchTabFixes.xm \
@@ -348,6 +380,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloDirectChatWeb.xm \
     $(SRC_DIR)/ApolloLinkCardTitleFallback.xm \
     $(SRC_DIR)/ApolloFeedTextPostThumbnails.xm \
+    $(SRC_DIR)/ApolloMediaHinge.xm \
     $(SRC_DIR)/ApolloTweetBuddy.xm \
 	$(SRC_DIR)/ApolloVisionOSFix.xm \
     $(SRC_DIR)/ApolloVisionOSHover.xm \
@@ -357,6 +390,8 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloWebJSON.m \
     $(SRC_DIR)/ApolloReduceRateLimiting.m \
     $(SRC_DIR)/ApolloWebJSONWriteRepair.m \
+    $(SRC_DIR)/ApolloWebJSONRoutes.m \
+    $(SRC_DIR)/ApolloWebJSONRouteUpdates.m \
     $(SRC_DIR)/ApolloWebJSONIdentity.xm \
     $(SRC_DIR)/ApolloWebSessionLoginViewController.m \
     $(SRC_DIR)/ApolloWebSessionStore.m \
@@ -411,7 +446,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/crash/ApolloCrashBugsnagNeutralize.xm \
     $(KSCRASH_FILES) \
     $(SSZIPARCHIVE_FILES)
-ApolloReborn_FRAMEWORKS = UIKit Security AVFoundation AVKit OSLog NaturalLanguage ImageIO StoreKit Photos PhotosUI SafariServices SystemConfiguration WebKit AuthenticationServices CoreImage Vision LinkPresentation SwiftUI UniformTypeIdentifiers Metal QuartzCore CoreMotion
+ApolloReborn_FRAMEWORKS = UIKit Security LocalAuthentication AVFoundation AVKit OSLog NaturalLanguage ImageIO StoreKit Photos PhotosUI SafariServices SystemConfiguration WebKit AuthenticationServices CoreImage Vision LinkPresentation SwiftUI UniformTypeIdentifiers Metal QuartzCore CoreMotion SpriteKit
 # The YouTube caption guard reads the per-app subtitle setting (ApolloYouTubeCaptions.xm).
 ApolloReborn_FRAMEWORKS += MediaAccessibility
 ApolloReborn_WEAK_FRAMEWORKS += Symbols
@@ -436,9 +471,9 @@ endif
 # dir explicitly, only when it's present. (Nothing uses the macros right now —
 # theme generation moved off guided generation entirely — but the flag is
 # harmless and any future @Generable use silently needs it.)
-FM_PLUGIN_PATH := $(shell xcode-select -p)/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins
-ifneq ($(wildcard $(FM_PLUGIN_PATH)/libFoundationModelsMacros.dylib),)
-ApolloReborn_SWIFTFLAGS += -plugin-path $(FM_PLUGIN_PATH)
+FM_PLUGIN_PATH := $(_APOLLO_XCODE_DEVELOPER)/Platforms/iPhoneOS.platform/Developer/usr/lib/swift/host/plugins
+ifneq ($(shell test -f "$(FM_PLUGIN_PATH)/libFoundationModelsMacros.dylib" && echo yes),)
+ApolloReborn_SWIFTFLAGS += -plugin-path "$(FM_PLUGIN_PATH)"
 endif
 # Apple's Translation framework (used by the on-device "apple" translation provider in
 # ApolloAppleTranslation.swift) only exists on iOS 18.0+. Weak-link it so the tweak still

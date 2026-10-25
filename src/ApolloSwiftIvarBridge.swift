@@ -10,7 +10,10 @@
 //
 
 import Foundation
+#if canImport(UIKit)
+import SwiftUI
 import UIKit
+#endif
 
 // SafariActivity.url is a non-optional Swift URL stored inline. Its layout
 // changes with Foundation; never read its first word as an NSURL in ObjC.
@@ -224,3 +227,34 @@ public func ApolloSwiftCopyFirstObjectArrayElement(_ storage: UnsafeRawPointer?)
           let first = storage.assumingMemoryBound(to: Array<AnyObject>.self).pointee.first else { return nil }
     return Unmanaged.passRetained(first).toOpaque()
 }
+
+#if canImport(UIKit)
+// Apollo's native menu hosts a SwiftUI type that the tweak cannot name. A
+// protocol conformance on the generic hosting controller provides access to
+// its public sizing API without casting that unknown content to AnyView.
+@MainActor private protocol ApolloHostingPreferredSizeReporting {
+    func apolloEnablePreferredSizeReporting()
+}
+
+extension UIHostingController: ApolloHostingPreferredSizeReporting {
+    fileprivate func apolloEnablePreferredSizeReporting() {
+        if #available(iOS 16.0, *) {
+            sizingOptions.insert(.preferredContentSize)
+        }
+    }
+}
+
+// Main-thread only. The pointer is an unretained UIViewController. Its parent
+// receives preferredContentSizeDidChangeForChildContentContainer: when the
+// SwiftUI menu changes state; that callback should refit at the actual viewport
+// width rather than directly adopt this unconstrained preferred size.
+@MainActor @_cdecl("ApolloSwiftEnableHostingPreferredContentSize")
+public func ApolloSwiftEnableHostingPreferredContentSize(_ controller: UnsafeRawPointer?) -> Bool {
+    guard #available(iOS 16.0, *), let controller else { return false }
+    let object = Unmanaged<AnyObject>.fromOpaque(controller).takeUnretainedValue()
+    guard let hosting = object as? any ApolloHostingPreferredSizeReporting else { return false }
+    hosting.apolloEnablePreferredSizeReporting()
+    return true
+}
+
+#endif

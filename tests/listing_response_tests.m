@@ -1,5 +1,6 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import "ApolloWebJSONRoutes.h"
 // Intentional no-op: the harness links no logging, so log lines from the code
 // under test are dropped at every level; no check depends on log output.
 #define ApolloLog(...) do { if (NO) NSLog(__VA_ARGS__); } while (0)
@@ -15,6 +16,16 @@ static ApolloWebJSONTaskCompletion ApolloWebJSONShareAccountRead(NSString *usern
     return completion;
 }
 static id ApolloWebJSONSharedReadPlaceholderTask(void) { return nil; }
+// The API-Key-Free subscription-walk helpers (page size, cut-short-walk
+// guard) only act for web-session accounts; these clients have none.
+static id ApolloWebJSONParametersForAccountRead(NSString *username, NSString *method, NSString *path, id parameters) {
+    (void)username; (void)method; (void)path;
+    return parameters;
+}
+static BOOL ApolloWebJSONRequestIsSubscriptionWalk(NSString *method, NSString *path) { (void)method; (void)path; return NO; }
+static void ApolloWebJSONNoteSubscriptionWalkFailed(NSString *username, NSHTTPURLResponse *response, NSError *error) {
+    (void)username; (void)response; (void)error;
+}
 static id nextObject;
 static NSError *nextError;
 static NSHTTPURLResponse *nextResponse;
@@ -26,6 +37,10 @@ static NSHTTPURLResponse *nextResponse;
     (void)method; (void)path; (void)parameters;
     if (completion) completion(nextResponse, nextObject, nextError);
     return @"task";
+}
+- (NSURLSessionDataTask *)dataTaskWithRequest:(NSURLRequest *)request completionHandler:(id)completionHandler {
+    (void)request; (void)completionHandler;
+    return nil;
 }
 @end
 // These tests isolate response-shape handling. Session-state behavior is
@@ -43,6 +58,20 @@ static BOOL ApolloWebJSONPathNeedsWebBearer(NSString *path) { (void)path; return
 static NSString *ApolloWebJSONWebSessionUsernameForClient(RDKClient *client) { (void)client; return nil; }
 static BOOL ApolloWebJSONWebBearerNeedsMint(NSString *username) { (void)username; return NO; }
 static NSString *ApolloWebJSONKeylessOAuthBearer(NSString *username) { (void)username; return nil; }
+// Route fallback (#1477) only acts for an account username, and these clients
+// have none, so no request is ever resent on another route.
+static __thread NSUInteger sApolloWebJSONRoutesTriedForSend = 0;
+static __thread NSUInteger sApolloWebJSONRoutesTriedToStamp = 0;
+static NSInteger ApolloWebJSONRouteFromURL(NSURL *url) { (void)url; return -1; }
+static void ApolloWebJSONLogRouteOutcomeOnce(NSString *method, NSString *path, NSString *message) {
+    (void)method; (void)path; (void)message;
+}
+static void ApolloWebJSONShowRoutesBlockedToastOnce(void) {}
+static NSString *ApolloWebJSONRouteStatusSummary(void) { return @""; }
+static NSURLRequest *ApolloWebJSONRequestMarkingTriedRoutes(NSURLRequest *request, NSUInteger triedMask) {
+    (void)triedMask;
+    return request;
+}
 // PRODUCTION_HOOK
 
 static void Check(BOOL condition, NSString *message) {

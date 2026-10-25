@@ -767,7 +767,8 @@ maximumResponseTokens:(NSInteger)maximumResponseTokens
         [self startTaskForState:state request:request];
         // Header count only: custom header values can be credentials.
         ApolloLog(@"[AICloud][wire] request %@ started provider=%@ model=%@ host=%@ promptChars=%lu instructionChars=%lu bodyBytes=%lu customHeaders=%lu",
-                  state.identifier, provider, model, state.endpoint.host ?: @"?",
+                  // A custom provider's host is the user's own server.
+                  state.identifier, provider, model, [provider isEqualToString:@"custom"] ? @"(custom)" : (state.endpoint.host ?: @"?"),
                   (unsigned long)inputChars, (unsigned long)instructions.length,
                   (unsigned long)request.HTTPBody.length, (unsigned long)state.customHeaders.count);
         ApolloLog(@"[AICloud][wire] request %@ learned-shape %@ params=%@", state.identifier,

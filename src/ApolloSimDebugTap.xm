@@ -36,6 +36,8 @@
 #import "ApolloProfileEditorWebViewController.h"
 #import "ApolloTranslation.h"
 #import "ApolloWebTextDecoding.h"
+#import "ApolloWebJSON.h"
+#import "ApolloWebJSONRoutes.h"
 #import "ApolloState.h"
 #import "ApolloTextureDecls.h"
 #import "ApolloThemeStore.h"
@@ -2229,6 +2231,27 @@ static BOOL ApolloSimDebugHandleIntegratedMainCommand(NSString *contents) {
         ApolloSimDebugScrollTo([[contents substringFromIndex:9] doubleValue]);
         return YES;
     }
+    // "routeblock <route>[,<route>…]" or "routeblock off": make API-Key-Free
+    // routes (www-dotjson, old, api) get Reddit's real block page, to exercise
+    // the fallback (ApolloWebJSONRoutes.m).
+    if ([contents hasPrefix:@"routeblock "]) {
+        NSString *list = [[contents substringFromIndex:11]
+            stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
+        NSUInteger mask = 0;
+        for (NSString *name in [list componentsSeparatedByString:@","]) {
+            for (NSInteger r = ApolloWebJSONRouteWww; r <= ApolloWebJSONRouteLast; r++) {
+                if ([ApolloWebJSONRouteName((ApolloWebJSONRoute)r) isEqualToString:name]) mask |= (1u << r);
+            }
+        }
+        ApolloWebJSONSimSetBlockedRoutes(mask);
+        return YES;
+    }
+    // "routehealth" logs the API-Key-Free route health; "routehealth reset" clears it.
+    if ([contents hasPrefix:@"routehealth"]) {
+        if ([contents containsString:@"reset"]) ApolloWebJSONRouteHealthReset();
+        ApolloLog(@"[SimDebugTap] route health:\n%@", ApolloWebJSONRouteHealthDescription([NSDate timeIntervalSinceReferenceDate]));
+        return YES;
+    }
     if ([contents hasPrefix:@"lpm "]) {
         NSString *payload = [[contents substringFromIndex:4]
             stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
@@ -2487,6 +2510,12 @@ static void ApolloSimDebugTapNotification(CFNotificationCenterRef center, void *
         if ([contents hasPrefix:@"fieldprobe"]) {
             NSString *tag = [[contents substringFromIndex:10] stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceAndNewlineCharacterSet];
             ApolloSimDebugFieldProbe(tag.length ? tag : @"probe");
+            return;
+        }
+        if ([contents hasPrefix:@"tabselect "]) {
+            UITabBarController *tabs = (id)ApolloMainTabBarController();
+            NSUInteger index = [[contents substringFromIndex:10] integerValue];
+            if (index < tabs.viewControllers.count) tabs.selectedIndex = index;
             return;
         }
         if ([contents hasPrefix:@"dump"]) {

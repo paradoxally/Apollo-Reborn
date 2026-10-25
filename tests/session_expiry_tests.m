@@ -1,4 +1,5 @@
 #import <Foundation/Foundation.h>
+#import "ApolloWebJSONRoutes.h"
 // Intentional no-op: the harness links no logging, so log lines from the code
 // under test are dropped at every level; no check depends on log output.
 #define ApolloLog(...) do { if (NO) NSLog(__VA_ARGS__); } while (0)
@@ -26,6 +27,8 @@ static NSUInteger probes;
 static NSUInteger merges;
 static BOOL ApolloWebJSONURLIsProbe(NSURL *url) { (void)url; return NO; }
 static NSString *ApolloWebJSONAccountFromURL(NSURL *url) { (void)url; return @"alice"; }
+// No route marker: route health is covered by run_web_json_routes_tests.sh.
+static NSInteger ApolloWebJSONRouteFromURL(NSURL *url) { (void)url; return -1; }
 @interface TestTask : NSObject
 @property(copy) void (^completion)(NSData *, NSURLResponse *, NSError *);
 - (void)resume;

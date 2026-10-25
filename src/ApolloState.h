@@ -197,6 +197,11 @@ extern "C" {
 // Opt-in top navigation bar movement, following the bottom tab bar's scroll
 // behavior while Hide Bars on Scroll is enabled. Default NO.
 extern BOOL sHideTopBarOnScroll;
+// Experimental Duo landscape feed layout: 0 = Original (default),
+// 2 = Focused feed; value 1 is retired. Read live by ApolloMediaHinge.
+extern NSInteger sDuoLandscapeFeedLayout;
+// Standard (default NO) or Liquid Glass for the open Duo subreddit panel.
+extern BOOL sDuoSubredditPanelGlassEnabled;
 BOOL ApolloSupportsNativeTabBarScrollBehavior(void);
 #ifdef __cplusplus
 }
@@ -643,6 +648,9 @@ extern BOOL sWebJSONEnabled;
 // active account is API-key-free; read it through
 // ApolloReduceRateLimitingActive() (ApolloReduceRateLimiting.h). Default NO.
 extern BOOL sReduceRateLimiting;
+// Use Route Updates (UDKeyKeylessRouteUpdates): keyless-routes.json may adjust
+// the API-Key-Free route table (ApolloWebJSONRouteUpdates.h). Default YES.
+extern BOOL sKeylessRouteUpdates;
 // Native Polls (ApolloPollVoting.xm / ApolloPollCompose.xm): master gate for
 // the experimental poll voting + creation feature. Default NO. Cached here (not
 // re-read from NSUserDefaults per call) because the poll node's layoutSubviews

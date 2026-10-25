@@ -42,6 +42,15 @@
       "subtitle": "Apollo-Reborn build without app extensions",
       "versions": [
         {
+          "version": "3.26.0",
+          "buildVersion": "300",
+          "marketingVersion": "3.26.0",
+          "date": "2026-10-25T00:44:12Z",
+          "localizedDescription": "No Extensions build.\n\nFeatures\n- Add iPad Layout (Beta) for iPadOS 18 and later (Settings > Apollo Reborn > Interface > Display & Navigation, off by default): a sidebar with your tabs and favorites, a resizable feed column beside the post you're reading, full-width Gallery View, and menu commands for a hardware keyboard. Apollo offers it once after updating, with Try Now or Try Later, and switching it needs a restart (#1385 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1385): @jordanearle)\n- Add a Setup Assistant that new installs see first: sign in or restore a backup, pick Classic, Balanced or Full Featured, choose an appearance, and review it all before finishing; reopen it any time from Settings > Apollo Reborn > Setup Assistant (#1401 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1401): @jordanearle)\n- Bring back the last feed, the open post and roughly where you were reading when iOS closed Apollo in the background (Restore Reading Session, Settings > Apollo Reborn > Media > Browsing, on by default). The saved session expires after seven days and holds no account names or post content (#1441 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1441): @Thetromboneman1)\n- Open Gallery View faster and resize its tiles by pinching instead of the − and + buttons, now down to four columns; press and hold on a tile or in the fullscreen viewer opens the same menu as feed media, and closing a fullscreen image no longer flashes a black screen (#1434 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1434): @IllIIllIllIllII)\n- Add Gallery View to Saved, for all saved posts or a single saved category (#1440 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1440): @IllIIllIllIllII)\n- Show Recently Read as a regular Apollo feed that follows your post size, thumbnail, theme and swipe settings. It moves to its own row on your profile under Hidden & Deleted, its ••• menu has Compact Posts / Large Thumbnails and Clear Read History, and a post's ••• menu gains Remove from Recently Read; the separate Recently Read Thumbnails setting is gone (#1442 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1442): @IllIIllIllIllII)\n\nFixes\n- Keep usernames whole in comment headers and the post header above the comments; a long user flair is now cut short first, and the username only shortens when the flair alone doesn't make room (#1366 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1366): @AcornElf)\n- Fix press and hold on an image, GIF or video inside a post showing the old link menu; it now opens the media menu with copy, save and share, like in the feed (#1435 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1435): @IllIIllIllIllII)\n- Fix a single photo in a comment failing to upload with Unbox.UnboxError when photos go to Reddit, and multi-photo comments sometimes posting a dead Imgur link instead of the album (#1402 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1402): @jordanearle)\n- Fix the search bar coming back on Liquid Glass feeds after swiping it away and then closing a fullscreen image (#1447 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1447): @Thetromboneman1)\n- Fix a crash while loading comments with Show Deleted Comments on (#1450 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1450): @Thetromboneman1)\n- Fix a crash in Gallery View's image viewer on iOS 14 (#90: @paradoxally)",
+          "downloadURL": "https://github.com/paradoxally/Apollo-Reborn/releases/download/v1.15.11_3.26.0/Apollo-Reborn-3.26.0-NOEXTENSIONS.ipa",
+          "size": 87139381
+        },
+        {
           "version": "3.25.0",
           "buildVersion": "300",
           "marketingVersion": "3.25.0",
@@ -96,24 +105,15 @@
           "size": 86583345
         }
       ],
-      "version": "3.25.0",
-      "marketingVersion": "3.25.0",
-      "versionDate": "2026-10-20T14:32:56Z",
-      "versionDescription": "No Extensions build.\n\nFeatures\n- Play sports clips in Gallery View — streamin, streamff, dubz and Streamable tiles, which Reddit gives no preview video, now play muted in the grid like v.redd.it ones, every video tile on screen starts, and opening a clip afterwards plays it straight away (Settings > Apollo Reborn > Media > Browsing > Play Videos in Gallery View) (#1389 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1389): @icpryde)\n- Lean the Daily Spotlight in the icon picker toward holiday icons around Halloween, Christmas, Pride Month and other holidays; from October 25 to 31 all five picks are Halloween icons, and the header names the holiday (#1390 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1390): @icpryde)\n- Check for updates every 15 minutes while Apollo is open instead of once a day, so a new release shows up soon after it's published; Later now quiets that version for 24 hours, even across restarts, and a failed check retries after 5 minutes (#1436 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1436): @IllIIllIllIllII)\n\nFixes\n- Fix a feed sitting on a spinner forever after Hide Read hides every loaded post; it now loads the next page (#1412 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1412): @icpryde)\n- Fix API-Key-Free feeds stopping for good after a few pages when Reddit refuses a page with a rate limit or a block page; Apollo shows \"Loading next page failed\" and asks for the same page again on the next scroll (#1424 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1424): @icpryde)\n- Fix a post's mute button working backwards after opening a feed video that was playing with sound, with Unmute Videos in Feed on (#1425 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1425): @icpryde)\n- Fix a crash in feed videos with Unmute Videos in Feed on (#1428 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1428): @Thetromboneman1)\n- Fix the Liquid Glass tab bar coming back without its glass after swiping back from Edit Profile, leaving the icons floating over the page (#1431 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1431): @icpryde)",
-      "downloadURL": "https://github.com/paradoxally/Apollo-Reborn/releases/download/v1.15.11_3.25.0/Apollo-Reborn-3.25.0-NOEXTENSIONS.ipa",
-      "size": 86887068
+      "version": "3.26.0",
+      "marketingVersion": "3.26.0",
+      "versionDate": "2026-10-25T00:44:12Z",
+      "versionDescription": "No Extensions build.\n\nFeatures\n- Add iPad Layout (Beta) for iPadOS 18 and later (Settings > Apollo Reborn > Interface > Display & Navigation, off by default): a sidebar with your tabs and favorites, a resizable feed column beside the post you're reading, full-width Gallery View, and menu commands for a hardware keyboard. Apollo offers it once after updating, with Try Now or Try Later, and switching it needs a restart (#1385 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1385): @jordanearle)\n- Add a Setup Assistant that new installs see first: sign in or restore a backup, pick Classic, Balanced or Full Featured, choose an appearance, and review it all before finishing; reopen it any time from Settings > Apollo Reborn > Setup Assistant (#1401 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1401): @jordanearle)\n- Bring back the last feed, the open post and roughly where you were reading when iOS closed Apollo in the background (Restore Reading Session, Settings > Apollo Reborn > Media > Browsing, on by default). The saved session expires after seven days and holds no account names or post content (#1441 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1441): @Thetromboneman1)\n- Open Gallery View faster and resize its tiles by pinching instead of the − and + buttons, now down to four columns; press and hold on a tile or in the fullscreen viewer opens the same menu as feed media, and closing a fullscreen image no longer flashes a black screen (#1434 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1434): @IllIIllIllIllII)\n- Add Gallery View to Saved, for all saved posts or a single saved category (#1440 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1440): @IllIIllIllIllII)\n- Show Recently Read as a regular Apollo feed that follows your post size, thumbnail, theme and swipe settings. It moves to its own row on your profile under Hidden & Deleted, its ••• menu has Compact Posts / Large Thumbnails and Clear Read History, and a post's ••• menu gains Remove from Recently Read; the separate Recently Read Thumbnails setting is gone (#1442 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1442): @IllIIllIllIllII)\n\nFixes\n- Keep usernames whole in comment headers and the post header above the comments; a long user flair is now cut short first, and the username only shortens when the flair alone doesn't make room (#1366 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1366): @AcornElf)\n- Fix press and hold on an image, GIF or video inside a post showing the old link menu; it now opens the media menu with copy, save and share, like in the feed (#1435 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1435): @IllIIllIllIllII)\n- Fix a single photo in a comment failing to upload with Unbox.UnboxError when photos go to Reddit, and multi-photo comments sometimes posting a dead Imgur link instead of the album (#1402 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1402): @jordanearle)\n- Fix the search bar coming back on Liquid Glass feeds after swiping it away and then closing a fullscreen image (#1447 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1447): @Thetromboneman1)\n- Fix a crash while loading comments with Show Deleted Comments on (#1450 (https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1450): @Thetromboneman1)\n- Fix a crash in Gallery View's image viewer on iOS 14 (#90: @paradoxally)",
+      "downloadURL": "https://github.com/paradoxally/Apollo-Reborn/releases/download/v1.15.11_3.26.0/Apollo-Reborn-3.26.0-NOEXTENSIONS.ipa",
+      "size": 87139381
     }
   ],
   "news": [
-    {
-      "title": "Apollo v1.15.11 / Apollo-Reborn v3.10.4 (No Extensions)",
-      "identifier": "v1.15.11_3.10.4",
-      "caption": "Apollo-Reborn update available",
-      "date": "2026-08-05T03:32:18Z",
-      "tintColor": "#F0542D",
-      "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
-      "url": "https://github.com/paradoxally/Apollo-Reborn/releases/tag/v1.15.11_3.10.4"
-    },
     {
       "title": "Apollo v1.15.11 / Apollo-Reborn v3.11.0 (No Extensions)",
       "identifier": "v1.15.11_3.11.0",
@@ -374,6 +374,15 @@
       "tintColor": "#F0542D",
       "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
       "url": "https://github.com/paradoxally/Apollo-Reborn/releases/tag/v1.15.11_3.25.0"
+    },
+    {
+      "title": "Apollo v1.15.11 / Apollo-Reborn v3.26.0 (No Extensions)",
+      "identifier": "v1.15.11_3.26.0",
+      "caption": "Apollo-Reborn update available",
+      "date": "2026-10-25T00:44:12Z",
+      "tintColor": "#F0542D",
+      "imageURL": "https://raw.githubusercontent.com/paradoxally/Apollo-Reborn/main/img/lg-icons.jpg",
+      "url": "https://github.com/paradoxally/Apollo-Reborn/releases/tag/v1.15.11_3.26.0"
     }
   ],
   "iconURL": "https://apolloreborn.app/assets/icon.png",

@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "4.0.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "rectangle.split.2x1", "title": "iPhone Duo", "subtitle": "Apollo adapts to every way the Duo folds, with the feed beside its comments when open." },
+    { "icon": "arrow.triangle.branch", "title": "Load More Comments Is Back", "subtitle": "In API-Key-Free mode, reads Reddit blocks now go another way. See them under Routes." },
+    { "icon": "ladybug.fill", "title": "Easier Bug Reports", "subtitle": "Reports attach the debug log for you, with usernames and links masked." },
+    { "icon": "speedometer", "title": "Fewer Reddit Requests", "subtitle": "API-Key-Free mode loads subscriptions 100 at a time and feed avatars in one go." }
+  ]
+}

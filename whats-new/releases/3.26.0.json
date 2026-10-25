@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "3.26.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "wand.and.stars", "title": "Setup Assistant", "subtitle": "Pick Classic, Balanced or Full Featured and an appearance. Reopen it any time from Settings." },
+    { "icon": "clock.arrow.circlepath", "title": "Pick Up Where You Left Off", "subtitle": "If iOS closes Apollo in the background, your feed, post and reading spot come back." },
+    { "icon": "square.grid.3x3.fill", "title": "Faster Gallery View", "subtitle": "Pinch to resize the grid, down to four columns. Gallery View now works in Saved too." },
+    { "icon": "book.fill", "title": "Recently Read, Your Way", "subtitle": "Recently Read is now a regular feed with your layout and swipes. Find it on your profile." }
+  ]
+}

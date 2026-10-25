@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v4.0.0] - 2026-10-25
+
+### Features
+
+- Add **iPhone Duo** support: Apollo's layout follows the phone closed, open in portrait, open in landscape and partly folded. Open, the feed sits beside its comments, a button switches the feed between its original and a focused width, and the subreddit list opens as a side panel in **Standard** or **Liquid Glass** style (**Settings > Apollo Reborn > Subreddits**). Inbox, Account and Settings show their list beside the detail in landscape, Search keeps its results beside the page you open, and a video that was playing keeps playing through a fold. Pixel Pals is off on Duo ([#1245](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1245): @IllIIllIllIllII, with fixes from [#1464](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1464) and [#1480](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1480): @jordanearle, [#1466](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1466) and [#1469](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1469): @kiliantyler, [#1468](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1468): @d0lb33, [#1470](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1470): @nnastasi)
+- Add a **Routes** screen for **API-Key-Free** accounts (**Settings > Apollo Reborn > Accounts & API Keys > Routes**) that shows which route each Reddit read takes, how often each one got blocked, and **Copy Summary** for bug reports. Apollo Reborn's maintainers can now change those routes without a new release (**Use Route Updates**, on by default) ([#1477](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1477): @DeltAndy123)
+- Attach the debug log to **bug reports** automatically, with usernames, account names, links and token-like values masked in every exported or shared log; the log can still be removed before sending. It carries the full detail only with **Verbose Logging** on (**Settings > Apollo Reborn > Advanced**), so turn that on and reproduce the problem before reporting it ([#1422](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1422) and [#1423](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1423): @icpryde)
+
+### Performance
+
+- Send fewer Reddit requests in **API-Key-Free** mode: every page of subscriptions loads 100 at a time, so a long list takes about a quarter of the requests, a feed page asks for all its avatars at once with **Reduce Rate Limiting** on, and a deleted Bluesky post's preview stops reloading itself ([#1416](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1416): @icpryde)
+
+### Fixes
+
+- Fix the **API-Key-Free** Inbox loading forever without reply parents, and **Load More Comments** doing nothing. Reddit now blocks the usual route for those reads, so Apollo sends them another way and falls back again if that one is blocked too; when every route is blocked, a notice says so instead of failing silently ([#1455](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1455): @icpryde, @DeltAndy123; [#1477](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1477): @DeltAndy123)
+- Fix a navigation-bar button that iOS moved into its overflow menu closing straight away instead of showing its actions ([#1474](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1474): @kiliantyler)
+- Fix rich link cards shifting the feed, or changing their image crop, after a vote ([#1457](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1457): @icpryde)
+- Fix **Find in Comments** from the ••• menu on **Liquid Glass**: the search field, keyboard and result arrows now work ([#1446](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1446): @icpryde)
+- Fix a **custom theme**'s bar color missing behind the classic feed and comment search bars with **Pure Black Dark Mode** off ([#1459](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1459): @icpryde)
+
 ## [v3.26.0] - 2026-10-25
 
 ### Features
@@ -1632,6 +1652,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v4.0.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.26.0...v1.15.11_4.0.0
 [v3.26.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.25.0...v1.15.11_3.26.0
 [v3.25.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.24.1...v1.15.11_3.25.0
 [v3.24.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.24.0...v1.15.11_3.24.1

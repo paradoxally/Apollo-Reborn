@@ -35,6 +35,7 @@ static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "3.8.0", "What's New in Apollo Reborn" },
     { "3.8.5", "What's New in Apollo Reborn" },
     { "3.9.0", "What's New in Apollo Reborn" },
+    { "4.0.0", "What's New in Apollo Reborn" },
 };
 
 static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
@@ -161,6 +162,10 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "3.9.0", "app.badge", "Redesigned Icon Picker", "Featured icons up front, with packs, credits, and Liquid Glass previews." },
     { "3.9.0", "speedometer", "ProMotion", "Scrolling now runs at your display's full refresh rate." },
     { "3.9.0", "link", "Faster Social Links", "Profile social links resolve in about a second instead of eight." },
+    { "4.0.0", "rectangle.split.2x1", "iPhone Duo", "Apollo adapts to every way the Duo folds, with the feed beside its comments when open." },
+    { "4.0.0", "arrow.triangle.branch", "Load More Comments Is Back", "In API-Key-Free mode, reads Reddit blocks now go another way. See them under Routes." },
+    { "4.0.0", "ladybug.fill", "Easier Bug Reports", "Reports attach the debug log for you, with usernames and links masked." },
+    { "4.0.0", "speedometer", "Fewer Reddit Requests", "API-Key-Free mode loads subscriptions 100 at a time and feed avatars in one go." },
 };
 
 static NSString *S(const char *value) { return [NSString stringWithUTF8String:value]; }

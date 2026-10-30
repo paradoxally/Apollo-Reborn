@@ -36,6 +36,7 @@ static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "3.8.5", "What's New in Apollo Reborn" },
     { "3.9.0", "What's New in Apollo Reborn" },
     { "4.0.0", "What's New in Apollo Reborn" },
+    { "4.0.1", "What's New in Apollo Reborn" },
 };
 
 static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
@@ -166,6 +167,12 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "4.0.0", "arrow.triangle.branch", "Load More Comments Is Back", "In API-Key-Free mode, reads Reddit blocks now go another way. See them under Routes." },
     { "4.0.0", "ladybug.fill", "Easier Bug Reports", "Reports attach the debug log for you, with usernames and links masked." },
     { "4.0.0", "speedometer", "Fewer Reddit Requests", "API-Key-Free mode loads subscriptions 100 at a time and feed avatars in one go." },
+    { "4.0.1", "photo.on.rectangle.angled", "Multi-Photo Posts Are Back", "Posts with several photos show their gallery again instead of a reddit.com link with 0 photos." },
+    { "4.0.1", "magnifyingglass.circle.fill", "Search Without an API Key", "API-Key-Free post and subreddit search work again, and All Posts (r/all) loads." },
+    { "4.0.1", "speedometer", "Fewer Rate Limits", "API-Key-Free accounts send fewer Reddit requests from link previews and the Inbox." },
+    { "4.0.1", "house.fill", "Your Start Page Again", "Apollo opens your chosen feed at launch again; Restore Reading Session is now opt-in under Posts & Feeds." },
+    { "4.0.1", "envelope.open.fill", "Straight to the Reply", "Tapping an Inbox reply opens right on the comment, without the jump and glide." },
+    { "4.0.1", "wrench.and.screwdriver.fill", "Fixes Across the App", "A crash on rate-limited posts, grid icons after updates, interactive posts, Duo galleries and iPad Layout." },
 };
 
 static NSString *S(const char *value) { return [NSString stringWithUTF8String:value]; }

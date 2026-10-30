@@ -3405,8 +3405,11 @@ static void ApolloImgurRetryAlbumViaTextProxy(NSString *albumID,
 - (void)_onqueue_didFinishWithError:(id)error {
     if (sWebJSONEnabled) {
         NSURLSessionTask *task = (NSURLSessionTask *)self;
-        NSURLRequest *finished = task.currentRequest ?: task.originalRequest;
-        ApolloWebJSONNoteResponse(finished, task.response);
+        // The request as sent (the rewrite above installs it as both). After a
+        // redirect, such as Old Reddit's sign-in gate, the current request is
+        // the redirect target, whose path isn't the read's.
+        NSURLRequest *sent = task.originalRequest ?: task.currentRequest;
+        ApolloWebJSONNoteResponse(sent, task.response);
     }
     %orig;
 }
@@ -3844,7 +3847,7 @@ static void ApolloShowRedditRateLimitToast(NSTimeInterval seconds) {
                                     UDKeyEnableFlairColors: @NO,
                                     UDKeyBoldPostTitles: @NO,
                                     UDKeyFeedTextPostThumbnails: @YES,
-                                    UDKeyRestoreReadingSession: @YES,
+                                    UDKeyRestoreReadingSession: @NO,
                                     UDKeyFeedGalleryCarousel: @YES,
                                     UDKeyFeedGalleryEdgeSwipeNav: @NO,
                                     UDKeyGalleryAutoplayVideos: @YES,

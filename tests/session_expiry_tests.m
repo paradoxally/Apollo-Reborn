@@ -61,6 +61,7 @@ static NSInteger ApolloWebJSONRouteFromURL(NSURL *url) { (void)url; return -1; }
 // oauth.reddit.com traffic and no moderator-only paths.
 static void ApolloWebJSONNoteWebBearerResponse(NSURLRequest *request, NSHTTPURLResponse *http);
 BOOL ApolloWebJSONPathNeedsWebBearer(NSString *path);
+void ApolloWebJSONInvalidateOAuthBearerForAccount(NSString *username, NSString *bearer);
 #define dispatch_after testDispatchAfter
 #define NSURLSession TestSession
 #define NSURLSessionDataTask TestTask
@@ -72,6 +73,7 @@ static void ApolloWebJSONMergeSetCookiesFromResponse(NSString *username, NSHTTPU
 static void ApolloWebJSONRecordRateLimit(NSString *username, NSURLRequest *request, NSHTTPURLResponse *http) { (void)username; (void)request; (void)http; }
 static void ApolloWebJSONNoteWebBearerResponse(NSURLRequest *request, NSHTTPURLResponse *http) { (void)request; (void)http; }
 BOOL ApolloWebJSONPathNeedsWebBearer(NSString *path) { (void)path; return NO; }
+void ApolloWebJSONInvalidateOAuthBearerForAccount(NSString *username, NSString *bearer) { (void)username; (void)bearer; }
 static void require(BOOL okay) { if (!okay) { NSLog(@"FAIL"); abort(); } }
 static NSHTTPURLResponse *response(NSInteger status, NSString *mime) {
     return [[NSHTTPURLResponse alloc] initWithURL:[NSURL URLWithString:@"https://www.reddit.com/api/me.json"] statusCode:status HTTPVersion:@"HTTP/1.1" headerFields:@{@"Content-Type":mime}];

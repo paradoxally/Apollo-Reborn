@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v4.1.0] - 2026-10-31
+
+### Features
+
+- Add a **New Comments** mode to the comment jump button: a tap jumps to the next comment posted since your last visit, press and hold goes back, and the button shows a small NEW label. Choose it under **Settings > General > Comments > Jump Button Navigation** or from the comments ••• menu ([#1506](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1506): @IllIIllIllIllII)
+  - The previous visit stays the cutoff until you leave the post, replies in collapsed threads and your own comments are skipped, and "x more replies" groups open by themselves, up to 3 per tap
+- Show **Hidden & Deleted** the way Apollo shows a profile: posts and comments follow the feed's post size, thumbnails, voting buttons, text size, theme, swipe actions and menus, and open their thread like anywhere else. The Posts tab gets a **Compact Posts / Large Thumbnails** switch ([#1485](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1485): @IllIIllIllIllII)
+  - Every post and comment keeps its Hidden, Removed or Deleted label and shows the saved copy with current scores, votes and saves; a removed post keeps its saved title and media
+
+### Fixes
+
+- Fix the classic (non-Liquid Glass) **subreddit search bar**: the placeholder and typed text use Apollo's colors instead of hard-to-read white, and tapping into the field or Cancel keeps the nav bar and search bar in place ([#1618](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1618): @IllIIllIllIllII)
+  - With **Hide Bars on Scroll**, scrolling back up no longer tucks the search bar under the nav bar, and going back brings the hidden bars back
+- Fix dragging to reorder **Settings > Shortcuts** on the classic look, where a lifted row dropped straight back into place ([#1617](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1617): @IllIIllIllIllII)
+- Show the classic **return button** as a normal header button in the theme color, instead of a white arrow inside a circle ([#1601](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1601): @IllIIllIllIllII)
+- Open the classic **account switcher** inside a post as the same bottom sheet as in the feed, instead of a card in the middle of the screen, and give its + and Edit buttons and the API key editor's buttons the theme color instead of system blue ([#1616](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1616), [#1605](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1605): @IllIIllIllIllII)
+- Fix the subreddit header's **Sidebar** and **Set User Flair** buttons opening a different action after the subreddit ••• menu was reordered in **Action Menus** ([#1596](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1596): @IllIIllIllIllII)
+- Fit the **update prompt** on iPhone Duo's closed screen: the summary grows to show the version line and Release Notes link, and Cancel no longer cuts off the last sideloader option ([#1600](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1600): @IllIIllIllIllII)
+- Center the **What's New** Continue button on iPhone Duo, in line with the rest of the sheet ([#1598](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1598): @IllIIllIllIllII)
+
 ## [v4.0.1] - 2026-10-30
 
 ### Performance
@@ -1692,6 +1712,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v4.1.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.0.1...v1.15.11_4.1.0
 [v4.0.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.0.0...v1.15.11_4.0.1
 [v4.0.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.26.0...v1.15.11_4.0.0
 [v3.26.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.25.0...v1.15.11_3.26.0

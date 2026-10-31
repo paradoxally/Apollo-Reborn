@@ -37,6 +37,7 @@ static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "3.9.0", "What's New in Apollo Reborn" },
     { "4.0.0", "What's New in Apollo Reborn" },
     { "4.0.1", "What's New in Apollo Reborn" },
+    { "4.1.0", "What's New in Apollo Reborn" },
 };
 
 static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
@@ -173,6 +174,9 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "4.0.1", "house.fill", "Your Start Page Again", "Apollo opens your chosen feed at launch again; Restore Reading Session is now opt-in under Posts & Feeds." },
     { "4.0.1", "envelope.open.fill", "Straight to the Reply", "Tapping an Inbox reply opens right on the comment, without the jump and glide." },
     { "4.0.1", "wrench.and.screwdriver.fill", "Fixes Across the App", "A crash on rate-limited posts, grid icons after updates, interactive posts, Duo galleries and iPad Layout." },
+    { "4.1.0", "text.bubble.fill", "Jump to New Comments", "The jump button can step through comments posted since your last visit." },
+    { "4.1.0", "eye.slash.fill", "Hidden & Deleted, Native", "Hidden and deleted posts look and open like everywhere else in Apollo." },
+    { "4.1.0", "paintpalette.fill", "Classic Look Fixes", "Readable subreddit search, working shortcut reordering and themed buttons." },
 };
 
 static NSString *S(const char *value) { return [NSString stringWithUTF8String:value]; }

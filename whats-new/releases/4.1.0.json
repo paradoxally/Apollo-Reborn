@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "4.1.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "text.bubble.fill", "title": "Jump to New Comments", "subtitle": "The jump button can step through comments posted since your last visit." },
+    { "icon": "eye.slash.fill", "title": "Hidden & Deleted, Native", "subtitle": "Hidden and deleted posts look and open like everywhere else in Apollo." },
+    { "icon": "paintpalette.fill", "title": "Classic Look Fixes", "subtitle": "Readable subreddit search, working shortcut reordering and themed buttons." }
+  ]
+}

@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [v4.1.0] - 2026-10-31
+## [v4.1.0] - 2026-11-01
 
 ### Features
 
@@ -20,6 +20,8 @@ All notable changes to this project will be documented in this file.
 - Fix dragging to reorder **Settings > Shortcuts** on the classic look, where a lifted row dropped straight back into place ([#1617](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1617): @IllIIllIllIllII)
 - Show the classic **return button** as a normal header button in the theme color, instead of a white arrow inside a circle ([#1601](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1601): @IllIIllIllIllII)
 - Open the classic **account switcher** inside a post as the same bottom sheet as in the feed, instead of a card in the middle of the screen, and give its + and Edit buttons and the API key editor's buttons the theme color instead of system blue ([#1616](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1616), [#1605](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1605): @IllIIllIllIllII)
+- Open the **•••** menu on your own profile as Apollo's usual action sheet on the classic look, with icons, theme colors and Cancel, instead of a pull-down menu ([#1606](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1606): @IllIIllIllIllII)
+- Give the rows Apollo Reborn adds to **Settings** (Apollo Reborn, Buy Us a Coffee, Wallpapers and About) the same height as Apollo's own rows on the classic look, instead of the taller Liquid Glass spacing ([#1603](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1603): @IllIIllIllIllII)
 - Fix the subreddit header's **Sidebar** and **Set User Flair** buttons opening a different action after the subreddit ••• menu was reordered in **Action Menus** ([#1596](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1596): @IllIIllIllIllII)
 - Fit the **update prompt** on iPhone Duo's closed screen: the summary grows to show the version line and Release Notes link, and Cancel no longer cuts off the last sideloader option ([#1600](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1600): @IllIIllIllIllII)
 - Center the **What's New** Continue button on iPhone Duo, in line with the rest of the sheet ([#1598](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1598): @IllIIllIllIllII)

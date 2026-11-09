@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v4.2.0] - 2026-11-09
+
+### Features
+
+- Add a **Spelling** setting under **Settings > Apollo Reborn > Interface > Display & Navigation > Spelling**: American (Apollo's own spelling, the default) or British. British changes labels, buttons, titles, alerts and menus as they appear, while posts, comments, subreddit names, flair and other Reddit text keep their author's spelling. Apollo Reborn's own screens now use American spelling throughout, matching Apollo ([#1648](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1648): @IllIIllIllIllII)
+- Add a **Subreddit Switcher** choice under **Settings > Apollo Reborn > Interface > Display & Navigation > Subreddit Switcher**: **Classic** is Apollo's original inline Favorites popup, and **Modern** is the switcher sheet. It is Classic by default, so the sheet goes away after updating unless you pick Modern. iPhone Duo defaults to Modern, since the popup can't follow an unfold ([#1604](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1604): @IllIIllIllIllII)
+  - Modern focuses the search field when it opens and starts loading the subreddit you pick right away, and holding the Posts tab opens either switcher
+- Add **All+**, an opt-in switch that blends NSFW posts back into r/all the way old Reddit ranked it. Turn it on under **Settings > Apollo Reborn > Posts & Feeds > All+ > Show NSFW in r/all** ([#1472](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1472): @nnastasi)
+- Add a **draggable divider** between the feed and the thread on iPhone Duo's unfolded display in landscape, instead of a fixed 50/50 split ([#1672](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1672): @IllIIllIllIllII)
+- Improve iPhone Duo's **Back**, thread close and subreddit list so they follow your finger like a regular iPhone's swipe-back. With **Disable Left Swipes** on, a right swipe anywhere on the page goes back ([#1656](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1656): @IllIIllIllIllII, [#1476](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1476): @nnastasi)
+- Bring iPhone Duo's **Focused** feed layout to opened portrait and to subreddits opened from Inbox, Account or Search, and let tall images and videos fill the Focused column ([#1682](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1682), [#1652](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1652): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix hot, new and rising feeds, "more replies" and post lookups failing for **API-Key-Free** accounts after Reddit started blocking them on www and old Reddit. They now load through oauth.reddit.com ([#1657](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1657), [#1666](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1666): @DeltAndy123)
+- Fix a crash, seen as a freeze, when a thread closes while the Liquid Glass search bar is checking whether to show ([#1515](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1515): @nnastasi)
+- Fix the **Touch ID** hint pointing at the wrong edge when Apollo reopens in a different orientation ([#1633](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1633): @IllIIllIllIllII)
+- Keep the **return button** round, beside Back, and on screen after a swipe-back you let go of ([#1678](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1678): @IllIIllIllIllII)
+- Open the **subreddit list's** delete and unsubscribe confirmation from the Delete button you tapped on the Liquid Glass look ([#1677](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1677): @IllIIllIllIllII)
+- Fix the iPhone Duo **action rail** when it runs out of room: extra buttons go into one system More menu that opens on the first tap, with Sort, time range and Moderator menus inside ([#1473](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1473): @IllIIllIllIllII)
+- Open iPhone Duo's unfolded Posts split on the **subreddit list** when **Default Reddit to Load** is Lists ([#1676](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1676): @IllIIllIllIllII)
+- Fit the **account switcher** on iPhone Duo: the Accounts title is centered on the closed screen, and the per-account API key editor's Back and Clear rows stay inside the sheet ([#1645](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1645), [#1683](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1683): @IllIIllIllIllII)
+- Fix a forward swipe on the unfolded Duo reopening and reloading the subreddit you had just picked ([#1489](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1489): @nnastasi)
+- Keep scrolling responsive right after folding the Duo or changing its posture ([#1497](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1497): @nnastasi)
+- Center **subreddit banners** beside the side rail on the closed Duo instead of running under it ([#1655](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1655): @IllIIllIllIllII)
+- Show the **comment swipe** color and icon in the unfolded Duo split ([#1634](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1634): @IllIIllIllIllII)
+- Slide the title left instead of shrinking it to "…" next to a Live Activity on the unfolded Duo ([#1632](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1632): @IllIIllIllIllII)
+
 ## [v4.1.0] - 2026-11-01
 
 ### Features
@@ -1714,6 +1742,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v4.2.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.1.0...v1.15.11_4.2.0
 [v4.1.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.0.1...v1.15.11_4.1.0
 [v4.0.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.0.0...v1.15.11_4.0.1
 [v4.0.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_3.26.0...v1.15.11_4.0.0

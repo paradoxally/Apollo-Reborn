@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "4.2.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "textformat.abc", "title": "American or British", "subtitle": "Pick the spelling Apollo uses. Reddit text keeps its author's spelling." },
+    { "icon": "list.bullet.rectangle.fill", "title": "Classic or Modern Switcher", "subtitle": "Choose the inline Favorites popup or the switcher sheet in Interface settings." },
+    { "icon": "rectangle.split.2x1.fill", "title": "A Smoother iPhone Duo", "subtitle": "Drag the split divider, and Back follows your finger." }
+  ]
+}

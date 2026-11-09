@@ -38,6 +38,7 @@ static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "4.0.0", "What's New in Apollo Reborn" },
     { "4.0.1", "What's New in Apollo Reborn" },
     { "4.1.0", "What's New in Apollo Reborn" },
+    { "4.2.0", "What's New in Apollo Reborn" },
 };
 
 static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
@@ -177,6 +178,9 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "4.1.0", "text.bubble.fill", "Jump to New Comments", "The jump button can step through comments posted since your last visit." },
     { "4.1.0", "eye.slash.fill", "Hidden & Deleted, Native", "Hidden and deleted posts look and open like everywhere else in Apollo." },
     { "4.1.0", "paintpalette.fill", "Classic Look Fixes", "Readable subreddit search, working shortcut reordering and themed buttons." },
+    { "4.2.0", "textformat.abc", "American or British", "Pick the spelling Apollo uses. Reddit text keeps its author's spelling." },
+    { "4.2.0", "list.bullet.rectangle.fill", "Classic or Modern Switcher", "Choose the inline Favorites popup or the switcher sheet in Interface settings." },
+    { "4.2.0", "rectangle.split.2x1.fill", "A Smoother iPhone Duo", "Drag the split divider, and Back follows your finger." },
 };
 
 static NSString *S(const char *value) { return [NSString stringWithUTF8String:value]; }

@@ -230,6 +230,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloNavigationActions.xm \
     $(SRC_DIR)/ApolloNavigationTitlePresentation.xm \
     $(SRC_DIR)/ApolloTabBarTitles.xm \
+    $(SRC_DIR)/ApolloTabBarStyle.xm \
     $(SRC_DIR)/ApolloScrollEdgePopFix.xm \
     $(SRC_DIR)/ApolloInterruptibleNavTransition.xm \
     $(SRC_DIR)/ApolloSystemBackSwipeGuard.xm \
@@ -390,6 +391,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloChatComposer.xm \
     $(SRC_DIR)/ApolloMessageDraftStore.m \
     $(SRC_DIR)/ApolloMessagesReplyBarRestore.xm \
+    $(SRC_DIR)/ApolloUnreadBadges.xm \
     $(SRC_DIR)/ApolloChatsFilter.xm \
     $(SRC_DIR)/ApolloDirectChatWeb.xm \
     $(SRC_DIR)/ApolloLinkCardTitleFallback.xm \
@@ -407,6 +409,7 @@ ApolloReborn_FILES = \
     $(SRC_DIR)/ApolloWebJSONRoutes.m \
     $(SRC_DIR)/ApolloWebJSONRouteUpdates.m \
     $(SRC_DIR)/ApolloWebJSONIdentity.xm \
+    $(SRC_DIR)/ApolloSubscriptionRefreshGuard.m \
     $(SRC_DIR)/ApolloAllPlusMerge.m \
     $(SRC_DIR)/ApolloAllPlusNSFW.xm \
     $(SRC_DIR)/ApolloWebSessionLoginViewController.m \

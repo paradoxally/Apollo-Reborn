@@ -39,6 +39,7 @@ static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "4.0.1", "What's New in Apollo Reborn" },
     { "4.1.0", "What's New in Apollo Reborn" },
     { "4.2.0", "What's New in Apollo Reborn" },
+    { "4.3.0", "What's New in Apollo Reborn" },
 };
 
 static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
@@ -181,6 +182,9 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "4.2.0", "textformat.abc", "American or British", "Pick the spelling Apollo uses. Reddit text keeps its author's spelling." },
     { "4.2.0", "list.bullet.rectangle.fill", "Classic or Modern Switcher", "Choose the inline Favorites popup or the switcher sheet in Interface settings." },
     { "4.2.0", "rectangle.split.2x1.fill", "A Smoother iPhone Duo", "Drag the split divider, and Back follows your finger." },
+    { "4.3.0", "app.badge", "Compact Unread Badges", "Swap the unread count for a dot, or tint badges with your theme's color, in Interface settings." },
+    { "4.3.0", "paintpalette.fill", "Themed Tabs and Buttons", "Tint unselected tab icons and Liquid Glass buttons with your theme's accent in Theme Manager." },
+    { "4.3.0", "list.bullet.rectangle.fill", "Subscriptions Stay Put", "A failed background refresh no longer empties your subreddit list." },
 };
 
 static NSString *S(const char *value) { return [NSString stringWithUTF8String:value]; }

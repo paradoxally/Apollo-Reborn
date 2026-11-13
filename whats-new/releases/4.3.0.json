@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "version": "4.3.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "app.badge", "title": "Compact Unread Badges", "subtitle": "Swap the unread count for a dot, or tint badges with your theme's color, in Interface settings." },
+    { "icon": "paintpalette.fill", "title": "Themed Tabs and Buttons", "subtitle": "Tint unselected tab icons and Liquid Glass buttons with your theme's accent in Theme Manager." },
+    { "icon": "list.bullet.rectangle.fill", "title": "Subscriptions Stay Put", "subtitle": "A failed background refresh no longer empties your subreddit list." }
+  ]
+}

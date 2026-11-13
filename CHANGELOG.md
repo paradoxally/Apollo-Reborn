@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v4.3.0] - 2026-11-13
+
+### Features
+
+- Add **Unread Badges** under **Settings > Apollo Reborn > Interface > Unread Badges**, all off by default. **Compact Dot on Tab Bar** swaps the Inbox tab's unread count for a small dot, **Compact Dot in Inbox** does the same for the Notifications and Chat tabs at the top of the Inbox (shown while modern Chat is on), and **Theme Color** draws every unread badge in the theme's accent instead of red ([#1680](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1680): @icpryde, building on [#1332](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1332): @AcornElf)
+- Add **Tint Tab Bar Icons** and **Accent Navigation Buttons** under **Theme Manager > Options**, both off by default. Tint Tab Bar Icons gives unselected tab icons a muted shade of the theme accent on the classic and Liquid Glass tab bars and the Duo side rail. Accent Navigation Buttons draws Liquid Glass navigation buttons (Back, +, Edit, sort, •••) in the theme accent ([#1684](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1684): @IllIIllIllIllII, building on [#1430](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1430): @AcornElf)
+
+### Fixes
+
+- Fix **Sign In With API Key** opening Reddit's sign-in page when no Reddit API key is set, which only failed after logging in. Apollo now stops first with **Reddit API Key Required** and an **Add API Key** button ([#1597](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1597): @icpryde)
+- Fix **More Replies** and Inbox reply parents not loading for some API keys, after oauth.reddit.com started answering them with Reddit's block page ([#1620](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1620): @icpryde)
+- Keep your **subscriptions** in the subreddit list when Apollo's background refresh fails, instead of showing only Home, Popular and All until a pull to refresh ([#1674](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1674): @icpryde)
+- Fix two crashes in navigation animations: leaving the app while the Home feed's action pill is still animating, and the navigation bar crossfading during a push ([#1630](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1630): @icpryde)
+- Open a reply from the **Inbox** without the Find in Comments bar flashing, a link pill showing before its image, or the comments bouncing ([#1602](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1602): @icpryde)
+- Stop marking short comments, like names and stretched words, as **Translated from** another language when Google only re-spells them ([#1675](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1675): @icpryde)
+- Fix **Community Highlights** cards and other links the tweak opens (sidebar and settings links, Search results, profile social links) doing nothing on Apollo 1.14 for iOS 14 ([#1619](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1619): @icpryde)
+- Keep the subreddit list's **Edit** and **Add** buttons in the closed iPhone Duo's rail while a Live Activity runs and after backgrounding ([#1688](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1688): @IllIIllIllIllII)
+- Keep the **comment jump button** in place during a swipe back on iPhone Duo ([#1699](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1699): @IllIIllIllIllII)
+
 ## [v4.2.0] - 2026-11-09
 
 ### Features
@@ -1742,6 +1761,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v4.3.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.2.0...v1.15.11_4.3.0
 [v4.2.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.1.0...v1.15.11_4.2.0
 [v4.1.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.0.1...v1.15.11_4.1.0
 [v4.0.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.0.0...v1.15.11_4.0.1

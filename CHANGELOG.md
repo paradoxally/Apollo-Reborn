@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v4.3.1] - 2026-11-15
+
+### Features
+
+- Add **tabletop video controls** on the half-folded iPhone Duo: a fullscreen video moves above the fold, with large rewind, play/pause and forward buttons, a timeline, mute, **Playback Speed** and AirPlay below it. It turns on when you half-fold with a video open and returns to the normal viewer when you unfold ([#1591](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1591): @nunoo)
+  - On every device, **Hold for Video Speed** no longer fires when pressing a video control
+- Make **Swipe Tab Bar to Navigate** work on the iPhone Duo: swipe down the side rail to go Back and up to go Forward, or along the bottom bar in open portrait, with the page following your finger ([#1702](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1702): @IllIIllIllIllII)
+
+### Fixes
+
+- Start a **YouTube** video in Apollo's player when iOS refuses to autoplay it, instead of the loading screen spinning forever ([#1599](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1599): @icpryde)
+- Post a **GIF from the camera roll** in a comment or reply as the animated GIF instead of a still of its first frame, whichever upload host is set. Subreddits that allow images but not GIFs in comments still get the still ([#1669](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1669): @icpryde)
+- Reopen **Popular** or **All** at launch with **Restore Reading Session** on, instead of every tab snapping back to Posts for a few seconds and the feed never reopening ([#1627](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1627): @icpryde)
+- Keep **API-Key-Free Mode** off after turning it off, instead of it switching back on at the next launch. The account returns to its API key sign-in, or Apollo asks to sign in again if that sign-in no longer works ([#1627](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1627): @icpryde)
+- Reload a feed that hit Reddit's rate limit on **API-Key-Free** accounts once the limit resets, instead of leaving "Couldn't load posts" until a pull to refresh. The Inbox also sends one fewer request at launch ([#1670](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1670): @icpryde)
+- Keep the iPhone Duo feed layout when **Picture in Picture** or another app sits on top of the open Duo: the Feed Layout button shows, media fits the shorter pane, posts are no longer cut off on the right, and Hide Tab Bar on Scroll works ([#1693](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1693): @nunoo)
+- Keep the keyboard up when tapping a search field on the open iPhone Duo with another app's video pinned to the top of the screen, instead of it closing right away ([#1705](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1705): @IllIIllIllIllII)
+
 ## [v4.3.0] - 2026-11-13
 
 ### Features
@@ -1761,6 +1779,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v4.3.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.3.0...v1.15.11_4.3.1
 [v4.3.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.2.0...v1.15.11_4.3.0
 [v4.2.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.1.0...v1.15.11_4.2.0
 [v4.1.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.0.1...v1.15.11_4.1.0

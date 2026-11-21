@@ -4,6 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v4.4.0] - 2026-11-21
+
+### Features
+
+- Add a **Liquid Glass formatting bar** to the comment and post composers. The bar above the keyboard becomes a floating glass capsule, like the toolbar in Notes on iOS 26. One strip holds Apollo's buttons, the GIF button and every option from the ••• sheet: Preview, Superscript, Quote, Spoiler, Strikethrough, Header, both lists, Horizontal Line, Code, Text Faces and SpongeText. Swipe it sideways to reach the rest. Subreddit and user suggestions and **Add Title To Link** show inside the capsule. The classic look keeps Apollo's bar ([#1718](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1718): @IllIIllIllIllII)
+- Add a **modern composer layout** on iOS 26 ([#1723](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1723): @IllIIllIllIllII)
+  - Replying on the Liquid Glass look, the "replying to" block is a rounded card, **Post** is a filled capsule in the theme accent, and a moderator's **Distinguish** and **Sticky** are capsules that turn solid green when on
+  - In a new post, the Media, Link and Text tabs use rounded cards and section headers like Poll, on both the classic and Liquid Glass looks
+- Add a **Monochrome** icon style for **Feed Shortcuts**: Tinted's icons in white in Dark Mode and black in Light Mode, in every Feed Layout. Pick it under **Settings > Apollo Reborn > Subreddits > Feed Shortcuts > Icon Style** ([#1749](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1749): @IllIIllIllIllII)
+- Move both columns with your finger on the unfolded iPhone Duo when dragging Back on a thread or forward on the feed, the way the Back button animates them. Letting go springs to either end, and a cancelled drag puts the columns back ([#1725](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1725): @IllIIllIllIllII)
+
+### Fixes
+
+- Fix **Set Flair** showing an empty menu and **View Moderators** showing an empty list on **API-Key-Free** accounts, after oauth.reddit.com started answering them with Reddit's block page. The user flair editor's emoji and character limits load again too ([#1734](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1734): @DeltAndy123)
+- Fix **Random** and **Random NSFW** on a pull to refresh: the next pick is never the community already showing, a banned or private pick is named in the title and error text instead of the previous community, and the classic look keeps its search field after the refresh ([#1724](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1724): @DeltAndy123)
+- Fix the **Subreddits list** scrambling after swiping a favorite away: only that row slides out, instead of other favorites disappearing and a blank gap opening. A dark strip no longer shows down the list after a swipe ([#1754](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1754): @IllIIllIllIllII)
+- Zoom open every page of a **feed album**, instead of page 4 and later fading to black until the image downloads ([#1738](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1738): @IllIIllIllIllII)
+- Fill the screen height with tall images and vertical videos in **fullscreen media**, under the Dynamic Island and home indicator like Photos, and land the opening zoom where the media ends up instead of jumping after it ([#1739](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1739): @IllIIllIllIllII)
+- Reopen the iPhone Duo's **subreddit drawer** where you left it instead of back at Home, Popular and All, including across a fold or unfold ([#1753](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1753): @IllIIllIllIllII)
+- Keep the comments still on iPhone Duo when the header comes back after a cancelled Back swipe, instead of every row moving down ([#1727](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1727): @IllIIllIllIllII)
+- Apply the iPhone Duo's **half-open layout** as soon as it is half-opened in landscape, in the split, Search and tabletop video, instead of at the next hinge change ([#1732](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1732): @IllIIllIllIllII)
+- Show the feed the right way up behind a fullscreen image or video being dragged closed on the unfolded iPhone Duo in landscape ([#1740](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1740): @IllIIllIllIllII)
+
 ## [v4.3.1] - 2026-11-15
 
 ### Features
@@ -1779,6 +1802,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v4.4.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.3.1...v1.15.11_4.4.0
 [v4.3.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.3.0...v1.15.11_4.3.1
 [v4.3.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.2.0...v1.15.11_4.3.0
 [v4.2.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.1.0...v1.15.11_4.2.0

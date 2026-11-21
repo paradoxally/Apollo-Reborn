@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "4.4.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "square.and.pencil", "title": "Modern Composers", "subtitle": "New posts use rounded cards on iOS 26, and Liquid Glass gets a glass formatting bar." },
+    { "icon": "square.grid.2x2.fill", "title": "Monochrome Feed Shortcuts", "subtitle": "A black or white icon style for Home, Popular and All, in Subreddits settings." },
+    { "icon": "checkmark.shield.fill", "title": "Flair and Moderators Load Again", "subtitle": "Set Flair and View Moderators work again on API-Key-Free accounts." },
+    { "icon": "photo.on.rectangle.angled", "title": "Fuller Fullscreen Media", "subtitle": "Tall images and videos fill the screen, and albums zoom open from any page." }
+  ]
+}

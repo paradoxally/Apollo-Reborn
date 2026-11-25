@@ -41,6 +41,7 @@ static const ApolloWhatsNewReleaseEntry kWhatsNewReleases[] = {
     { "4.2.0", "What's New in Apollo Reborn" },
     { "4.3.0", "What's New in Apollo Reborn" },
     { "4.4.0", "What's New in Apollo Reborn" },
+    { "4.5.0", "What's New in Apollo Reborn" },
 };
 
 static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
@@ -190,6 +191,10 @@ static const ApolloWhatsNewItemEntry kWhatsNewItems[] = {
     { "4.4.0", "square.grid.2x2.fill", "Monochrome Feed Shortcuts", "A black or white icon style for Home, Popular and All, in Subreddits settings." },
     { "4.4.0", "checkmark.shield.fill", "Flair and Moderators Load Again", "Set Flair and View Moderators work again on API-Key-Free accounts." },
     { "4.4.0", "photo.on.rectangle.angled", "Fuller Fullscreen Media", "Tall images and videos fill the screen, and albums zoom open from any page." },
+    { "4.5.0", "globe", "Translated Inbox", "Replies, mentions and messages now follow your Translation mode, like comments." },
+    { "4.5.0", "list.bullet.indent", "Menus with Submenus", "On Liquid Glass, sort time ranges, Delete and more open in place instead of a new menu." },
+    { "4.5.0", "key.fill", "Sign-In That Finishes", "Signing in with your own API key now completes, whatever its redirect URI." },
+    { "4.5.0", "play.rectangle.fill", "Videos That Play", "Reddit videos Reddit refuses to load now play with sound instead of hanging." },
 };
 
 static NSString *S(const char *value) { return [NSString stringWithUTF8String:value]; }

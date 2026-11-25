@@ -4,6 +4,27 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [v4.5.0] - 2026-11-25
+
+### Features
+
+- Translate **Inbox** items: comment and post replies, mentions and messages in another language now follow your **Translation** mode, with the same "Translated from …" line comments use. In Automatic mode they're translated as they load, and in Tap to Translate or Manual a **Translate** line swaps them. A reply you flip back to its original stays that way when you open its thread ([#1713](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1713): @icpryde, #100: @paradoxally)
+- Open follow-up choices as **submenus** in Liquid Glass menus instead of closing one menu and opening another: Top and Controversial's time ranges, Delete's confirmation, Add to Multireddit, Mod Log filters and more show a chevron and open in place, and the current sort keeps its checkmark ("✓ Top (Week) ›") ([#1766](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1766): @DeltAndy123)
+- Add an **iPhone Duo** settings page under **Settings > Apollo Reborn > Features**, on the Liquid Glass build. **Subreddit Panel Style** moves there from Subreddits and keeps your choice ([#1774](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1774): @IllIIllIllIllII, @nunoo)
+
+### Fixes
+
+- Finish **signing in with your own API key** whatever its redirect URI: custom-scheme redirects use the system sign-in sheet, where passkeys and Sign in with Apple work, and web-app (http/https) redirects and iOS 15 use the in-app sheet. Closing the sheet and tapping "Issue Signing In" no longer opens a Safari page that can't finish. The **Universal OAuth Sign-In** setting is gone, since each sign-in now picks the sheet that works ([#1764](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1764): @DeltAndy123, #100: @paradoxally)
+- Play **Reddit videos and GIFs** that Reddit's servers intermittently refuse: Apollo rebuilds the video's playlist from its other copy, so it plays with sound instead of showing a GIF pill, spinning forever or freezing the app for several seconds as it opens ([#1726](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1726): @icpryde)
+- Show each post once in a **feed** when Reddit's response repeats it inside a page, instead of the same posts appearing two or three times until the next page loads ([#1747](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1747): @icpryde)
+- Fix a **crash on every launch** for jailbroken installs where iOS gives Apollo no temporary folder at startup ([#1756](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1756): @icpryde)
+- Fix a **crash opening an image** when memory is tight: link cards wait to look for faces in their image until there's room ([#1748](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1748): @icpryde)
+- Keep **Apollo AI summaries** in the language picked under **Summaries > Language** when the post or article is long and in another script, such as Arabic, which the on-device model used to answer in. On-device summaries made before this regenerate once ([#1737](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1737): @icpryde, #100: @paradoxally)
+- Let a forward swipe that starts on the **Subreddits** list's A–Z index go forward, instead of the index scrolling the list under it; a tap or vertical drag on the index works as before ([#1697](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1697): @Thetromboneman1)
+- Fix **iPhone Duo** feed posts staying cut off after rotating, folding, switching feed layouts or leaving the app ([#1769](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1769): @IllIIllIllIllII)
+- Scroll to the top when you tap the top of the screen on the **iPhone Duo** with Hide Header on Scroll, instead of opening the post underneath; in the split view only the column you tapped scrolls ([#1758](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1758): @IllIIllIllIllII)
+- Keep the **Saved!** banners clear of the closed **iPhone Duo**'s side rail ([#1762](https://github.com/Apollo-Reborn/Apollo-Reborn/pull/1762): @IllIIllIllIllII, #100: @paradoxally)
+
 ## [v4.4.0] - 2026-11-21
 
 ### Features
@@ -1802,6 +1823,7 @@ There are currently a few limitations:
 ## [v1.0.0] - 2023-10-13
 - Initial release
 
+[v4.5.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.4.0...v1.15.11_4.5.0
 [v4.4.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.3.1...v1.15.11_4.4.0
 [v4.3.1]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.3.0...v1.15.11_4.3.1
 [v4.3.0]: https://github.com/paradoxally/Apollo-Reborn/compare/v1.15.11_4.2.0...v1.15.11_4.3.0

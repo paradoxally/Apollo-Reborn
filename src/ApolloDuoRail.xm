@@ -684,7 +684,7 @@ static CGRect ApolloDuoHollaWrapperFrame(UIView *wrapper, CGRect frame) {
     CGFloat minX = CGRectGetMinX(safeBand);
     CGFloat maxX = CGRectGetMaxX(safeBand);
     if (maxX <= minX || (CGRectGetMinX(frame) >= minX && CGRectGetMaxX(frame) <= maxX)) return frame;
-    CGFloat left = MAX(CGRectGetMinX(frame), minX);
+    CGFloat left = MIN(MAX(CGRectGetMinX(frame), minX), maxX);
     CGFloat right = MIN(CGRectGetMaxX(frame), maxX);
     frame.origin.x = left;
     frame.size.width = MAX(0, right - left);

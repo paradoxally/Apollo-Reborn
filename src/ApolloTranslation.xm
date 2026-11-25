@@ -11983,7 +11983,13 @@ static void ApolloInboxRefreshAllCells(void) {
             if (message && objc_getAssociatedObject(textNode, kApolloInboxLastDisplayKey)) {
                 ApolloInboxRenderCell(cell, message, nil, NO, YES);
             }
-            ApolloInboxMaybeTranslateCell(cell);
+            // Texture keeps a row's node loaded after it scrolls away, so this
+            // set grows with the inbox scrolled through. Only rows in the
+            // preload range request now; the rest request in
+            // didEnterPreloadState when they come back.
+            BOOL inRange = ![cell respondsToSelector:@selector(isInPreloadState)] ||
+                ((BOOL (*)(id, SEL))objc_msgSend)(cell, @selector(isInPreloadState));
+            if (inRange) ApolloInboxMaybeTranslateCell(cell);
         } @catch (__unused NSException *e) {}
     }
 }

@@ -2362,6 +2362,15 @@ static BOOL ApolloSafariSignInPageCanFinish(NSURL *authURL) {
     return NO;
 }
 
+// The OAuth `state` a sign-in URL carries in its query; nil when it has none.
+static NSString *ApolloOAuthStateOfURL(NSURL *url) {
+    if (!url) return nil;
+    for (NSURLQueryItem *item in [NSURLComponents componentsWithURL:url resolvingAgainstBaseURL:NO].queryItems) {
+        if ([item.name isEqualToString:@"state"]) return item.value;
+    }
+    return nil;
+}
+
 // Whether Apollo's own URL handler signs in with this redirect: it checks
 // only for the host "reddit-oauth" (the default apollo://reddit-oauth).
 static BOOL ApolloHandlesSignInRedirectItself(NSString *redirectURI) {
@@ -2784,6 +2793,15 @@ static BOOL ApolloReopenRedditSignIn(ASWebAuthenticationSession *previous) {
         else [others addObject:context];
     }
     if (!callbackURL) {
+        %orig;
+        return;
+    }
+    // Any app can open the redirect URI, so only a callback answering this
+    // page's authorize URL (Reddit echoes its state) signs in. Anything else
+    // goes to Apollo as before, and the relay stays armed for the real one.
+    NSString *expectedState = ApolloOAuthStateOfURL(objc_getAssociatedObject(page, &kARSafariFallbackURL));
+    if (expectedState.length && ![ApolloOAuthStateOfURL(callbackURL) isEqualToString:expectedState]) {
+        ApolloLog(@"[WebAuth] Sign-in redirect's state doesn't match the Safari page's; leaving it to Apollo");
         %orig;
         return;
     }

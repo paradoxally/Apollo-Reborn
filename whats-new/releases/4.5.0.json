@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "version": "4.5.0",
+  "headline": "What's New in Apollo Reborn",
+  "items": [
+    { "icon": "globe", "title": "Translated Inbox", "subtitle": "Replies, mentions and messages now follow your Translation mode, like comments." },
+    { "icon": "list.bullet.indent", "title": "Menus with Submenus", "subtitle": "On Liquid Glass, sort time ranges, Delete and more open in place instead of a new menu." },
+    { "icon": "key.fill", "title": "Sign-In That Finishes", "subtitle": "Signing in with your own API key now completes, whatever its redirect URI." },
+    { "icon": "play.rectangle.fill", "title": "Videos That Play", "subtitle": "Reddit videos Reddit refuses to load now play with sound instead of hanging." }
+  ]
+}

@@ -2264,6 +2264,9 @@ static ASWebAuthenticationSession *sReopenedRedditWebAuthSession = nil;
 // redirect to the sign-in instead. Cleared by any new sign-in session.
 static __weak SFSafariViewController *sRelayedSafariSignInPage = nil;
 static NSString *sRelayedSafariSignInRedirectURI = nil;
+// The OAuth state of the authorize URL that page loaded. Kept here, not on the
+// page under kARSafariFallbackURL: that key marks a page to swap for the sheet.
+static NSString *sRelayedSafariSignInState = nil;
 
 // Apollo's own presentationContextProvider is set before start is called and
 // returns the correct window.
@@ -2427,6 +2430,7 @@ static void ApolloExplainMissingRedditAPIKey(UIWindow *window) {
         completionHandler:(void (^)(NSURL *, NSError *))completionHandler {
     sRelayedSafariSignInPage = nil;
     sRelayedSafariSignInRedirectURI = nil;
+    sRelayedSafariSignInState = nil;
 
     // Wrap the completion so BOTH sign-in flows (native ASWebAuthenticationSession
     // and our WKWebView replacement, which reads the associated handler) report
@@ -2587,6 +2591,7 @@ static void ApolloExplainMissingRedditAPIKey(UIWindow *window) {
         if (hasCompletion && !ApolloHandlesSignInRedirectItself(redirectURI)) {
             sRelayedSafariSignInPage = result;
             sRelayedSafariSignInRedirectURI = [redirectURI copy];
+            sRelayedSafariSignInState = [ApolloOAuthStateOfURL(URL) copy];
             ApolloLog(@"[WebAuth] Apollo built its Safari %@; its redirect scheme is registered, so leaving it "
                       "and handing its redirect to the sign-in", page);
         } else {
@@ -2799,17 +2804,21 @@ static BOOL ApolloReopenRedditSignIn(ASWebAuthenticationSession *previous) {
     // Any app can open the redirect URI, so only a callback answering this
     // page's authorize URL (Reddit echoes its state) signs in. Anything else
     // goes to Apollo as before, and the relay stays armed for the real one.
-    NSString *expectedState = ApolloOAuthStateOfURL(objc_getAssociatedObject(page, &kARSafariFallbackURL));
+    NSString *expectedState = sRelayedSafariSignInState;
     if (expectedState.length && ![ApolloOAuthStateOfURL(callbackURL) isEqualToString:expectedState]) {
         ApolloLog(@"[WebAuth] Sign-in redirect's state doesn't match the Safari page's; leaving it to Apollo");
         %orig;
         return;
+    }
+    if (!expectedState.length) {
+        ApolloLog(@"[WebAuth] The Safari page's authorize URL has no state to check the redirect against");
     }
 
     ASWebAuthenticationSession *session = sLastRedditWebAuthSession;
     void (^authCompletion)(NSURL *, NSError *) = session ? objc_getAssociatedObject(session, &kARCompletion) : nil;
     sRelayedSafariSignInPage = nil;
     sRelayedSafariSignInRedirectURI = nil;
+    sRelayedSafariSignInState = nil;
     if (!authCompletion) {
         ApolloLog(@"[WebAuth] Sign-in redirect arrived after its session went away; leaving it to Apollo");
         %orig;
